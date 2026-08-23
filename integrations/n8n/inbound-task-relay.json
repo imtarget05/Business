@@ -1,0 +1,111 @@
+{
+  "name": "Business Ops — Inbound Task Relay",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "business-ops-relay",
+        "responseMode": "lastNode"
+      },
+      "id": "webhook-trigger",
+      "name": "Webhook Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.BUSINESS_OPS_API_URL || 'http://host.docker.internal:8000' }}/v1/tasks",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-API-Key",
+              "value": "={{ $env.BUSINESS_OPS_API_KEY }}"
+            },
+            {
+              "name": "X-Request-ID",
+              "value": "={{ $json.request_id || $executionId }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": []
+        },
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ task_id: $json.task_id || undefined, domain: $json.domain, action: $json.action, payload: $json.payload || {}, context: $json.context || {}, metadata: $json.metadata || {} }) }}"
+      },
+      "id": "call-api",
+      "name": "POST /v1/tasks",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [500, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.status }}",
+              "operation": "equals",
+              "value2": "escalated"
+            }
+          ]
+        }
+      },
+      "id": "check-escalated",
+      "name": "Is Escalated?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [750, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SLACK_WEBHOOK_URL }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ text: '🚨 Task escalated — task_id: ' + $json.task_id + ', domain: ' + ($json.agent || 'unknown') + '. Review in dashboard: ' + ($env.DASHBOARD_URL || 'http://localhost:3000') + '/runs?taskId=' + $json.task_id }) }}"
+      },
+      "id": "slack-notify",
+      "name": "Slack Escalation Alert",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1000, 200]
+    },
+    {
+      "parameters": {},
+      "id": "noop-ok",
+      "name": "No Action (OK)",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [1000, 400]
+    }
+  ],
+  "connections": {
+    "Webhook Trigger": {
+      "main": [
+        [{ "node": "POST /v1/tasks", "type": "main", "index": 0 }]
+      ]
+    },
+    "POST /v1/tasks": {
+      "main": [
+        [{ "node": "Is Escalated?", "type": "main", "index": 0 }]
+      ]
+    },
+    "Is Escalated?": {
+      "main": [
+        [{ "node": "Slack Escalation Alert", "type": "main", "index": 0 }],
+        [{ "node": "No Action (OK)", "type": "main", "index": 0 }]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "meta": {
+    "description": "Phase 1 inbound relay: webhook -> POST /v1/tasks -> if escalated -> Slack alert. No business logic in nodes (ADR-003)."
+  }
+}

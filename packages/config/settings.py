@@ -44,18 +44,27 @@ class Settings(BaseSettings):
     environment: Environment = Environment.LOCAL
     log_level: str = "INFO"
     api_base_url: str = "http://localhost:8000"
+    # API key for the minimum authn boundary (X-API-Key header). Empty = open.
+    api_key: str | None = None
 
     # --- Database (Neon PostgreSQL in production; pgvector-enabled locally) ---
     database_url: str = (
         "postgresql+psycopg://postgres:postgres@localhost:5432/business_ops"
     )
     db_echo: bool = False
+# When true, POST /v1/tasks persists task progress and final results to the
+    # database and enables idempotent replay. Defaults to false so the app and
+    # CI tests run with zero external dependencies; enable in Docker/production.
+    persistence_enabled: bool = False
 
     # --- LLM ------------------------------------------------------------------
     llm_provider: LLMProviderKind = LLMProviderKind.MOCK
     llm_api_key: str | None = None
     llm_model: str | None = None
     llm_request_timeout_seconds: float = 30.0
+    # Retry policy for HTTP-based providers (Cloudflare / OpenAI-compatible).
+    llm_max_retries: int = 2
+    llm_retry_backoff_seconds: float = 0.25
 
     # --- Cloudflare Workers AI (optional provider) -----------------------------
     cloudflare_account_id: str | None = None

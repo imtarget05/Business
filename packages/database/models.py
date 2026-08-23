@@ -187,6 +187,9 @@ class TaskStep(Base, TimestampMixin):
     input: Mapped[dict | None] = mapped_column(JSON)
     output: Mapped[dict | None] = mapped_column(JSON)
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    correlation_id: Mapped[str | None] = mapped_column(
+        String(64), index=True, default=None
+    )
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     task: Mapped[Task] = relationship(back_populates="steps")

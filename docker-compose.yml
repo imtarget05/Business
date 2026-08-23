@@ -33,6 +33,8 @@ services:
       LOG_LEVEL: INFO
       DATABASE_URL: postgresql+psycopg://postgres:postgres@db:5432/business_ops
       LLM_PROVIDER: mock
+      PERSISTENCE_ENABLED: ${PERSISTENCE_ENABLED:-true}
+      API_KEY: ${API_KEY:-}
     ports:
       - "8000:8000"
     depends_on:

@@ -23,9 +23,12 @@ from packages.contracts.state_machine import TaskStateMachine
 from packages.core.agent_base import DomainAgent
 from packages.core.errors import (
     AgentTimeoutError,
+    AuthorizationError,
     BusinessOpsError,
     RoutingError,
 )
+from packages.core.persistence import NoopTaskRecorder, TaskRecorder
+from packages.core.policy import AllowAllPolicy, PolicyChecker
 from packages.core.registry import InMemoryAgentRegistry
 from packages.llm.base import LLMProvider
 from packages.observability.context import get_context
@@ -45,6 +48,14 @@ class Orchestrator:
         self._registry = registry
         self._llm = llm
         self._default_timeout_ms = default_timeout_ms
+
+    @staticmethod
+    async def _record(
+        recorder: TaskRecorder | None, task_id, status: TaskStatus
+    ) -> None:
+        """Persist a lifecycle transition when a recorder is provided."""
+        if recorder is not None:
+            await recorder.record_transition(task_id, status)
 
     async def classify(self, request: TaskRequest) -> str:
         """Return the capability the task should be routed to.
@@ -77,19 +88,37 @@ class Orchestrator:
         if response.metadata.get("requires_citations") and not response.citations:
             raise BusinessOpsError("Knowledge responses must include citations")
 
-    async def execute(self, request: TaskRequest) -> AgentResponse:
+    async def execute(
+        self,
+        request: TaskRequest,
+        *,
+        recorder: TaskRecorder = NoopTaskRecorder(),
+        policy: PolicyChecker = AllowAllPolicy(),
+    ) -> AgentResponse:
         sm = TaskStateMachine()
         ctx = get_context()
         ctx.task_id = request.task_id
         try:
             sm.transition(TaskStatus.CLASSIFYING)
+            await self._record(recorder, request.task_id, TaskStatus.CLASSIFYING)
             capability = await self.classify(request)
 
             sm.transition(TaskStatus.ROUTING)
+            await self._record(recorder, request.task_id, TaskStatus.ROUTING)
             descriptor, handler = await self.route(capability)
+
+            decision = await policy.check(
+                capability=capability, context=request.context
+            )
+            if not decision.allowed:
+                raise AuthorizationError(
+                    decision.reason or "Capability not authorized",
+                    task_id=request.task_id,
+                )
 
             timeout_s = (descriptor.timeout_ms or self._default_timeout_ms) / 1000
             sm.transition(TaskStatus.RUNNING)
+            await self._record(recorder, request.task_id, TaskStatus.RUNNING)
             try:
                 response = await asyncio.wait_for(handler.handle(request), timeout=timeout_s)
             except TimeoutError as exc:  # py>=3.11 alias of asyncio.TimeoutError
@@ -99,9 +128,11 @@ class Orchestrator:
                 ) from exc
 
             sm.transition(TaskStatus.VALIDATING)
+            await self._record(recorder, request.task_id, TaskStatus.VALIDATING)
             await self.validate(response)
 
             sm.transition(TaskStatus.COMPLETED)
+            await self._record(recorder, request.task_id, TaskStatus.COMPLETED)
             logger.info(
                 "task_completed",
                 extra={"agent": descriptor.qualified_name, "status": response.status.value},
@@ -117,6 +148,7 @@ class Orchestrator:
                     else TaskStatus.FAILED
                 )
                 sm.transition(target)
+                await self._record(recorder, request.task_id, target)
             logger.warning(
                 "task_failed",
                 extra={"error_code": exc.code.value, "state": sm.status.value},

@@ -1,7 +1,6 @@
-"""FastAPI application factory with middleware + error envelope."""
-
 from __future__ import annotations
 
+import hmac
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
@@ -12,7 +11,11 @@ from apps.api.routes.health import router as health_router
 from apps.api.routes.tasks import router as v1_router
 from packages.config.settings import get_settings
 from packages.core.bootstrap import get_container
-from packages.core.errors import BusinessOpsError, ValidationError
+from packages.core.errors import (
+    AuthenticationError,
+    BusinessOpsError,
+    ValidationError,
+)
 from packages.database.session import dispose_engine
 from packages.observability.context import (
     RequestContext,
@@ -39,7 +42,10 @@ def create_app() -> FastAPI:
     app = FastAPI(
         title="Business Ops Agent Swarm API",
         version="0.1.0",
-        description="Multi-agent platform for business operations (Phase 0 skeleton)",
+        description=(
+            "Multi-agent platform for business operations "
+            "(Phase 1 - core platform)"
+        ),
         lifespan=lifespan,
     )
     get_container()  # eager-wire registry/orchestrator at startup
@@ -60,6 +66,18 @@ def create_app() -> FastAPI:
         response.headers["X-Request-ID"] = incoming
         return response
 
+    @app.middleware("http")
+    async def api_key_middleware(request: Request, call_next):
+        settings = get_settings()
+        if request.url.path.startswith("/v1") and settings.api_key:
+            supplied = request.headers.get("X-API-Key")
+            if not supplied or not hmac.compare_digest(supplied, settings.api_key):
+                exc = AuthenticationError("Missing or invalid API key")
+                return JSONResponse(
+                    status_code=exc.http_status, content={"error": exc.to_payload()}
+                )
+        return await call_next(request)
+
     @app.exception_handler(BusinessOpsError)
     async def business_ops_error_handler(request: Request, exc: BusinessOpsError):
         logger.warning("request_failed", extra={"error_code": exc.code.value})
@@ -78,9 +96,7 @@ def create_app() -> FastAPI:
         # Never leak stack traces to clients (STEP 0.9).
         logger.error("unhandled_exception", extra={"type": type(exc).__name__})
         fallback = BusinessOpsError("Internal server error")
-        return JSONResponse(
-            status_code=500, content={"error": fallback.to_payload()}
-        )
+        return JSONResponse(status_code=500, content={"error": fallback.to_payload()})
 
     return app
 
