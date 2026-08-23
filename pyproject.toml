@@ -1,0 +1,56 @@
+[project]
+name = "business-ops-agent-swarm"
+version = "0.1.0"
+description = "Business Ops Agent Swarm — multi-agent platform for business operations (Phase 0 skeleton)"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "Proprietary" }
+dependencies = [
+    "fastapi>=0.115,<1.0",
+    "uvicorn[standard]>=0.30",
+    "pydantic>=2.7,<3.0",
+    "pydantic-settings>=2.3,<3.0",
+    "sqlalchemy>=2.0,<2.1",
+    "alembic>=1.13,<2.0",
+    "pgvector>=0.3,<0.5",
+    "psycopg[binary]>=3.1,<4.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+    "httpx>=0.27",
+    "ruff>=0.4",
+    "mypy>=1.10",
+]
+
+# ---------------------------------------------------------------------------
+# Packaging layout (see docs/adr/ADR-007-repository-structure.md):
+#   packages/<name>/  -> importable as `packages.<name>`  (shared libraries)
+#   agents/<name>/    -> importable as `agents.<name>`    (domain agents)
+#   apps/api/         -> importable as `apps.api`         (FastAPI app)
+# ---------------------------------------------------------------------------
+[tool.setuptools.packages.find]
+include = ["packages*", "agents*", "apps*"]
+namespaces = false
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+asyncio_mode = "auto"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+extend-exclude = ["apps/web", "node_modules"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+ignore = ["B008"]  # FastAPI Depends() in defaults is idiomatic
+
+[tool.mypy]
+python_version = "3.11"
+ignore_missing_imports = true
+exclude = ["apps/web", "node_modules", "migrations"]
+check_untyped_defs = true

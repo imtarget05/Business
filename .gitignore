@@ -1,0 +1,33 @@
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+
+# --- Environment / secrets (NEVER commit) ---
+.env
+.env.local
+.env.*.local
+
+# --- Node / Next.js ---
+node_modules/
+apps/web/.next/
+apps/web/out/
+next-env.d.ts
+*.tsbuildinfo
+
+# --- Docker / local volumes ---
+pgdata/
+
+# --- IDE / OS ---
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# --- Build artifacts ---
+dist/
+build/
