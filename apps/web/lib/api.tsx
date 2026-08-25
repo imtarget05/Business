@@ -32,6 +32,32 @@ export async function apiGet<T>(path: string): Promise<T> {
   return res.json() as Promise<T>;
 }
 
+export async function apiSend<T>(
+  path: string,
+  method: "POST" | "DELETE" | "PUT",
+  body?: unknown,
+): Promise<T> {
+  const res = await fetch(`${API_BASE_URL}${path}`, {
+    method,
+    headers: {
+      ...(body !== undefined ? { "Content-Type": "application/json" } : {}),
+      ...(API_KEY ? { "X-API-Key": API_KEY } : {}),
+    },
+    body: body !== undefined ? JSON.stringify(body) : undefined,
+  });
+  if (!res.ok) {
+    let detail = "";
+    try {
+      const errBody = (await res.json()) as { detail?: string };
+      detail = typeof errBody.detail === "string" ? `: ${errBody.detail}` : "";
+    } catch {
+      // ignore malformed error bodies
+    }
+    throw new ApiError(`API error ${res.status}: ${path}${detail}`, res.status);
+  }
+  return (await res.json()) as T;
+}
+
 // ---------------------------------------------------------------------------
 // Shared view models (mirrors of backend /v1 responses)
 // ---------------------------------------------------------------------------
