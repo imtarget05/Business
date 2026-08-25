@@ -12,6 +12,14 @@ Retry policy: transient failures (connection errors, timeouts, HTTP 408/429/5xx)
 are retried with exponential backoff (``llm_retry_backoff_seconds * 2**attempt``,
 up to ``llm_max_retries`` retries). Non-transient errors (other 4xx) and
 exhausted retries raise :class:`~packages.core.errors.LLMProviderError`.
+
+⚠️ UNVERIFIED-AGAINST-REAL-API: the embed() payload key ("text") and response
+shape ("result.data") for @cf/baai/bge-base-en-v1.5 are ASSUMED based on common
+embedding API patterns — they have NOT been confirmed against live Cloudflare
+API documentation. Tests mock this shape; a real integration smoke-test is
+required before trusting embed() in production. Same caveat applies to the
+768-dim dimension claim (bge-base-en-v1.5 is documented as 768-dim on
+HuggingFace, but Cloudflare's wrapper may differ).
 """
 
 from __future__ import annotations
@@ -62,17 +70,31 @@ class CloudflareAIProvider:
     def name(self) -> str:
         return "cloudflare_ai"
 
-    async def _run(self, payload: dict[str, Any]) -> dict[str, Any]:
-        """POST to Workers AI with retry/backoff; returns the ``result`` object."""
+    async def _run(
+        self,
+        payload: dict[str, Any],
+        *,
+        model_path: str,
+        timeout_setting: str = "llm_request_timeout_seconds",
+        max_retries: int | None = None,
+        backoff_seconds: float | None = None,
+    ) -> dict[str, Any]:
+        """POST to Workers AI with retry/backoff; returns the ``result`` object.
+
+        ``model_path`` selects which endpoint under the account base URL to hit
+        (chat models and embedding models have different paths). Shared by
+        both ``generate()`` (LLM) and ``embed()`` so retry/backoff behaviour
+        never drifts between the two.
+        """
+        retries = self._max_retries if max_retries is None else max(0, max_retries)
+        backoff = self._backoff if backoff_seconds is None else backoff_seconds
         last_detail = "unknown error"
-        for attempt in range(self._max_retries + 1):
+        timeout_s = getattr(self._settings, timeout_setting)
+        for attempt in range(retries + 1):
             try:
-                resp = await self._client.post(self.model, json=payload)
+                resp = await self._client.post(model_path, json=payload)
             except httpx.TimeoutException:
-                last_detail = (
-                    f"request timed out after "
-                    f"{self._settings.llm_request_timeout_seconds}s"
-                )
+                last_detail = f"request timed out after {timeout_s}s"
             except httpx.HTTPError as exc:  # connection & protocol errors
                 last_detail = f"HTTP error: {type(exc).__name__}: {exc}"
             else:
@@ -90,11 +112,11 @@ class CloudflareAIProvider:
                             self.name, f"API reported failure: {errors or body!r}"
                         )
                     return body.get("result") or {}
-            if attempt < self._max_retries:
-                await asyncio.sleep(self._backoff * (2**attempt))
+            if attempt < retries:
+                await asyncio.sleep(backoff * (2**attempt))
         raise provider_error(
             self.name,
-            f"failed after {self._max_retries + 1} attempts ({last_detail})",
+            f"failed after {retries + 1} attempts ({last_detail})",
         )
 
     @staticmethod
@@ -120,12 +142,51 @@ class CloudflareAIProvider:
                 "temperature": temperature,
                 "max_tokens": max_tokens,
                 **kwargs,
-            }
+            },
+            model_path=self.model,
         )
         text = result.get("response")
         if not isinstance(text, str):
             raise provider_error(self.name, f"unexpected result shape: {result!r}")
         return text
+
+    # ------------------------------------------------------------------
+    # EmbeddingProvider protocol (Phase 2)
+    # ------------------------------------------------------------------
+
+    EMBEDDING_MODEL = "@cf/baai/bge-base-en-v1.5"  # 768-dim output
+
+    async def embed(self, texts: list[str]) -> list[list[float]]:
+        """Generate embeddings for a batch of texts.
+
+        Cloudflare bge-base-en-v1.5 response shape differs from chat:
+            {
+              "result": {"data": [[...768 floats], ...], "shape": [n, 768]},
+              "success": true,
+              ...
+            }
+        The vectors live under ``result.data``, NOT ``result.response``.
+        """
+        result = await self._run(
+            {"text": texts},
+            model_path=self.EMBEDDING_MODEL,
+            timeout_setting="embedding_request_timeout_seconds",
+            max_retries=self._settings.embedding_max_retries,
+            backoff_seconds=self._settings.embedding_retry_backoff_seconds,
+        )
+        data = result.get("data")
+        if not isinstance(data, list) or not data:
+            raise provider_error(
+                self.name, f"unexpected embedding result shape: {result!r}"
+            )
+        vectors: list[list[float]] = []
+        for vec in data:
+            if not isinstance(vec, list):
+                raise provider_error(
+                    self.name, f"embedding row is not a list: {type(vec).__name__}"
+                )
+            vectors.append([float(v) for v in vec])
+        return vectors
 
     async def generate_structured(
         self,

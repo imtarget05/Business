@@ -173,3 +173,101 @@ async def test_api_success_false_raises_immediately() -> None:
     with pytest.raises(LLMProviderError, match="bad model"):
         await p.generate("ping")
     await p.aclose()
+
+
+# ---------------------------------------------------------------------------
+# embed() tests (Phase 2) — Cloudflare bge-base-en-v1.5 response shape
+# ---------------------------------------------------------------------------
+
+
+def embedding_ok_body(vectors: list[list[float]]) -> dict:
+    """Cloudflare bge-base-en-v1.5 success shape: result.data holds vectors."""
+    return {
+        "result": {"data": vectors, "shape": [len(vectors), len(vectors[0])]},
+        "success": True,
+        "errors": [],
+    }
+
+
+def make_embedding_settings(**overrides) -> Settings:
+    """Settings tuned for embedding calls (uses embedding_* retry fields)."""
+    base = {
+        "llm_provider": "cloudflare_ai",
+        "cloudflare_account_id": "test-account",
+        "cloudflare_api_token": "test-token",
+        "embedding_provider": "cloudflare_ai",
+        "llm_max_retries": 0,  # irrelevant for embed(); uses embedding_max_retries
+        "embedding_max_retries": 2,
+        "embedding_retry_backoff_seconds": 0.0,
+    }
+    base.update(overrides)
+    return Settings(**base)
+
+
+def fake_768_vector(seed: float) -> list[float]:
+    # Real bge-base-en-v1.5 output is 768-dim; use a short representative
+    # vector for the mock and assert dimension separately in a full-length test.
+    return [seed + i * 0.001 for i in range(768)]
+
+
+async def test_embed_success_returns_vectors() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = request.read()
+        assert b'"text"' in body  # payload key is "text", not "messages"
+        vectors = [fake_768_vector(0.1), fake_768_vector(0.2)]
+        return httpx.Response(200, json=embedding_ok_body(vectors))
+
+    p = CloudflareAIProvider(make_embedding_settings(), transport=transport_with(handler))
+    out = await p.embed(["hello", "world"])
+    assert len(out) == 2
+    assert all(len(vec) == 768 for vec in out)
+    await p.aclose()
+
+
+async def test_embed_retry_on_429_then_success(monkeypatch) -> None:
+    async def fake_sleep(seconds: float) -> None:
+        pass
+
+    monkeypatch.setattr("packages.llm.cloudflare.asyncio.sleep", fake_sleep)
+    calls = {"n": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return httpx.Response(429, text="rate limited")
+        return httpx.Response(200, json=embedding_ok_body([fake_768_vector(0.5)]))
+
+    p = CloudflareAIProvider(make_embedding_settings(), transport=transport_with(handler))
+    out = await p.embed(["retry me"])
+    assert calls["n"] == 2
+    assert len(out[0]) == 768
+    await p.aclose()
+
+
+async def test_embed_exhausted_retries_raises(monkeypatch) -> None:
+    async def fake_sleep(seconds: float) -> None:
+        pass
+
+    monkeypatch.setattr("packages.llm.cloudflare.asyncio.sleep", fake_sleep)
+    calls = {"n": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls["n"] += 1
+        return httpx.Response(503, text="overloaded")
+
+    p = CloudflareAIProvider(make_embedding_settings(), transport=transport_with(handler))
+    with pytest.raises(LLMProviderError, match="3 attempts"):
+        await p.embed(["always fails"])
+    assert calls["n"] == 3  # 1 initial + 2 retries (embedding_max_retries=2)
+    await p.aclose()
+
+
+async def test_embed_missing_credentials_raises() -> None:
+    settings = Settings(
+        llm_provider="cloudflare_ai",
+        embedding_provider="cloudflare_ai",
+        cloudflare_account_id=None,
+        cloudflare_api_token=None,
+    )
+    with pytest.raises(LLMProviderError):
+        CloudflareAIProvider(settings)

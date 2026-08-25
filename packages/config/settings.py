@@ -33,6 +33,19 @@ class LLMProviderKind(StrEnum):
     OLLAMA = "ollama"
 
 
+class EmbeddingProviderKind(StrEnum):
+    """Which embedding provider implementation the abstraction should activate.
+
+    `mock` requires no network access and no credentials: the application must
+    always be runnable with it (ADR-001 / ADR-005). Cloudflare is the primary
+    production provider; external OpenAI-compatible is supported for flexibility.
+    """
+
+    MOCK = "mock"
+    CLOUDFLARE_AI = "cloudflare_ai"
+    EXTERNAL_OPENAI_COMPATIBLE = "external_openai_compatible"
+
+
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -65,6 +78,15 @@ class Settings(BaseSettings):
     # Retry policy for HTTP-based providers (Cloudflare / OpenAI-compatible).
     llm_max_retries: int = 2
     llm_retry_backoff_seconds: float = 0.25
+
+    # --- Embedding ----------------------------------------------------------
+    embedding_provider: EmbeddingProviderKind = EmbeddingProviderKind.MOCK
+    embedding_api_key: str | None = None
+    embedding_model: str | None = None
+    embedding_dimensions: int = 768  # Cloudflare @cf/baai/bge-base-en-v1.5
+    embedding_request_timeout_seconds: float = 30.0
+    embedding_max_retries: int = 2
+    embedding_retry_backoff_seconds: float = 0.25
 
     # --- Cloudflare Workers AI (optional provider) -----------------------------
     cloudflare_account_id: str | None = None

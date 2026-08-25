@@ -243,14 +243,14 @@ class AuditLog(Base):
 
 
 # ---------------------------------------------------------------------------
-# Knowledge (schema-ready; full RAG is NOT built in Phase 0)
+# Knowledge (Phase 2 RAG) — documents + document_chunks + pgvector
 # ---------------------------------------------------------------------------
 
 
 class DocumentStatus(StrEnum):
     pending = "pending"
-    processing = "processing"
-    ready = "ready"
+    chunked = "chunked"
+    embedded = "embedded"
     failed = "failed"
 
 
@@ -262,24 +262,22 @@ class Document(Base, TimestampMixin):
         ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True
     )
     title: Mapped[str] = mapped_column(String(512), nullable=False)
-    source_uri: Mapped[str | None] = mapped_column(String(2048))
-    mime_type: Mapped[str | None] = mapped_column(String(128))
+    source_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    source_ref: Mapped[str | None] = mapped_column(String(2048))
     status: Mapped[DocumentStatus] = mapped_column(
         SAEnum(DocumentStatus, name="document_status", native_enum=False),
         default=DocumentStatus.pending,
         nullable=False,
         index=True,
     )
-    created_by: Mapped[UUID | None] = mapped_column(
-        ForeignKey("users.id", ondelete="SET NULL")
-    )
+    chunk_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
     chunks: Mapped[list[DocumentChunk]] = relationship(
         back_populates="document", cascade="all, delete-orphan"
     )
 
 
-EMBEDDING_DIMENSIONS = 1536  # common cloud embedding size; pgvector column
+EMBEDDING_DIMENSIONS = 768  # Cloudflare @cf/baai/bge-base-en-v1.5 (Phase 2 default)
 
 
 class DocumentChunk(Base):
@@ -299,6 +297,9 @@ class DocumentChunk(Base):
     embedding: Mapped[list[float] | None] = mapped_column(
         Vector(EMBEDDING_DIMENSIONS), nullable=True
     )
+    # DB column name is "metadata"; attribute renamed to avoid clashing with
+    # SQLAlchemy's reserved Base.metadata attribute.
+    chunk_metadata: Mapped[dict | None] = mapped_column("metadata", JSON)
 
     document: Mapped[Document] = relationship(back_populates="chunks")
 

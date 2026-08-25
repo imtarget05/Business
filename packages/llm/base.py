@@ -51,3 +51,29 @@ class LLMProvider(Protocol):
     ) -> T:
         """Return a validated instance of `schema`."""
         ...
+
+
+@runtime_checkable
+class EmbeddingProvider(Protocol):
+    """Protocol for generating text embeddings used in semantic search."""
+
+    @property
+    def name(self) -> str: ...
+
+    async def embed(self, texts: list[str]) -> list[list[float]]:
+        """Generate embeddings for a batch of texts.
+
+        Args:
+            texts: List of text strings to embed.
+
+        Returns:
+            List of embedding vectors, one per input text.
+        """
+        ...
+
+    async def aclose(self) -> None:
+        """Clean up resources (e.g., HTTP client connections)."""
+        ...
+
+
+__all__ = ["LLMProvider", "EmbeddingProvider", "provider_error"]
