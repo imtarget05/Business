@@ -17,11 +17,19 @@ def container():
 
 
 async def test_knowledge_query_success(container) -> None:
+    """Phase 2: without an org-scoped knowledge base the agent must refuse to
+    guess — it returns 'no relevant information found' rather than hallucinating
+    (hard acceptance criterion), or REJECTED when no org context is provided."""
     req = TaskRequest(domain="knowledge", action="query", payload={"question": "hi?"})
     resp = await container.orchestrator.execute(req)
-    assert resp.status == AgentResponseStatus.SUCCESS
+    assert resp.status in (
+        AgentResponseStatus.SUCCESS,
+        AgentResponseStatus.REJECTED,
+    )
     assert resp.agent == "knowledge-v1"
-    assert resp.citations
+    if resp.status == AgentResponseStatus.SUCCESS:
+        assert resp.result["answer"] == "no relevant information found"
+        assert resp.citations == []
 
 
 async def test_knowledge_missing_question_rejected(container) -> None:

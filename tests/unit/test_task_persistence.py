@@ -223,8 +223,7 @@ async def test_orchestrator_crash_leaves_valid_intermediate() -> None:
     recorder = _CollectRecorder()
     req = TaskRequest(domain="knowledge", action="crash", payload={})
 
-    with pytest.raises(RuntimeError):
-        await orch.execute(req, recorder=recorder)
+    resp = await orch.execute(req, recorder=recorder)
 
     assert recorder.events[:3] == [
         TaskStatus.CLASSIFYING,
@@ -232,8 +231,10 @@ async def test_orchestrator_crash_leaves_valid_intermediate() -> None:
         TaskStatus.RUNNING,
     ]
     last = recorder.events[-1]
-    assert last == TaskStatus.RUNNING
-    assert last not in _TERMINAL | {TaskStatus.PENDING}
+    assert last == TaskStatus.FAILED
+    # Crash is converted to a typed FAILED response — never an unhandled 500.
+    assert resp.status == AgentResponseStatus.FAILED
+    assert last == TaskStatus.FAILED  # terminal, never stuck mid-flight
     async def list_steps(self, task_id: str | None = None) -> list[dict]:
         return []
 

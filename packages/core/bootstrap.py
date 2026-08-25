@@ -11,7 +11,9 @@ from packages.core.orchestrator import Orchestrator
 from packages.core.persistence import NoopTaskStore, TaskStore
 from packages.core.policy import AllowAllPolicy, PolicyChecker
 from packages.core.registry import InMemoryAgentRegistry
-from packages.llm.factory import get_llm_provider
+from packages.database.repositories.documents import KnowledgeRepository
+from packages.database.session import get_session_factory
+from packages.llm.factory import get_embedding_provider, get_llm_provider
 
 
 @dataclass
@@ -37,9 +39,30 @@ def build_container(
 ) -> AppContainer:
     s = settings or get_settings()
     registry = InMemoryAgentRegistry()
-    registry.register(create_knowledge_agent().descriptor, create_knowledge_agent())
-    registry.register(create_support_agent().descriptor, create_support_agent())
     llm = get_llm_provider(s)
+    embeddings = get_embedding_provider(s)
+    session_factory = get_session_factory(s)
+
+    async def _knowledge_repo() -> KnowledgeRepository:
+        return KnowledgeRepository(session_factory())
+
+    registry.register(
+        create_knowledge_agent(
+            repository=None,  # resolved per-request (async session); see handle()
+            llm=llm,
+            embeddings=embeddings,
+            similarity_threshold=s.knowledge_similarity_threshold,
+            repo_factory=_knowledge_repo,
+        ).descriptor,
+        create_knowledge_agent(
+            repository=None,
+            llm=llm,
+            embeddings=embeddings,
+            similarity_threshold=s.knowledge_similarity_threshold,
+            repo_factory=_knowledge_repo,
+        ),
+    )
+    registry.register(create_support_agent().descriptor, create_support_agent())
     return AppContainer(
         settings=s,
         registry=registry,

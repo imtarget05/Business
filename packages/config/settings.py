@@ -88,6 +88,10 @@ class Settings(BaseSettings):
     embedding_max_retries: int = 2
     embedding_retry_backoff_seconds: float = 0.25
 
+    # --- Knowledge retrieval (Phase 2) ---------------------------------------
+    knowledge_similarity_threshold: float = 0.75
+    knowledge_top_k: int = 4
+
     # --- Cloudflare Workers AI (optional provider) -----------------------------
     cloudflare_account_id: str | None = None
     cloudflare_api_token: str | None = None

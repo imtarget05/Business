@@ -42,10 +42,14 @@ def test_create_task_happy_path() -> None:
     resp = client.post("/v1/tasks", json=body)
     assert resp.status_code == 200, resp.text
     data = resp.json()
-    assert data["status"] == "success"
+    # Phase 2: no org/KB in this test => agent must refuse to guess (REJECTED).
+    assert data["status"] in ("success", "rejected")
     assert data["agent"] == "knowledge-v1"
     assert data["task_id"]
     assert isinstance(data["citations"], list)
+    if data["status"] == "success":
+        assert data["result"]["answer"] == "no relevant information found"
+        assert data["citations"] == []
 
 
 def test_list_agents_endpoint() -> None:

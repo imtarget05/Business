@@ -16,6 +16,7 @@ from uuid import UUID
 
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import joinedload
 
 from packages.database.models import Document, DocumentChunk, DocumentStatus
 
@@ -111,6 +112,9 @@ class KnowledgeRepository:
             .join(Document, DocumentChunk.document_id == Document.id)
             .where(Document.organization_id == organization_id)
         )
+        # Eager-load the parent document title (used for citations) to avoid
+        # lazy IO outside a greenlet context.
+        stmt = stmt.options(joinedload(DocumentChunk.document))
         return list((await self._session.execute(stmt)).scalars().all())
 
     # ------------------------------------------------------------------

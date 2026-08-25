@@ -23,6 +23,7 @@ from packages.contracts.state_machine import TaskStateMachine
 from packages.core.agent_base import DomainAgent
 from packages.core.errors import (
     AgentTimeoutError,
+    AgentUnavailableError,
     AuthorizationError,
     BusinessOpsError,
     RoutingError,
@@ -124,6 +125,15 @@ class Orchestrator:
             except TimeoutError as exc:  # py>=3.11 alias of asyncio.TimeoutError
                 raise AgentTimeoutError(
                     f"Agent {descriptor.qualified_name} timed out",
+                    task_id=request.task_id,
+                ) from exc
+            except BusinessOpsError:
+                raise
+            except Exception as exc:
+                # Infrastructure failure inside an agent (DB unreachable,
+                # missing table, provider crash) -> typed FAILED, never a 500.
+                raise AgentUnavailableError(
+                    f"Agent {descriptor.qualified_name} crashed: {exc}",
                     task_id=request.task_id,
                 ) from exc
 

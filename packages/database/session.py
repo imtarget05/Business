@@ -34,9 +34,21 @@ def get_engine(settings: Settings | None = None) -> AsyncEngine:
 def get_session_factory(settings: Settings | None = None) -> async_sessionmaker[AsyncSession]:
     global _session_factory
     if _session_factory is None:
-        _session_factory = async_sessionmaker(
-            get_engine(settings), expire_on_commit=False
-        )
+        engine = get_engine(settings)
+        # Windows CI/dev: psycopg async requires a selector event loop; sqlite
+        # (aiosqlite) is unaffected. Harmless no-op elsewhere.
+        if "postgresql" in str(engine.url):
+            try:
+                import asyncio
+                import sys
+
+                if sys.platform == "win32":
+                    asyncio.set_event_loop_policy(
+                        asyncio.WindowsSelectorEventLoopPolicy()
+                    )
+            except Exception:
+                pass
+        _session_factory = async_sessionmaker(engine, expire_on_commit=False)
     return _session_factory
 
 
