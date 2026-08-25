@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import json
 import uuid
-from typing import Any
+from typing import Any, Literal
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -24,7 +24,7 @@ from packages.config.settings import get_settings
 from packages.contracts.enums import Domain
 from packages.contracts.models import TaskContext, TaskRequest
 from packages.core.errors import NotFoundError
-from packages.core.tools import ToolRegistry
+from packages.core.tools import ToolRegistry, execute_tool_loop
 from packages.database.repositories.conversations import ConversationRepository
 from packages.database.session import get_session, get_session_factory
 from packages.llm.factory import get_llm_provider
@@ -45,7 +45,9 @@ logger = get_logger("conversations")
 class ConversationCreateRequest(BaseModel):
     """Request to create a new conversation."""
 
-    channel: str = Field(..., min_length=1, max_length=32, description="Channel: web, zalo, email, etc.")
+    channel: Literal["web", "email", "zalo", "facebook"] = Field(
+        ..., description="Channel: web, email, zalo, or facebook"
+    )
     subject: str | None = Field(None, max_length=512, description="Optional subject/title")
     organization_id: UUID | None = Field(None, description="Organization ID (defaults to pilot org)")
 
@@ -166,72 +168,30 @@ async def _run_support_agent_with_actions(
     prompt = agent._build_prompt(request)
     system = agent._system_prompt()
 
-    # Run the tool loop and capture the conversation history including tool calls
-    conversation: list[dict[str, Any]] = [{"role": "user", "content": prompt}]
     actions: list[ActionMetadata] = []
 
-    # Use the same loop logic as execute_tool_loop but capture tool calls
-    for _ in range(max_rounds):
-        response = await agent.llm.complete_with_tools(
-            conversation,
-            agent.registry.list_schemas(),
-            system=system,
-            temperature=0.2,
-            max_tokens=1024,
+    async def capture_action(name: str, arguments: dict, result: str, mode: str | None):
+        action = ActionMetadata(
+            tool=name,
+            arguments=arguments,
+            result=result,
+            mode=mode,
         )
-        tool_calls = response.get("tool_calls") or []
-        if not tool_calls:
-            content = response.get("content")
-            if not isinstance(content, str):
-                raise RuntimeError("provider returned neither tool_calls nor text content")
-            # Final answer
-            return content, actions
+        actions.append(action)
 
-        # Record assistant message with tool calls
-        conversation.append(
-            {
-                "role": "assistant",
-                "content": response.get("content"),
-                "tool_calls": tool_calls,
-            }
-        )
+    # Run the tool loop using the canonical execute_tool_loop with callback
+    assistant_reply = await execute_tool_loop(
+        provider=agent.llm,
+        prompt=prompt,
+        registry=agent.registry,
+        system=system,
+        max_rounds=max_rounds,
+        temperature=0.2,
+        max_tokens=1024,
+        on_tool_call=capture_action,
+    )
 
-        # Execute each tool call and capture metadata
-        for call in tool_calls:
-            name = call.get("name")
-            if not isinstance(name, str):
-                continue
-            arguments = call.get("arguments") or {}
-            tool = agent.registry.get(name)
-            result = await tool.run(arguments)
-
-            # Capture action metadata
-            action = ActionMetadata(
-                tool=name,
-                arguments=arguments,
-                result=result,
-                mode=None,
-            )
-            # Extract DRY_RUN mode from send_email_reply results
-            if name == "send_email_reply":
-                try:
-                    result_data = json.loads(result)
-                    action.mode = result_data.get("mode")
-                except Exception:
-                    pass
-            actions.append(action)
-
-            # Add tool result to conversation
-            conversation.append(
-                {
-                    "role": "tool",
-                    "tool_call_id": call.get("id"),
-                    "name": name,
-                    "content": result,
-                }
-            )
-
-    raise RuntimeError(f"tool-call loop did not converge after {max_rounds} rounds")
+    return assistant_reply, actions
 
 
 # ---------------------------------------------------------------------------

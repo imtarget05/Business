@@ -52,6 +52,12 @@ class SendEmailReplyTool(Tool):
         "required": ["to_email", "subject", "body_text"],
     }
 
+    def __init__(
+        self, session_factory: async_sessionmaker[AsyncSession] | None = None
+    ) -> None:
+        # session_factory accepted for DI consistency with other tools; unused currently
+        self._session_factory = session_factory or _default_session_factory()
+
     async def run(self, arguments: dict[str, Any]) -> str:
         settings = get_settings()
 
@@ -137,7 +143,9 @@ class CreateTicketTool(Tool):
             # Verify customer exists and belongs to org
             customer = await session.get(Customer, customer_id)
             if customer is None or customer.organization_id != org_id:
-                raise ValueError(
+                from packages.core.errors import NotFoundError
+
+                raise NotFoundError(
                     f"Customer {customer_id} not found in organization {org_id}"
                 )
 
@@ -211,7 +219,9 @@ class LookupCustomerTool(Tool):
             elif operation == "delete":
                 return await self._delete(session, org_id, arguments)
             else:
-                raise ValueError(f"Unknown operation: {operation}")
+                from packages.core.errors import ValidationError
+
+                raise ValidationError(f"Unknown operation: {operation}")
 
     async def _create(
         self, session: Any, org_id: UUID, args: dict[str, Any]
@@ -228,7 +238,9 @@ class LookupCustomerTool(Tool):
         )
         existing = (await session.execute(stmt)).scalar_one_or_none()
         if existing:
-            raise ValueError(
+            from packages.core.errors import ValidationError
+
+            raise ValidationError(
                 f"Customer with email {email} already exists in organization {org_id}"
             )
 
@@ -274,7 +286,9 @@ class LookupCustomerTool(Tool):
 
         customer = (await session.execute(stmt)).scalar_one_or_none()
         if customer is None:
-            return json.dumps({"error": "Customer not found"}, ensure_ascii=False)
+            from packages.core.errors import NotFoundError
+
+            raise NotFoundError("Customer not found")
 
         return json.dumps(
             {
@@ -295,7 +309,9 @@ class LookupCustomerTool(Tool):
         customer_id = UUID(args["customer_id"])
         customer = await session.get(Customer, customer_id)
         if customer is None or customer.organization_id != org_id:
-            raise ValueError(
+            from packages.core.errors import NotFoundError
+
+            raise NotFoundError(
                 f"Customer {customer_id} not found in organization {org_id}"
             )
 
@@ -312,7 +328,9 @@ class LookupCustomerTool(Tool):
             )
             existing = (await session.execute(stmt)).scalar_one_or_none()
             if existing:
-                raise ValueError(
+                from packages.core.errors import ValidationError
+
+                raise ValidationError(
                     f"Customer with email {args['email']} already exists in organization {org_id}"
                 )
             customer.email = args["email"]
@@ -374,7 +392,9 @@ class LookupCustomerTool(Tool):
         customer_id = UUID(args["customer_id"])
         customer = await session.get(Customer, customer_id)
         if customer is None or customer.organization_id != org_id:
-            return json.dumps({"error": "Customer not found"}, ensure_ascii=False)
+            from packages.core.errors import NotFoundError
+
+            raise NotFoundError("Customer not found")
 
         await session.delete(customer)
         await session.commit()

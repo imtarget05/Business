@@ -17,6 +17,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from packages.config.settings import get_settings
 from packages.contracts.enums import Domain
 from packages.contracts.models import TaskContext, TaskRequest
+from packages.core.errors import ToolExecutionError
 from packages.database import models
 from packages.database.base import Base
 from packages.database.models import Customer, Ticket, TicketStatus
@@ -416,7 +417,5 @@ class TestSupportAgentErrorHandling:
             context=TaskContext(organization_id=org_id, channel="web"),
         )
 
-        response = await support_agent.handle(request)
-
-        # Should be failed due to tool error
-        assert response.status.value in ("failed", "success")  # Depends on mock behavior
+        with pytest.raises(ToolExecutionError):
+            await support_agent.handle(request)

@@ -93,12 +93,18 @@ async def execute_tool_loop(
     max_rounds: int = DEFAULT_MAX_TOOL_ROUNDS,
     temperature: float = 0.2,
     max_tokens: int = 1024,
+    on_tool_call: Any | None = None,
 ) -> str:
     """Run the tool-call loop until the model returns a final text answer.
 
     Each round: ask the provider for a completion with the registered tool
     specs. If it returns tool_calls, dispatch each sequentially through the
     registry, feed results back, and continue. Otherwise return the text.
+
+    Args:
+        on_tool_call: Optional callback receiving each executed tool call as
+            (name: str, arguments: dict, result: str, mode: str | None).
+            Allows callers to capture action metadata without duplicating the loop.
     """
     conversation: list[dict[str, Any]] = [
         {"role": "user", "content": prompt}
@@ -127,12 +133,32 @@ async def execute_tool_loop(
             }
         )
         for call in tool_calls:
-            result = await _dispatch(registry, call)
+            name = call.get("name")
+            if not isinstance(name, str):
+                continue
+            arguments = call.get("arguments") or {}
+            tool = registry.get(name)
+            result = await tool.run(arguments)
+
+            # Invoke callback if provided
+            if on_tool_call is not None:
+                mode = None
+                # Extract DRY_RUN mode from send_email_reply results
+                if name == "send_email_reply":
+                    import json
+
+                    try:
+                        result_data = json.loads(result)
+                        mode = result_data.get("mode")
+                    except Exception:
+                        pass
+                await on_tool_call(name, arguments, result, mode)
+
             conversation.append(
                 {
                     "role": "tool",
                     "tool_call_id": call.get("id"),
-                    "name": call.get("name"),
+                    "name": name,
                     "content": result,
                 }
             )

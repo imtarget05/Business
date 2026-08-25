@@ -17,6 +17,7 @@ import pytest
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from packages.config.settings import get_settings
+from packages.core.errors import NotFoundError, ValidationError
 from packages.database import models
 from packages.database.base import Base
 from packages.database.models import Customer, Ticket, TicketStatus
@@ -223,7 +224,7 @@ class TestCreateTicketTool:
         db.add(other_customer)
         await db.commit()
 
-        with pytest.raises(ValueError, match="not found in organization"):
+        with pytest.raises(NotFoundError, match="not found in organization"):
             await tool.run(
                 {
                     "organization_id": str(org_id),
@@ -235,7 +236,7 @@ class TestCreateTicketTool:
     @pytest.mark.asyncio
     async def test_create_ticket_rejects_nonexistent_customer(self, tool, org_id):
         """Reject creating ticket with nonexistent customer."""
-        with pytest.raises(ValueError, match="not found in organization"):
+        with pytest.raises(NotFoundError, match="not found in organization"):
             await tool.run(
                 {
                     "organization_id": str(org_id),
@@ -286,7 +287,7 @@ class TestLookupCustomerTool:
     @pytest.mark.asyncio
     async def test_create_customer_rejects_duplicate_email(self, tool, db, org_id, test_customer):
         """Reject creating customer with duplicate email in same org."""
-        with pytest.raises(ValueError, match="already exists"):
+        with pytest.raises(ValidationError, match="already exists"):
             await tool.run(
                 {
                     "operation": "create",
@@ -349,31 +350,27 @@ class TestLookupCustomerTool:
 
     @pytest.mark.asyncio
     async def test_get_customer_not_found(self, tool, org_id):
-        """Get returns error for non-existent customer."""
-        result = await tool.run(
-            {
-                "operation": "get",
-                "organization_id": str(org_id),
-                "customer_id": str(uuid.uuid4()),
-            }
-        )
-
-        data = json.loads(result)
-        assert data["error"] == "Customer not found"
+        """Get raises NotFoundError for non-existent customer."""
+        with pytest.raises(NotFoundError, match="Customer not found"):
+            await tool.run(
+                {
+                    "operation": "get",
+                    "organization_id": str(org_id),
+                    "customer_id": str(uuid.uuid4()),
+                }
+            )
 
     @pytest.mark.asyncio
     async def test_get_customer_rejects_foreign_org(self, tool, db, org_id, other_org_id, test_customer):
         """Get rejects customer from different org."""
-        result = await tool.run(
-            {
-                "operation": "get",
-                "organization_id": str(other_org_id),
-                "customer_id": str(test_customer.id),
-            }
-        )
-
-        data = json.loads(result)
-        assert data["error"] == "Customer not found"
+        with pytest.raises(NotFoundError, match="Customer not found"):
+            await tool.run(
+                {
+                    "operation": "get",
+                    "organization_id": str(other_org_id),
+                    "customer_id": str(test_customer.id),
+                }
+            )
 
     # ----- update -----
 
@@ -424,7 +421,7 @@ class TestLookupCustomerTool:
         db.add(other)
         await db.commit()
 
-        with pytest.raises(ValueError, match="already exists"):
+        with pytest.raises(ValidationError, match="already exists"):
             await tool.run(
                 {
                     "operation": "update",
@@ -520,16 +517,14 @@ class TestLookupCustomerTool:
     @pytest.mark.asyncio
     async def test_delete_customer_rejects_foreign_org(self, tool, db, org_id, other_org_id, test_customer):
         """Delete rejects customer from different org."""
-        result = await tool.run(
-            {
-                "operation": "delete",
-                "organization_id": str(other_org_id),
-                "customer_id": str(test_customer.id),
-            }
-        )
-
-        data = json.loads(result)
-        assert data["error"] == "Customer not found"
+        with pytest.raises(NotFoundError, match="Customer not found"):
+            await tool.run(
+                {
+                    "operation": "delete",
+                    "organization_id": str(other_org_id),
+                    "customer_id": str(test_customer.id),
+                }
+            )
 
         # Verify not deleted
         customer = await db.get(Customer, test_customer.id)

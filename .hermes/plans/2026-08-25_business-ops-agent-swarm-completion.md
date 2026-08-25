@@ -106,7 +106,14 @@ Commit sau mỗi task: `feat(knowledge): ...`
 ## Phase 5 — Integrations & Go-live cho 1 doanh nghiệp cụ thể
 
 ### Task 5.1: Chọn bài toán + khách hàng thí điểm (quyết định cần user)
-- Đề xuất mặc định: **tự động trả lời & phân loại email/hỗ trợ khách hàng cho 1 shop dịch vụ** (giảm thời gian phản hồi, không bỏ sót ticket).
+- Use case 1 (mặc định): **tự động trả lời & phân loại email/hỗ trợ khách hàng cho 1 shop dịch vụ**.
+- Use case 2 (bổ sung từ video TikTok "5 AI Agents tự động làm báo cáo"): **báo cáo vận hành định kỳ** —
+  - `ReportingAgent` (agent thứ 3): capabilities `report.generate`, `report.schedule`
+  - Chain 5 bước ánh xạ multi-agent handoff (Phase 4): collect → analyze → root-cause → recommend → report
+  - Data collection: n8n quét nhiều nguồn → chuẩn hóa → ingest qua knowledge pipeline có sẵn
+  - Dashboard: trang báo cáo (biểu đồ, insight, đề xuất hành động)
+  - Scheduled runs: cron n8n → POST /v1/tasks chạy định kỳ ngày/tuần
+
 
 ### Task 5.2: n8n inbound hoàn chỉnh
 - Gmail trigger / Slack bot → HTTP Request → `POST /v1/conversations` ; reply từ API → gửi ngược email/Slack.

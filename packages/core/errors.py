@@ -28,6 +28,7 @@ class ErrorCode(StrEnum):
     DATABASE_ERROR = "DATABASE_ERROR"
     TASK_STATE_ERROR = "TASK_STATE_ERROR"
     ROUTING_ERROR = "ROUTING_ERROR"
+    TOOL_EXECUTION_ERROR = "TOOL_EXECUTION_ERROR"
     INTERNAL_ERROR = "INTERNAL_ERROR"
 
 
@@ -42,6 +43,7 @@ _HTTP_STATUS = {
     ErrorCode.DATABASE_ERROR: 503,
     ErrorCode.TASK_STATE_ERROR: 409,
     ErrorCode.ROUTING_ERROR: 422,
+    ErrorCode.TOOL_EXECUTION_ERROR: 500,
     ErrorCode.INTERNAL_ERROR: 500,
 }
 
@@ -137,6 +139,13 @@ class TaskStateError(BusinessOpsError):
 class RoutingError(BusinessOpsError):
     code = ErrorCode.ROUTING_ERROR
     default_message = "Task could not be routed to an agent"
+
+
+class ToolExecutionError(BusinessOpsError):
+    """Tool dispatch or agent-loop execution failure."""
+
+    code = ErrorCode.TOOL_EXECUTION_ERROR
+    default_message = "Tool execution failed"
 
 
 class NotFoundError(BusinessOpsError):

@@ -9,6 +9,7 @@ from packages.contracts.models import (
     ErrorDetail,
     TaskRequest,
 )
+from packages.core.errors import AgentExecutionError, ToolExecutionError
 from packages.core.tools import ToolRegistry, execute_tool_loop
 from packages.llm.base import LLMProvider
 from packages.llm.mock import MockLLMProvider
@@ -93,16 +94,10 @@ class SupportAgent:
                 confidence=0.8,
                 metadata={"channel": request.context.channel},
             )
+        except ToolExecutionError:
+            raise
         except Exception as e:
-            return AgentResponse(
-                task_id=request.task_id,
-                agent=self.descriptor.qualified_name,
-                status=AgentResponseStatus.FAILED,
-                error=ErrorDetail(
-                    code="TOOL_EXECUTION_ERROR",
-                    message=f"Tool execution failed: {e}",
-                ),
-            )
+            raise ToolExecutionError(f"Tool execution failed: {e}") from e
 
     def _system_prompt(self) -> str:
         return (

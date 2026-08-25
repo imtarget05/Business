@@ -128,6 +128,11 @@ class ConversationRepository:
     # ------------------------------------------------------------------
 
     async def _next_sequence(self, conversation_id: UUID) -> int:
+        # NOTE: This implementation has a potential race condition under high
+        # concurrency. Multiple concurrent appends could read the same max
+        # sequence and produce duplicate sequence numbers. A proper fix would
+        # require a database-level sequence or SELECT FOR UPDATE, but is deferred
+        # per YAGNI (schema change not needed for current load profile).
         stmt = select(func.max(Message.sequence)).where(
             Message.conversation_id == conversation_id
         )
