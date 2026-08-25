@@ -305,6 +305,66 @@ class DocumentChunk(Base):
 
 
 # ---------------------------------------------------------------------------
+# Conversations (Phase 3 support agent) — multi-turn thread persistence
+# ---------------------------------------------------------------------------
+
+
+class ConversationStatus(StrEnum):
+    open = "open"
+    resolved = "resolved"
+    escalated = "escalated"
+    closed = "closed"
+
+
+class Conversation(Base, TimestampMixin):
+    __tablename__ = "conversations"
+
+    id: Mapped[UUID] = _uuid_pk()
+    organization_id: Mapped[UUID] = mapped_column(
+        ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    channel: Mapped[str] = mapped_column(String(32), nullable=False)  # web|zalo|email|...
+    status: Mapped[ConversationStatus] = mapped_column(
+        SAEnum(ConversationStatus, name="conversation_status", native_enum=False),
+        default=ConversationStatus.open,
+        nullable=False,
+        index=True,
+    )
+    subject: Mapped[str | None] = mapped_column(String(512))
+
+    messages: Mapped[list[Message]] = relationship(
+        back_populates="conversation", cascade="all, delete-orphan", order_by="Message.sequence"
+    )
+
+
+class MessageRole(StrEnum):
+    user = "user"
+    assistant = "assistant"
+    tool = "tool"
+
+
+class Message(Base, TimestampMixin):
+    __tablename__ = "messages"
+
+    id: Mapped[UUID] = _uuid_pk()
+    conversation_id: Mapped[UUID] = mapped_column(
+        ForeignKey("conversations.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    sequence: Mapped[int] = mapped_column(Integer, nullable=False)
+    role: Mapped[MessageRole] = mapped_column(
+        SAEnum(MessageRole, name="message_role", native_enum=False), nullable=False
+    )
+    content: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    parent_message_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("messages.id", ondelete="SET NULL")
+    )
+    # Optional tool call / action metadata (tool name, args, results).
+    tool_metadata: Mapped[dict | None] = mapped_column(JSON)
+
+    conversation: Mapped[Conversation] = relationship(back_populates="messages")
+
+
+# ---------------------------------------------------------------------------
 # Evaluation
 # ---------------------------------------------------------------------------
 
