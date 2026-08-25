@@ -365,6 +365,66 @@ class Message(Base, TimestampMixin):
 
 
 # ---------------------------------------------------------------------------
+# Support Agent — customers + tickets (Phase 3, Task 3.3)
+# ---------------------------------------------------------------------------
+
+
+class Customer(Base, TimestampMixin):
+    """Minimal customer record for support agent (YAGNI: no full CRM)."""
+
+    __tablename__ = "customers"
+    __table_args__ = (
+        Index("uq_customer_email_org", "email", "organization_id", unique=True),
+        Index("ix_customer_org_name", "organization_id", "name"),
+    )
+
+    id: Mapped[UUID] = _uuid_pk()
+    organization_id: Mapped[UUID] = mapped_column(
+        ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    email: Mapped[str] = mapped_column(String(320), nullable=False, index=True)
+    notes: Mapped[str | None] = mapped_column(Text)
+
+
+class TicketStatus(StrEnum):
+    open = "open"
+    in_progress = "in_progress"
+    waiting_customer = "waiting_customer"
+    resolved = "resolved"
+    closed = "closed"
+
+
+class Ticket(Base, TimestampMixin):
+    """Simple ticket record for support agent."""
+
+    __tablename__ = "tickets"
+    __table_args__ = (
+        Index("ix_ticket_org_status", "organization_id", "status"),
+        Index("ix_ticket_customer", "customer_id"),
+    )
+
+    id: Mapped[UUID] = _uuid_pk()
+    organization_id: Mapped[UUID] = mapped_column(
+        ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    customer_id: Mapped[UUID] = mapped_column(
+        ForeignKey("customers.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    subject: Mapped[str] = mapped_column(String(512), nullable=False)
+    description: Mapped[str | None] = mapped_column(Text)
+    status: Mapped[TicketStatus] = mapped_column(
+        SAEnum(TicketStatus, name="ticket_status", native_enum=False),
+        default=TicketStatus.open,
+        nullable=False,
+        index=True,
+    )
+    assignee_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+
+
+# ---------------------------------------------------------------------------
 # Evaluation
 # ---------------------------------------------------------------------------
 
@@ -387,8 +447,3 @@ class Evaluation(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False, index=True
     )
-
-
-
-
-

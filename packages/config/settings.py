@@ -65,12 +65,12 @@ class Settings(BaseSettings):
         "postgresql+psycopg://postgres:postgres@localhost:5432/business_ops"
     )
     db_echo: bool = False
-# When true, POST /v1/tasks persists task progress and final results to the
+    # When true, POST /v1/tasks persists task progress and final results to the
     # database and enables idempotent replay. Defaults to false so the app and
     # CI tests run with zero external dependencies; enable in Docker/production.
     persistence_enabled: bool = False
 
-    # --- LLM ------------------------------------------------------------------
+    # --- LLM ----------------------------------------------------------------
     llm_provider: LLMProviderKind = LLMProviderKind.MOCK
     llm_api_key: str | None = None
     llm_model: str | None = None
@@ -99,12 +99,18 @@ class Settings(BaseSettings):
     # --- Ollama (optional provider only) ---------------------------------------
     ollama_base_url: str | None = None
 
+    # --- Email (support agent) -------------------------------------------------
+    # SMTP settings for send_email_reply tool. DRY-RUN mode is DEFAULT (draft-only;
+    # real send behind email_send_enabled flag). YAGNI: no retries/queueing.
+    email_smtp_host: str | None = None
+    email_smtp_port: int = 587
+    email_smtp_username: str | None = None
+    email_smtp_password: str | None = None
+    email_from_address: str | None = None
+    email_send_enabled: bool = False  # DRY-RUN default: False = draft-only
+
 
 @lru_cache
 def get_settings() -> Settings:
     """Return a cached singleton Settings instance."""
     return Settings()  # type: ignore[call-arg]
-
-
-
-
