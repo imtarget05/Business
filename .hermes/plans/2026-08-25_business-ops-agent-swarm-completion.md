@@ -50,6 +50,13 @@ Một doanh nghiệp nhỏ có thể:
 - Sửa `agents/knowledge/agent.py`: retrieve → prompt LLM kèm context → trả answer + citations.
 - Test integration với mock LLM provider.
 
+### Task 2.4b [HARD ACCEPTANCE CRITERION]: knowledge.delete + similarity threshold
+- `knowledge.delete` capability: xoá document + toàn bộ chunks/vectors liên quan (idempotent).
+- `knowledge.query`: similarity threshold — nếu top score < ngưỡng (config, mặc định 0.75), trả
+  "no relevant information found", KHÔNG gọi LLM từ context yếu. Test bắt buộc cho cả hai.
+- Use case pilot (Phase 5): auto-reply & classification email hỗ trợ khách hàng — citations
+  format, tool set, router intents thiết kế bám sát use case này.
+
 ### Task 2.5: Dashboard page Knowledge
 - `apps/web`: trang ingest + hỏi đáp, hiển thị citations.
 
