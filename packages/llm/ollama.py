@@ -35,3 +35,15 @@ class OllamaProvider:
         self, prompt: str, schema: type[T], **kwargs: Any
     ) -> T:
         raise provider_error(self.name, "not implemented in Phase 0")
+
+    async def complete_with_tools(
+        self,
+        messages: list[dict[str, Any]],
+        tools: list[dict[str, Any]],
+        **kwargs: Any,
+    ) -> dict[str, Any]:
+        raise provider_error(
+            self.name,
+            "not implemented — Ollama is an optional provider and is NOT "
+            "required to run the platform",
+        )

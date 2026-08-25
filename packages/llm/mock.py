@@ -29,6 +29,7 @@ class MockLLMProvider:
     def __init__(self, scripted: list[str | dict[str, Any]] | None = None) -> None:
         self._script: deque[str | dict[str, Any]] = deque(scripted or [])
         self.calls: list[dict[str, Any]] = []
+        self.tool_responses: list[dict[str, Any]] = []
 
     @property
     def name(self) -> str:
@@ -79,3 +80,37 @@ class MockLLMProvider:
                 "dict output matching the requested schema."
             ) from exc
         return schema.model_validate(data)
+
+    # ------------------------------------------------------------------
+    # Tool-call protocol (Phase 3, Task 3.1) — fully scripted, no network.
+    # ------------------------------------------------------------------
+
+    async def complete_with_tools(
+        self,
+        messages: list[dict[str, Any]],
+        tools: list[dict[str, Any]],
+        *,
+        system: str | None = None,
+        temperature: float = 0.2,
+        max_tokens: int = 1024,
+        **kwargs: Any,
+    ) -> dict[str, Any]:
+        """Consume the next scripted entry.
+
+        Script formats:
+          - ``{"tool_calls": [{"id", "name", "arguments"}], "content": ...}``
+            -> returned as-is (the loop dispatches the calls).
+          - plain str / other dict -> final answer ``{"content": ...}``.
+        """
+        self.calls.append({"messages": messages, "tools": tools, "system": system})
+        raw = self._next_raw()
+        if isinstance(raw, dict) and "tool_calls" in raw:
+            response = {
+                "content": raw.get("content"),
+                "tool_calls": raw["tool_calls"],
+            }
+        else:
+            content = json.dumps(raw) if isinstance(raw, dict) else str(raw)
+            response = {"content": content, "tool_calls": None}
+        self.tool_responses.append(response)
+        return response

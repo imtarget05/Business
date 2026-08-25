@@ -117,6 +117,13 @@ class LLMProviderError(BusinessOpsError):
     default_message = "LLM provider call failed"
 
 
+class AgentExecutionError(BusinessOpsError):
+    """Tool dispatch or agent-loop execution failure."""
+
+    code = ErrorCode.INTERNAL_ERROR
+    default_message = "Agent execution failed"
+
+
 class DatabaseError(BusinessOpsError):
     code = ErrorCode.DATABASE_ERROR
     default_message = "Database operation failed"

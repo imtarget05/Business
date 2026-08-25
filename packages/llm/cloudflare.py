@@ -219,6 +219,62 @@ class CloudflareAIProvider:
                 f"response does not match schema {schema.__name__}: {exc}",
             ) from exc
 
+    async def complete_with_tools(
+        self,
+        messages: list[dict[str, Any]],
+        tools: list[dict[str, Any]],
+        *,
+        system: str | None = None,
+        temperature: float = 0.2,
+        max_tokens: int = 1024,
+        **kwargs: Any,
+    ) -> dict[str, Any]:
+        """One round of chat completion with tool specs available.
+
+        ⚠️ UNVERIFIED-AGAINST-REAL-API: assumes the Workers AI chat endpoint
+        accepts OpenAI-style ``tools`` / ``tool_calls`` fields and echoes them
+        in ``result.response.tool_calls`` with ``{"id", "name",
+        "arguments"(object)}``. Tests mock this shape; verify against the live
+        API before relying on tool calling in production.
+        """
+        payload_messages = self._messages("", system)[:-1] + list(messages)
+        result = await self._run(
+            {
+                "messages": payload_messages,
+                "tools": tools,
+                "tool_choice": "auto",
+                "temperature": temperature,
+                "max_tokens": max_tokens,
+                **kwargs,
+            },
+            model_path=self.model,
+        )
+        response = result.get("response")
+        if not isinstance(response, dict):
+            # Some models return plain text even when tools are offered.
+            if isinstance(response := result.get("response"), str):
+                return {"content": response, "tool_calls": None}
+            raise provider_error(self.name, f"unexpected result shape: {result!r}")
+        raw_calls = response.get("tool_calls") or []
+        tool_calls: list[dict[str, Any]] = []
+        for call in raw_calls:
+            fn = call.get("function") or call  # tolerate flat or nested shapes
+            name = fn.get("name")
+            arguments = fn.get("arguments", {})
+            if isinstance(arguments, str):
+                try:
+                    arguments = json.loads(arguments)
+                except json.JSONDecodeError as exc:
+                    raise provider_error(
+                        self.name,
+                        f"tool_call {name!r} arguments are not valid JSON",
+                    ) from exc
+            tool_calls.append(
+                {"id": call.get("id"), "name": name, "arguments": arguments}
+            )
+        content = response.get("content") or response.get("text")
+        return {"content": content, "tool_calls": tool_calls or None}
+
     async def aclose(self) -> None:
         await self._client.aclose()
 

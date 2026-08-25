@@ -52,6 +52,31 @@ class LLMProvider(Protocol):
         """Return a validated instance of `schema`."""
         ...
 
+    async def complete_with_tools(
+        self,
+        messages: list[dict[str, Any]],
+        tools: list[dict[str, Any]],
+        *,
+        system: str | None = None,
+        temperature: float = 0.2,
+        max_tokens: int = 1024,
+        **kwargs: Any,
+    ) -> dict[str, Any]:
+        """One round of chat completion with tool specs available.
+
+        Args:
+            messages: Running conversation (roles: user / assistant / tool).
+            tools: Provider-agnostic specs: ``{"name", "description",
+                "parameters"}`` (JSON Schema), as produced by
+                :meth:`packages.core.tools.ToolRegistry.list_schemas`.
+
+        Returns:
+            ``{"content": str | None, "tool_calls": list[dict] | None}``
+            where each tool_call is ``{"id", "name", "arguments": dict}``.
+            Exactly one of content/tool_calls is meaningful per round.
+        """
+        ...
+
 
 @runtime_checkable
 class EmbeddingProvider(Protocol):
