@@ -20,10 +20,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from agents.knowledge.agent import NO_INFO_ANSWER, KnowledgeAgent
 from agents.knowledge.ingest import IngestionService
 from packages.config.settings import get_settings
+from packages.core.errors import NotFoundError
 from packages.database.repositories.documents import KnowledgeRepository
 from packages.database.session import get_session
 from packages.llm.factory import get_embedding_provider, get_llm_provider
 from packages.observability.logging import get_logger
+
+from apps.api.deps import resolve_org
 
 router = APIRouter(prefix="/v1/knowledge", tags=["knowledge"])
 logger = get_logger("knowledge")
@@ -42,39 +45,8 @@ class QueryRequest(BaseModel):
     organization_id: UUID | None = None
 
 
-async def _resolve_org(requested: UUID | None) -> UUID:
-    if requested is not None:
-        return requested
-    org = await _default_org()
-    if org is None:
-        raise HTTPException(
-            status_code=422,
-            detail="organization_id is required (no default organization exists)",
-        )
-    return org
-
-
-async def _default_org() -> UUID | None:
-    from sqlalchemy import select
-
-    from packages.database.models import Organization
-
-    session: AsyncSession
-    # Use the request-scoped session via a short-lived factory to avoid a
-    # second engine; simplest correct approach is a fresh session.
-    from packages.database.session import get_session_factory
-
-    factory = get_session_factory(get_settings())
-    async with factory() as session:
-        row = (
-            await session.execute(select(Organization).order_by(Organization.created_at))
-        ).scalars().first()
-        return row.id if row else None
-
-
 @router.post("/ingest")
-async def ingest(body: IngestRequest, db: AsyncSession = Depends(get_session)) -> dict:
-    org_id = await _resolve_org(body.organization_id)
+async def ingest(body: IngestRequest, db: AsyncSession = Depends(get_session), org_id: UUID = Depends(resolve_org)) -> dict:
     service = IngestionService(KnowledgeRepository(db), get_embedding_provider(get_settings()))
     try:
         doc = await service.ingest(
@@ -98,8 +70,7 @@ async def ingest(body: IngestRequest, db: AsyncSession = Depends(get_session)) -
 
 
 @router.post("/query")
-async def query(body: QueryRequest, db: AsyncSession = Depends(get_session)) -> dict:
-    org_id = await _resolve_org(body.organization_id)
+async def query(body: QueryRequest, db: AsyncSession = Depends(get_session), org_id: UUID = Depends(resolve_org)) -> dict:
     s = get_settings()
     agent = KnowledgeAgent(
         repository=KnowledgeRepository(db),
@@ -131,25 +102,19 @@ async def query(body: QueryRequest, db: AsyncSession = Depends(get_session)) -> 
 
 @router.delete("/documents/{document_id}")
 async def delete_document(
-    document_id: UUID, db: AsyncSession = Depends(get_session)
+    document_id: UUID, db: AsyncSession = Depends(get_session), org_id: UUID = Depends(resolve_org)
 ) -> dict:
     repo = KnowledgeRepository(db)
-    org_id = await _default_org()
-    if org_id is None:
-        raise HTTPException(status_code=422, detail="no default organization exists")
     deleted = await repo.delete_document(org_id, document_id)
     await db.commit()
     if not deleted:
-        raise HTTPException(status_code=404, detail="document not found")
+        raise NotFoundError("document not found")
     return {"deleted": True, "document_id": str(document_id)}
 
 
 @router.get("/documents")
-async def list_documents(db: AsyncSession = Depends(get_session)) -> dict:
+async def list_documents(db: AsyncSession = Depends(get_session), org_id: UUID = Depends(resolve_org)) -> dict:
     repo = KnowledgeRepository(db)
-    org_id = await _default_org()
-    if org_id is None:
-        return {"documents": []}
     docs = await repo.list_documents(org_id)
     return {
         "documents": [

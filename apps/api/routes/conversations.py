@@ -23,12 +23,15 @@ from agents.support.tools import create_support_tools
 from packages.config.settings import get_settings
 from packages.contracts.enums import Domain
 from packages.contracts.models import TaskContext, TaskRequest
-from packages.core.tools import ToolRegistry, execute_tool_loop
+from packages.core.errors import NotFoundError
+from packages.core.tools import ToolRegistry
 from packages.database.repositories.conversations import ConversationRepository
 from packages.database.session import get_session, get_session_factory
 from packages.llm.factory import get_llm_provider
 from packages.llm.mock import MockLLMProvider
 from packages.observability.logging import get_logger
+
+from apps.api.deps import resolve_org
 
 router = APIRouter(prefix="/v1/conversations", tags=["conversations"])
 logger = get_logger("conversations")
@@ -113,33 +116,14 @@ ConversationThreadResponse.model_rebuild()
 # ---------------------------------------------------------------------------
 
 
-async def _resolve_org(requested: UUID | None, db: AsyncSession) -> UUID:
-    """Resolve organization_id from request or fall back to default org."""
-    if requested is not None:
-        return requested
-
-    # Fall back to first organization in DB (dev/default behavior)
-    from sqlalchemy import select
-
-    from packages.database.models import Organization
-
-    row = (
-        await db.execute(select(Organization).order_by(Organization.created_at))
-    ).scalars().first()
-    if row is None:
-        raise HTTPException(
-            status_code=422,
-            detail="organization_id is required (no default organization exists)",
-        )
-    return row.id
-
-
 async def _run_support_agent_with_actions(
     agent: SupportAgent,
     conversation_id: UUID,
     org_id: UUID,
     user_message: str,
     channel: str,
+    max_rounds: int,
+    task_id: UUID,
 ) -> tuple[str, list[ActionMetadata]]:
     """Run the support agent on a user message and return (reply, actions_metadata).
 
@@ -158,7 +142,7 @@ async def _run_support_agent_with_actions(
             organization_id=org_id,
             channel=channel,
         ),
-        task_id=uuid.uuid4(),
+        task_id=task_id,
     )
 
     # Build the prompt like the agent does
@@ -170,7 +154,6 @@ async def _run_support_agent_with_actions(
     actions: list[ActionMetadata] = []
 
     # Use the same loop logic as execute_tool_loop but capture tool calls
-    max_rounds = 5
     for _ in range(max_rounds):
         response = await agent.llm.complete_with_tools(
             conversation,
@@ -243,10 +226,9 @@ async def _run_support_agent_with_actions(
 async def create_conversation(
     body: ConversationCreateRequest,
     db: AsyncSession = Depends(get_session),
+    org_id: UUID = Depends(resolve_org),
 ) -> ConversationCreateResponse:
     """Create a new conversation thread."""
-    org_id = await _resolve_org(body.organization_id, db)
-
     repo = ConversationRepository(db)
     conv = await repo.create_conversation(
         organization_id=org_id,
@@ -278,26 +260,29 @@ async def append_message(
     conversation_id: UUID,
     body: MessageCreateRequest,
     db: AsyncSession = Depends(get_session),
+    org_id: UUID = Depends(resolve_org),
 ) -> MessageCreateResponse:
     """Append a user message, run the support agent, persist assistant reply + actions."""
-    org_id = await _resolve_org(body.organization_id, db)
-
     repo = ConversationRepository(db)
 
+    # Org from request (body/query) — explicit here because this endpoint has a body
+    from apps.api.deps import _resolve_org
+    effective_org = await _resolve_org(body.organization_id, db)
+
     # Verify conversation exists and belongs to org
-    conv = await repo.get_conversation(org_id, conversation_id)
+    conv = await repo.get_conversation(effective_org, conversation_id)
     if conv is None:
-        raise HTTPException(status_code=404, detail="conversation not found")
+        raise NotFoundError("conversation not found", task_id=uuid.uuid4())
 
     # Append user message
     user_msg = await repo.append_message(
-        organization_id=org_id,
+        organization_id=effective_org,
         conversation_id=conversation_id,
         role="user",
         content=body.content,
     )
     if user_msg is None:
-        raise HTTPException(status_code=404, detail="conversation not found")
+        raise NotFoundError("conversation not found", task_id=uuid.uuid4())
 
     # Create support agent with session factory for this request
     settings = get_settings()
@@ -307,13 +292,18 @@ async def append_message(
     agent._tools = create_support_tools(session_factory)
     agent._registry = ToolRegistry(*agent._tools)
 
+    # Generate a task_id for this agent run to propagate into errors
+    task_id = uuid.uuid4()
+
     # Run support agent on the user message
     assistant_reply, actions = await _run_support_agent_with_actions(
         agent=agent,
         conversation_id=conversation_id,
-        org_id=org_id,
+        org_id=effective_org,
         user_message=body.content,
         channel=conv.channel,
+        max_rounds=settings.agent_max_tool_rounds,
+        task_id=task_id,
     )
 
     # Append assistant message with tool metadata
@@ -329,14 +319,14 @@ async def append_message(
         ]
     }
     assistant_msg = await repo.append_message(
-        organization_id=org_id,
+        organization_id=effective_org,
         conversation_id=conversation_id,
         role="assistant",
         content=assistant_reply,
         tool_metadata=tool_metadata,
     )
     if assistant_msg is None:
-        raise HTTPException(status_code=404, detail="conversation not found")
+        raise NotFoundError("conversation not found", task_id=task_id)
 
     await db.commit()
 
@@ -363,16 +353,14 @@ async def append_message(
 @router.get("/{conversation_id}", response_model=ConversationThreadResponse)
 async def get_conversation(
     conversation_id: UUID,
-    organization_id: UUID | None = None,
     db: AsyncSession = Depends(get_session),
+    org_id: UUID = Depends(resolve_org),
 ) -> ConversationThreadResponse:
     """Get full conversation thread with all messages."""
-    org_id = await _resolve_org(organization_id, db)
-
     repo = ConversationRepository(db)
     conv = await repo.get_conversation(org_id, conversation_id)
     if conv is None:
-        raise HTTPException(status_code=404, detail="conversation not found")
+        raise NotFoundError("conversation not found")
 
     messages = await repo.list_messages(org_id, conversation_id)
 
@@ -398,16 +386,14 @@ async def get_conversation(
 @router.get("/{conversation_id}/messages", response_model=list[MessageResponse])
 async def list_messages(
     conversation_id: UUID,
-    organization_id: UUID | None = None,
     db: AsyncSession = Depends(get_session),
+    org_id: UUID = Depends(resolve_org),
 ) -> list[MessageResponse]:
     """Get messages for a conversation (org-scoped)."""
-    org_id = await _resolve_org(organization_id, db)
-
     repo = ConversationRepository(db)
     conv = await repo.get_conversation(org_id, conversation_id)
     if conv is None:
-        raise HTTPException(status_code=404, detail="conversation not found")
+        raise NotFoundError("conversation not found")
 
     messages = await repo.list_messages(org_id, conversation_id)
 

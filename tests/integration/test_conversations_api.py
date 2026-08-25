@@ -299,7 +299,7 @@ def test_org_scoping_conversation_not_found_cross_org(client) -> None:
         params={"organization_id": "00000000-0000-0000-0000-000000000002"},
     )
     assert resp.status_code == 404, resp.text
-    assert resp.json()["detail"] == "conversation not found"
+    assert resp.json()["error"]["message"] == "conversation not found"
 
 
 def test_org_scoping_append_message_cross_org(client) -> None:
@@ -317,7 +317,7 @@ def test_org_scoping_append_message_cross_org(client) -> None:
         json={"content": "Hack attempt", "organization_id": "00000000-0000-0000-0000-000000000002"},
     )
     assert resp.status_code == 404, resp.text
-    assert resp.json()["detail"] == "conversation not found"
+    assert resp.json()["error"]["message"] == "conversation not found"
 
 
 def test_org_scoping_list_messages_cross_org(client) -> None:
@@ -332,7 +332,7 @@ def test_org_scoping_list_messages_cross_org(client) -> None:
         params={"organization_id": "00000000-0000-0000-0000-000000000002"},
     )
     assert resp.status_code == 404, resp.text
-    assert resp.json()["detail"] == "conversation not found"
+    assert resp.json()["error"]["message"] == "conversation not found"
 
 
 def test_conversation_persists_tool_metadata(client) -> None:

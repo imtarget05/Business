@@ -92,6 +92,9 @@ class Settings(BaseSettings):
     knowledge_similarity_threshold: float = 0.75
     knowledge_top_k: int = 4
 
+    # --- Agent tool loop (Phase 3) -------------------------------------------
+    agent_max_tool_rounds: int = 5
+
     # --- Cloudflare Workers AI (optional provider) -----------------------------
     cloudflare_account_id: str | None = None
     cloudflare_api_token: str | None = None
