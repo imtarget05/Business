@@ -107,6 +107,23 @@ class MessageResponse(BaseModel):
     tool_metadata: dict | None = None
 
 
+class ConversationListItem(BaseModel):
+    """Conversation item for list view."""
+
+    conversation_id: UUID
+    organization_id: UUID
+    channel: str
+    status: str
+    subject: str | None = None
+    updated_at: str | None = None
+
+
+class ConversationListResponse(BaseModel):
+    """Response for listing conversations."""
+
+    conversations: list[ConversationListItem]
+
+
 # Forward reference resolution
 ConversationThreadResponse.model_rebuild()
 
@@ -407,3 +424,29 @@ async def list_messages(
         )
         for m in messages
     ]
+
+
+@router.get("", response_model=ConversationListResponse)
+async def list_conversations(
+    db: AsyncSession = Depends(get_session),
+    org_id: UUID = Depends(resolve_org),
+    limit: int = 50,
+    offset: int = 0,
+) -> ConversationListResponse:
+    """List conversations for the organization, ordered by updated_at desc."""
+    repo = ConversationRepository(db)
+    conversations = await repo.list_conversations(org_id, limit=limit, offset=offset)
+
+    return ConversationListResponse(
+        conversations=[
+            ConversationListItem(
+                conversation_id=c.id,
+                organization_id=c.organization_id,
+                channel=c.channel,
+                status=c.status.value,
+                subject=c.subject,
+                updated_at=c.updated_at.isoformat() if c.updated_at else None,
+            )
+            for c in conversations
+        ]
+    )

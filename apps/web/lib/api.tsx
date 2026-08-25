@@ -100,6 +100,77 @@ export type AgentView = {
   max_retries?: number;
 };
 
+// ---------------------------------------------------------------------------
+// Conversations (Phase 3 Task 3.5)
+// ---------------------------------------------------------------------------
+
+export type ConversationListItem = {
+  conversation_id: string;
+  organization_id: string;
+  channel: string;
+  status: string;
+  subject?: string | null;
+  updated_at?: string | null;
+};
+
+export type ConversationListResponse = {
+  conversations: ConversationListItem[];
+};
+
+export type ConversationThreadResponse = {
+  conversation_id: string;
+  organization_id: string;
+  channel: string;
+  status: string;
+  subject?: string | null;
+  messages: MessageResponse[];
+};
+
+export type MessageResponse = {
+  message_id: string;
+  sequence: number;
+  role: string;
+  content: string;
+  tool_metadata?: {
+    actions: Array<{
+      tool: string;
+      arguments: Record<string, unknown>;
+      result: string;
+      mode?: string | null;
+    }>;
+  } | null;
+};
+
+export type MessageCreateRequest = {
+  content: string;
+};
+
+export type MessageCreateResponse = {
+  conversation_id: string;
+  user_message_id: string;
+  assistant_message_id: string;
+  assistant_reply: string;
+  actions: Array<{
+    tool: string;
+    arguments: Record<string, unknown>;
+    result: string;
+    mode?: string | null;
+  }>;
+};
+
+export type ConversationCreateRequest = {
+  channel: string;
+  subject?: string;
+};
+
+export type ConversationCreateResponse = {
+  conversation_id: string;
+  organization_id: string;
+  channel: string;
+  status: string;
+  subject?: string | null;
+};
+
 export const TASK_STATUSES = [
   "pending",
   "classifying",
@@ -141,5 +212,36 @@ export function StatusBadge({ status }: { status: string }) {
     >
       {status}
     </span>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Conversation API helpers
+// ---------------------------------------------------------------------------
+
+export async function getConversations(): Promise<ConversationListResponse> {
+  return apiGet<ConversationListResponse>("/v1/conversations");
+}
+
+export async function getConversation(
+  id: string,
+): Promise<ConversationThreadResponse> {
+  return apiGet<ConversationThreadResponse>(`/v1/conversations/${id}`);
+}
+
+export async function createConversation(
+  body: ConversationCreateRequest,
+): Promise<ConversationCreateResponse> {
+  return apiSend<ConversationCreateResponse>("/v1/conversations", "POST", body);
+}
+
+export async function sendMessage(
+  conversationId: string,
+  body: MessageCreateRequest,
+): Promise<MessageCreateResponse> {
+  return apiSend<MessageCreateResponse>(
+    `/v1/conversations/${conversationId}/messages`,
+    "POST",
+    body,
   );
 }

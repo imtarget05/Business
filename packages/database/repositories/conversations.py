@@ -109,6 +109,23 @@ class ConversationRepository:
         return list((await self._session.execute(stmt)).scalars().all())
 
     # ------------------------------------------------------------------
+    # Conversation listing
+    # ------------------------------------------------------------------
+
+    async def list_conversations(
+        self, organization_id: UUID, *, limit: int = 50, offset: int = 0
+    ) -> list[Conversation]:
+        """List conversations for an organization, ordered by updated_at desc."""
+        stmt = (
+            select(Conversation)
+            .where(Conversation.organization_id == organization_id)
+            .order_by(Conversation.updated_at.desc())
+            .limit(limit)
+            .offset(offset)
+        )
+        return list((await self._session.execute(stmt)).scalars().all())
+
+    # ------------------------------------------------------------------
 
     async def _next_sequence(self, conversation_id: UUID) -> int:
         stmt = select(func.max(Message.sequence)).where(

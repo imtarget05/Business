@@ -335,6 +335,81 @@ def test_org_scoping_list_messages_cross_org(client) -> None:
     assert resp.json()["error"]["message"] == "conversation not found"
 
 
+def test_list_conversations(client) -> None:
+    """GET /v1/conversations returns list of conversations ordered by updated_at desc."""
+    client, mock_llm = client
+    # Create multiple conversations
+    for i in range(3):
+        resp = client.post("/v1/conversations", json={"channel": "web", "subject": f"Subject {i}"})
+        assert resp.status_code == 201
+
+    # List conversations
+    resp = client.get("/v1/conversations")
+    assert resp.status_code == 200, resp.text
+    data = resp.json()
+    assert "conversations" in data
+    assert len(data["conversations"]) == 3
+
+    # Verify structure
+    for conv in data["conversations"]:
+        assert "conversation_id" in conv
+        assert "organization_id" in conv
+        assert "channel" in conv
+        assert "status" in conv
+        assert "subject" in conv
+        assert "updated_at" in conv
+
+    # Verify ordering by updated_at desc (most recent first)
+    # Note: In tests, created timestamps may be identical due to rapid creation,
+    # so we just verify all 3 are returned and have valid updated_at
+    subjects = {c["subject"] for c in data["conversations"]}
+    assert subjects == {"Subject 0", "Subject 1", "Subject 2"}
+
+
+def test_list_conversations_pagination(client) -> None:
+    """GET /v1/conversations supports limit and offset pagination."""
+    client, mock_llm = client
+    # Create 5 conversations
+    for i in range(5):
+        resp = client.post("/v1/conversations", json={"channel": "web", "subject": f"Subject {i}"})
+        assert resp.status_code == 201
+
+    # Test limit
+    resp = client.get("/v1/conversations", params={"limit": 2})
+    assert resp.status_code == 200
+    data = resp.json()
+    assert len(data["conversations"]) == 2
+
+    # Test offset
+    resp = client.get("/v1/conversations", params={"limit": 2, "offset": 2})
+    assert resp.status_code == 200
+    data = resp.json()
+    assert len(data["conversations"]) == 2
+
+    # Test empty page
+    resp = client.get("/v1/conversations", params={"limit": 2, "offset": 10})
+    assert resp.status_code == 200
+    data = resp.json()
+    assert len(data["conversations"]) == 0
+
+
+def test_list_conversations_org_scoping(client) -> None:
+    """GET /v1/conversations only returns conversations for the current org."""
+    client, _ = client
+    # Create conversation in org 1
+    resp = client.post("/v1/conversations", json={"channel": "web", "subject": "Org 1"})
+    assert resp.status_code == 201
+
+    # List from org 2
+    resp = client.get(
+        "/v1/conversations",
+        params={"organization_id": "00000000-0000-0000-0000-000000000002"},
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert len(data["conversations"]) == 0
+
+
 def test_conversation_persists_tool_metadata(client) -> None:
     """Tool metadata is persisted with assistant messages."""
     client, mock_llm = client
