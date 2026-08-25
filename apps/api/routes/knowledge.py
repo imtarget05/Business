@@ -19,14 +19,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from agents.knowledge.agent import NO_INFO_ANSWER, KnowledgeAgent
 from agents.knowledge.ingest import IngestionService
+from apps.api.deps import resolve_org
 from packages.config.settings import get_settings
 from packages.core.errors import NotFoundError
 from packages.database.repositories.documents import KnowledgeRepository
 from packages.database.session import get_session
 from packages.llm.factory import get_embedding_provider, get_llm_provider
 from packages.observability.logging import get_logger
-
-from apps.api.deps import resolve_org
 
 router = APIRouter(prefix="/v1/knowledge", tags=["knowledge"])
 logger = get_logger("knowledge")
@@ -46,7 +45,11 @@ class QueryRequest(BaseModel):
 
 
 @router.post("/ingest")
-async def ingest(body: IngestRequest, db: AsyncSession = Depends(get_session), org_id: UUID = Depends(resolve_org)) -> dict:
+async def ingest(
+    body: IngestRequest,
+    db: AsyncSession = Depends(get_session),
+    org_id: UUID = Depends(resolve_org),
+) -> dict:
     service = IngestionService(KnowledgeRepository(db), get_embedding_provider(get_settings()))
     try:
         doc = await service.ingest(
@@ -70,7 +73,11 @@ async def ingest(body: IngestRequest, db: AsyncSession = Depends(get_session), o
 
 
 @router.post("/query")
-async def query(body: QueryRequest, db: AsyncSession = Depends(get_session), org_id: UUID = Depends(resolve_org)) -> dict:
+async def query(
+    body: QueryRequest,
+    db: AsyncSession = Depends(get_session),
+    org_id: UUID = Depends(resolve_org),
+) -> dict:
     s = get_settings()
     agent = KnowledgeAgent(
         repository=KnowledgeRepository(db),
@@ -113,7 +120,10 @@ async def delete_document(
 
 
 @router.get("/documents")
-async def list_documents(db: AsyncSession = Depends(get_session), org_id: UUID = Depends(resolve_org)) -> dict:
+async def list_documents(
+    db: AsyncSession = Depends(get_session),
+    org_id: UUID = Depends(resolve_org),
+) -> dict:
     repo = KnowledgeRepository(db)
     docs = await repo.list_documents(org_id)
     return {

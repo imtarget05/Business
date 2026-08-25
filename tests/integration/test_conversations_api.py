@@ -12,7 +12,6 @@ import asyncio
 import os
 import tempfile
 import uuid as _uuid
-from unittest.mock import patch
 
 import pytest
 from fastapi.testclient import TestClient
@@ -24,7 +23,6 @@ from packages.config.settings import Settings
 from packages.database import models
 from packages.database.base import Base
 from packages.database.session import get_session_factory
-from packages.llm.factory import get_llm_provider
 from packages.llm.mock import MockLLMProvider
 
 
@@ -230,7 +228,9 @@ def test_append_message_send_email_dry_run_in_actions(client) -> None:
 def test_get_conversation_thread(client) -> None:
     """GET /v1/conversations/{id} returns full thread with messages."""
     client, mock_llm = client
-    create_resp = client.post("/v1/conversations", json={"channel": "web", "subject": "Thread test"})
+    create_resp = client.post(
+        "/v1/conversations", json={"channel": "web", "subject": "Thread test"}
+    )
     assert create_resp.status_code == 201
     conv_id = create_resp.json()["conversation_id"]
 

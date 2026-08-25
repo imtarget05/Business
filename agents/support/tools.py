@@ -1,7 +1,7 @@
 """Support Agent tools (Phase 3, Task 3.3).
 
 Three tools:
-- send_email_reply: SMTP send with DRY-RUN mode default (draft-only; real send behind settings flag).
+- send_email_reply: SMTP send with DRY-RUN default (draft-only; real send behind flag).
 - create_ticket: creates a simple ticket record.
 - lookup_customer: CRUD-lite over a simple customers table.
 
@@ -20,7 +20,7 @@ from uuid import UUID
 from packages.config.settings import get_settings
 from packages.core.tools import Tool
 from packages.database.models import Customer, Ticket, TicketStatus
-from packages.database.session import get_session_factory, async_sessionmaker, AsyncSession
+from packages.database.session import AsyncSession, async_sessionmaker, get_session_factory
 
 
 def _default_session_factory() -> async_sessionmaker[AsyncSession]:

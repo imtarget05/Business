@@ -92,6 +92,9 @@ class Settings(BaseSettings):
     knowledge_similarity_threshold: float = 0.75
     knowledge_top_k: int = 4
 
+    # --- Router (Phase 4) -----------------------------------------------------
+    router_confidence_threshold: float = 0.6
+
     # --- Agent tool loop (Phase 3) -------------------------------------------
     agent_max_tool_rounds: int = 5
 

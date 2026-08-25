@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from agents.support.tools import create_support_tools
 from packages.contracts.enums import AgentResponseStatus, Domain
 from packages.contracts.models import (
     AgentDescriptor,
@@ -9,12 +10,10 @@ from packages.contracts.models import (
     ErrorDetail,
     TaskRequest,
 )
-from packages.core.errors import AgentExecutionError, ToolExecutionError
+from packages.core.errors import ToolExecutionError
 from packages.core.tools import ToolRegistry, execute_tool_loop
 from packages.llm.base import LLMProvider
 from packages.llm.mock import MockLLMProvider
-
-from agents.support.tools import create_support_tools
 
 SUPPORTED_ACTIONS = {"triage", "draft_reply", "create_ticket", "lookup_customer", "send_email"}
 
@@ -29,7 +28,8 @@ class SupportAgent:
             name="support",
             domain=Domain.SUPPORT,
             version="1",
-            description="Triage inbound support requests, draft replies, and manage tickets/customers via tools.",
+            description="Triage inbound support requests, draft replies, and "
+            "manage tickets/customers via tools.",
             capabilities=frozenset(
                 {
                     "support.triage",
@@ -102,7 +102,8 @@ class SupportAgent:
     def _system_prompt(self) -> str:
         return (
             "You are a support agent. Use the available tools to help customers. "
-            "Available tools: send_email_reply (drafts or sends email), create_ticket (creates a ticket), "
+            "Available tools: send_email_reply (drafts or sends email), "
+            "create_ticket (creates a ticket), "
             "lookup_customer (CRUD on customers). All tools are org-scoped. "
             "Always use the organization_id from the context."
         )
@@ -123,7 +124,7 @@ class SupportAgent:
         if request.action == "triage":
             return base + "\nTriage this request and decide next steps. Use tools if needed."
         elif request.action == "draft_reply":
-            return base + "\nDraft a reply to the customer. Use send_email_reply tool in DRY-RUN mode."
+            return base + "\nDraft a reply to the customer. Use send_email_reply in DRY-RUN mode."
         elif request.action == "create_ticket":
             customer_id = payload.get("customer_id")
             return base + f"\nCreate a ticket for customer {customer_id}. Use create_ticket tool."

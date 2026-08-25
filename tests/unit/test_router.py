@@ -12,13 +12,10 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from typing import Any
-from uuid import UUID, uuid4
 
 import pytest
 
 from packages.contracts.enums import AgentStatus, Domain
-from packages.contracts.models import AgentDescriptor
 from packages.core.router import (
     ROUTER_INTENTS,
     Classification,

@@ -2,24 +2,24 @@
 
 Endpoints:
 - POST   /v1/conversations              — create a conversation (org_id from request)
-- POST   /v1/conversations/{id}/messages — append user message → run support agent → persist assistant reply + actions
+- POST   /v1/conversations/{id}/messages — user msg → support agent → persist reply
 - GET    /v1/conversations/{id}         — thread view (conversation + messages)
 - GET    /v1/conversations/{id}/messages — messages only
 """
 
 from __future__ import annotations
 
-import json
 import uuid
-from typing import Any, Literal
+from typing import Literal
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from agents.support.agent import SupportAgent, create_support_agent
 from agents.support.tools import create_support_tools
+from apps.api.deps import resolve_org
 from packages.config.settings import get_settings
 from packages.contracts.enums import Domain
 from packages.contracts.models import TaskContext, TaskRequest
@@ -28,10 +28,7 @@ from packages.core.tools import ToolRegistry, execute_tool_loop
 from packages.database.repositories.conversations import ConversationRepository
 from packages.database.session import get_session, get_session_factory
 from packages.llm.factory import get_llm_provider
-from packages.llm.mock import MockLLMProvider
 from packages.observability.logging import get_logger
-
-from apps.api.deps import resolve_org
 
 router = APIRouter(prefix="/v1/conversations", tags=["conversations"])
 logger = get_logger("conversations")
@@ -49,7 +46,9 @@ class ConversationCreateRequest(BaseModel):
         ..., description="Channel: web, email, zalo, or facebook"
     )
     subject: str | None = Field(None, max_length=512, description="Optional subject/title")
-    organization_id: UUID | None = Field(None, description="Organization ID (defaults to pilot org)")
+    organization_id: UUID | None = Field(
+        None, description="Organization ID (defaults to pilot org)"
+    )
 
 
 class ConversationCreateResponse(BaseModel):
@@ -66,7 +65,9 @@ class MessageCreateRequest(BaseModel):
     """Request to append a user message and run the support agent."""
 
     content: str = Field(..., min_length=1, description="User message content")
-    organization_id: UUID | None = Field(None, description="Organization ID (defaults to pilot org)")
+    organization_id: UUID | None = Field(
+        None, description="Organization ID (defaults to pilot org)"
+    )
 
 
 class ActionMetadata(BaseModel):
@@ -96,7 +97,7 @@ class ConversationThreadResponse(BaseModel):
     channel: str
     status: str
     subject: str | None = None
-    messages: list["MessageResponse"]
+    messages: list[MessageResponse]
 
 
 class MessageResponse(BaseModel):

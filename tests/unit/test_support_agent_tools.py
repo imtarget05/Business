@@ -6,7 +6,6 @@ scripted mock LLM tool calls (from Task 3.1).
 
 from __future__ import annotations
 
-import json
 import os
 import tempfile
 import uuid
@@ -14,17 +13,14 @@ import uuid
 import pytest
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
-from packages.config.settings import get_settings
+from agents.support.agent import SupportAgent
+from agents.support.tools import create_support_tools
 from packages.contracts.enums import Domain
 from packages.contracts.models import TaskContext, TaskRequest
 from packages.core.errors import ToolExecutionError
-from packages.database import models
 from packages.database.base import Base
-from packages.database.models import Customer, Ticket, TicketStatus
-from packages.database.session import get_session_factory
+from packages.database.models import Customer
 from packages.llm.mock import MockLLMProvider
-from agents.support.agent import SupportAgent
-from agents.support.tools import create_support_tools
 
 
 def tmp_db() -> str:
@@ -133,7 +129,8 @@ class TestSupportAgentToolChains:
         response = await support_agent.handle(request)
 
         assert response.status.value == "success"
-        assert "ticket" in response.result["summary"].lower() or "created" in response.result["summary"].lower()
+        summary = response.result["summary"].lower()
+        assert "ticket" in summary or "created" in summary
 
         # Verify the tool was called and returned a ticket_id
         llm_calls = support_agent.llm.calls
@@ -251,7 +248,8 @@ class TestSupportAgentToolChains:
         response = await support_agent.handle(request)
 
         assert response.status.value == "success"
-        assert "draft" in response.result["summary"].lower() or "dry" in response.result["summary"].lower()
+        summary = response.result["summary"].lower()
+        assert "draft" in summary or "dry" in summary
 
     @pytest.mark.asyncio
     async def test_full_support_flow_lookup_create_email(self, support_agent, org_id, db):

@@ -7,10 +7,11 @@ from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
+from apps.api.routes.conversations import router as conversations_router
 from apps.api.routes.health import router as health_router
 from apps.api.routes.knowledge import router as knowledge_router
+from apps.api.routes.router import router as dispatch_router
 from apps.api.routes.tasks import router as v1_router
-from apps.api.routes.conversations import router as conversations_router
 from packages.config.settings import get_settings
 from packages.core.bootstrap import get_container
 from packages.core.errors import (
@@ -55,6 +56,7 @@ def create_app() -> FastAPI:
     app.include_router(health_router)
     app.include_router(v1_router)
     app.include_router(knowledge_router)
+    app.include_router(dispatch_router)
     app.include_router(conversations_router)
 
     @app.middleware("http")

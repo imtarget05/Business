@@ -16,18 +16,16 @@ import uuid
 import pytest
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
-from packages.config.settings import get_settings
-from packages.core.errors import NotFoundError, ValidationError
-from packages.database import models
-from packages.database.base import Base
-from packages.database.models import Customer, Ticket, TicketStatus
-from packages.database.session import get_session_factory, session_scope
 from agents.support.tools import (
-    SendEmailReplyTool,
     CreateTicketTool,
     LookupCustomerTool,
+    SendEmailReplyTool,
     create_support_tools,
 )
+from packages.config.settings import get_settings
+from packages.core.errors import NotFoundError, ValidationError
+from packages.database.base import Base
+from packages.database.models import Customer, Ticket, TicketStatus
 
 
 def tmp_db() -> str:
@@ -361,7 +359,9 @@ class TestLookupCustomerTool:
             )
 
     @pytest.mark.asyncio
-    async def test_get_customer_rejects_foreign_org(self, tool, db, org_id, other_org_id, test_customer):
+    async def test_get_customer_rejects_foreign_org(
+        self, tool, db, org_id, other_org_id, test_customer
+    ):
         """Get rejects customer from different org."""
         with pytest.raises(NotFoundError, match="Customer not found"):
             await tool.run(
@@ -515,7 +515,9 @@ class TestLookupCustomerTool:
             assert customer is None
 
     @pytest.mark.asyncio
-    async def test_delete_customer_rejects_foreign_org(self, tool, db, org_id, other_org_id, test_customer):
+    async def test_delete_customer_rejects_foreign_org(
+        self, tool, db, org_id, other_org_id, test_customer
+    ):
         """Delete rejects customer from different org."""
         with pytest.raises(NotFoundError, match="Customer not found"):
             await tool.run(

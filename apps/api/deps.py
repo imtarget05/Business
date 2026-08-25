@@ -7,7 +7,6 @@ from uuid import UUID
 from fastapi import Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from packages.config.settings import get_settings
 from packages.database.models import Organization
 from packages.database.session import get_session
 

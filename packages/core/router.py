@@ -17,7 +17,6 @@ from typing import Protocol
 from pydantic import BaseModel, Field
 
 from packages.llm.base import LLMProvider
-from packages.contracts.enums import Domain
 
 
 class _AgentRegistryProtocol(Protocol):
@@ -57,7 +56,11 @@ def _build_routing_table(registry: _AgentRegistryProtocol | None) -> frozenset[t
 RULE_FALLBACKS: tuple[tuple[tuple[str, ...], tuple[str, str]], ...] = (
     (("hoàn tiền", "refund", "trả hàng", "return"), ("support", "triage")),
     (("khiếu nại", "complaint", "không hoạt động", "broken", "lỗi"), ("support", "triage")),
-    (("chính sách", "policy", "bao nhiêu", "bảo hành", "warranty", "đổi trả", "faq", "ship", "vận chuyển"), ("knowledge", "query")),
+    (
+        ("chính sách", "policy", "bao nhiêu", "bảo hành", "warranty",
+         "đổi trả", "faq", "ship", "vận chuyển"),
+        ("knowledge", "query"),
+    ),
 )
 
 DEFAULT_CONFIDENCE_THRESHOLD = 0.6
