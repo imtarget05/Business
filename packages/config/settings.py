@@ -63,6 +63,9 @@ class Settings(BaseSettings):
     # When non-empty, callers are bound to their organization server-side;
     # client-supplied organization_id values are ignored everywhere.
     tenant_api_keys: dict[str, str] = {}
+    # Rate limiting: requests per minute per API key (sliding window).
+    # Set to 0 to disable. Default 60 req/min for production pilot.
+    rate_limit_per_minute: int = 60
 
     # --- Database (Neon PostgreSQL in production; pgvector-enabled locally) ---
     database_url: str = (

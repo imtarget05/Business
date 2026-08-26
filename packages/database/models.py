@@ -69,6 +69,32 @@ class User(Base, TimestampMixin):
 
 
 # ---------------------------------------------------------------------------
+# API Keys (Task 5.3) — DB-backed authentication
+# ---------------------------------------------------------------------------
+
+
+class ApiKey(Base, TimestampMixin):
+    """API key credential bound to an organization.
+
+    Only the SHA-256 hash of the key is stored. The plaintext key is returned
+    exactly once at creation time and never persisted.
+    """
+
+    __tablename__ = "api_keys"
+
+    id: Mapped[UUID] = _uuid_pk()
+    key_hash: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, index=True)
+    organization_id: Mapped[UUID] = mapped_column(
+        ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    organization: Mapped[Organization] = relationship()
+
+
+# ---------------------------------------------------------------------------
 # Agent registry (persistent mirror of AgentDescriptor contracts)
 # ---------------------------------------------------------------------------
 

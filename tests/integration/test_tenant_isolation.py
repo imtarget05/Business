@@ -27,7 +27,7 @@ import packages.database.session as session_mod
 import packages.config.settings as settings_mod
 from apps.api.main import create_app
 from agents.support.tools import CreateTicketTool, SendEmailReplyTool
-from packages.config.settings import Settings
+from packages.config.settings import Settings, LLMProviderKind
 from packages.core.errors import ToolExecutionError
 from packages.database import models
 from packages.database.base import Base
@@ -45,9 +45,10 @@ def _settings(url: str) -> Settings:
     return Settings(
         database_url=url,
         persistence_enabled=True,
-        llm_provider="mock",
+        llm_provider=LLMProviderKind.MOCK,
         api_key=None,
         tenant_api_keys={KEY_A: ORG_A, KEY_B: ORG_B},
+        rate_limit_per_minute=1000,  # High limit for tests
     )
 
 
@@ -65,11 +66,16 @@ def client(tmp_path, monkeypatch):
     live = settings_mod.get_settings()
     monkeypatch.setattr(live, "api_key", None)
     monkeypatch.setattr(live, "tenant_api_keys", {KEY_A: ORG_A, KEY_B: ORG_B})
+    monkeypatch.setattr(live, "rate_limit_per_minute", 1000)
     # Routes read the cached singleton; mirror our sqlite/persistence config.
     monkeypatch.setattr(live, "database_url", f"sqlite+aiosqlite:///{(tmp_path / 'tenants.db').as_posix()}")
     monkeypatch.setattr(live, "persistence_enabled", True)
 
-    async def _setup():
+    import os
+    # Set rate limit env var before creating TestClient
+    os.environ["RATE_LIMIT_PER_MINUTE"] = "1000"
+
+    async def _setup() -> None:
         eng = create_async_engine(url)
         async with eng.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)

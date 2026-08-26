@@ -21,6 +21,7 @@ class ErrorCode(StrEnum):
     VALIDATION_ERROR = "VALIDATION_ERROR"
     AUTHENTICATION_ERROR = "AUTHENTICATION_ERROR"
     AUTHORIZATION_ERROR = "AUTHORIZATION_ERROR"
+    RATE_LIMITED = "RATE_LIMITED"
     AGENT_NOT_FOUND = "AGENT_NOT_FOUND"
     AGENT_UNAVAILABLE = "AGENT_UNAVAILABLE"
     AGENT_TIMEOUT = "AGENT_TIMEOUT"
@@ -39,6 +40,7 @@ _HTTP_STATUS = {
     ErrorCode.VALIDATION_ERROR: 422,
     ErrorCode.AUTHENTICATION_ERROR: 401,
     ErrorCode.AUTHORIZATION_ERROR: 403,
+    ErrorCode.RATE_LIMITED: 429,
     ErrorCode.AGENT_NOT_FOUND: 404,
     ErrorCode.AGENT_UNAVAILABLE: 503,
     ErrorCode.AGENT_TIMEOUT: 504,
@@ -103,6 +105,11 @@ class AuthenticationError(BusinessOpsError):
 class AuthorizationError(BusinessOpsError):
     code = ErrorCode.AUTHORIZATION_ERROR
     default_message = "Not authorized to perform this action"
+
+
+class RateLimitError(BusinessOpsError):
+    code = ErrorCode.RATE_LIMITED
+    default_message = "Rate limit exceeded"
 
 
 class AgentNotFoundError(BusinessOpsError):

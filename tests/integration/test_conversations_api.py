@@ -18,8 +18,9 @@ from fastapi.testclient import TestClient
 from sqlalchemy.ext.asyncio import create_async_engine
 
 import packages.database.session as session_mod
+import packages.config.settings as settings_mod
 from apps.api.main import create_app
-from packages.config.settings import Settings
+from packages.config.settings import Settings, LLMProviderKind
 from packages.database import models
 from packages.database.base import Base
 from packages.database.session import get_session_factory
@@ -32,15 +33,35 @@ def tmp_db() -> str:
     return path.replace("\\", "/")
 
 
-@pytest.fixture()
+@ pytest.fixture()
 def client(tmp_path, monkeypatch):
     """Fresh module state per test: point the global engine at a temp sqlite db."""
     monkeypatch.setattr(session_mod, "_engine", None)
     monkeypatch.setattr(session_mod, "_session_factory", None)
 
     url = f"sqlite+aiosqlite:///{(tmp_path / 'conv.db').as_posix()}"
-    settings = Settings(database_url=url, persistence_enabled=True, llm_provider="mock")
+    # Provide legacy tenant_api_keys for backward compatibility
+    settings = Settings(
+        database_url=url,
+        persistence_enabled=True,
+        llm_provider=LLMProviderKind.MOCK,
+        tenant_api_keys={
+            "tenant-key-a": "00000000-0000-0000-0000-000000000001",
+            "tenant-key-b": "00000000-0000-0000-0000-000000000002",
+        },
+    )
     get_session_factory(settings)
+
+    # Point the cached settings singleton at our test configuration
+    live = settings_mod.get_settings()
+    monkeypatch.setattr(live, "database_url", url)
+    monkeypatch.setattr(live, "persistence_enabled", True)
+    monkeypatch.setattr(live, "llm_provider", LLMProviderKind.MOCK)
+    monkeypatch.setattr(live, "tenant_api_keys", {
+        "tenant-key-a": "00000000-0000-0000-0000-000000000001",
+        "tenant-key-b": "00000000-0000-0000-0000-000000000002",
+    })
+    monkeypatch.setattr(live, "rate_limit_per_minute", 1000)
 
     # Create a shared mock LLM provider for this test
     shared_mock_llm = MockLLMProvider()
@@ -52,19 +73,10 @@ def client(tmp_path, monkeypatch):
     
     monkeypatch.setattr("apps.api.routes.conversations.get_llm_provider", mock_get_llm_provider)
 
-    async def _setup():
+    async def _setup() -> None:
         eng = create_async_engine(url)
         async with eng.begin() as conn:
-            await conn.run_sync(
-                Base.metadata.create_all,
-                tables=[
-                    models.Organization.__table__,
-                    models.Conversation.__table__,
-                    models.Message.__table__,
-                    models.Customer.__table__,
-                    models.Ticket.__table__,
-                ],
-            )
+            await conn.run_sync(Base.metadata.create_all)
             await conn.execute(
                 models.Organization.__table__.insert().values(
                     id=_uuid.UUID("00000000-0000-0000-0000-000000000001"),
@@ -106,7 +118,11 @@ def client(tmp_path, monkeypatch):
 def test_create_conversation(client) -> None:
     """POST /v1/conversations creates a conversation."""
     client, _ = client
-    resp = client.post("/v1/conversations", json={"channel": "web", "subject": "Refund help"})
+    resp = client.post(
+        "/v1/conversations",
+        json={"channel": "web", "subject": "Refund help"},
+        headers={"X-API-Key": "tenant-key-a"},
+    )
     assert resp.status_code == 201, resp.text
     data = resp.json()
     assert "conversation_id" in data
@@ -119,7 +135,11 @@ def test_create_conversation(client) -> None:
 def test_create_conversation_default_org(client) -> None:
     """Create conversation without explicit org_id uses default org."""
     client, _ = client
-    resp = client.post("/v1/conversations", json={"channel": "email"})
+    resp = client.post(
+        "/v1/conversations",
+        json={"channel": "email"},
+        headers={"X-API-Key": "tenant-key-a"},
+    )
     assert resp.status_code == 201, resp.text
     data = resp.json()
     assert data["organization_id"] == "00000000-0000-0000-0000-000000000001"
@@ -129,7 +149,11 @@ def test_append_message_runs_agent_and_persists(client) -> None:
     """POST /v1/conversations/{id}/messages runs support agent with tool loop."""
     client, mock_llm = client
     # Create conversation
-    create_resp = client.post("/v1/conversations", json={"channel": "web", "subject": "Test"})
+    create_resp = client.post(
+        "/v1/conversations",
+        json={"channel": "web", "subject": "Test"},
+        headers={"X-API-Key": "tenant-key-a"},
+    )
     assert create_resp.status_code == 201
     conv_id = create_resp.json()["conversation_id"]
 
@@ -156,6 +180,7 @@ def test_append_message_runs_agent_and_persists(client) -> None:
     resp = client.post(
         f"/v1/conversations/{conv_id}/messages",
         json={"content": "Hi, I'm customer@example.com, need help with my order"},
+        headers={"X-API-Key": "tenant-key-a"},
     )
     assert resp.status_code == 200, resp.text
     data = resp.json()
@@ -185,7 +210,9 @@ def test_append_message_runs_agent_and_persists(client) -> None:
 def test_append_message_send_email_dry_run_in_actions(client) -> None:
     """Dry-run email action appears in returned actions metadata."""
     client, mock_llm = client
-    create_resp = client.post("/v1/conversations", json={"channel": "web"})
+    create_resp = client.post(
+        "/v1/conversations", json={"channel": "web"}, headers={"X-API-Key": "tenant-key-a"}
+    )
     assert create_resp.status_code == 201
     conv_id = create_resp.json()["conversation_id"]
 
@@ -212,6 +239,7 @@ def test_append_message_send_email_dry_run_in_actions(client) -> None:
     resp = client.post(
         f"/v1/conversations/{conv_id}/messages",
         json={"content": "Please send me a confirmation email"},
+        headers={"X-API-Key": "tenant-key-a"},
     )
     assert resp.status_code == 200, resp.text
     data = resp.json()
@@ -229,7 +257,9 @@ def test_get_conversation_thread(client) -> None:
     """GET /v1/conversations/{id} returns full thread with messages."""
     client, mock_llm = client
     create_resp = client.post(
-        "/v1/conversations", json={"channel": "web", "subject": "Thread test"}
+        "/v1/conversations",
+        json={"channel": "web", "subject": "Thread test"},
+        headers={"X-API-Key": "tenant-key-a"},
     )
     assert create_resp.status_code == 201
     conv_id = create_resp.json()["conversation_id"]
@@ -237,10 +267,17 @@ def test_get_conversation_thread(client) -> None:
     mock_llm.script("Hello! How can I help you?")
 
     # Send a message
-    client.post(f"/v1/conversations/{conv_id}/messages", json={"content": "Hi there"})
+    client.post(
+        f"/v1/conversations/{conv_id}/messages",
+        json={"content": "Hi there"},
+        headers={"X-API-Key": "tenant-key-a"},
+    )
 
     # Get thread
-    resp = client.get(f"/v1/conversations/{conv_id}")
+    resp = client.get(
+        f"/v1/conversations/{conv_id}",
+        headers={"X-API-Key": "tenant-key-a"},
+    )
     assert resp.status_code == 200, resp.text
     data = resp.json()
 
@@ -264,17 +301,30 @@ def test_get_conversation_thread(client) -> None:
 def test_list_messages_only(client) -> None:
     """GET /v1/conversations/{id}/messages returns messages only."""
     client, mock_llm = client
-    create_resp = client.post("/v1/conversations", json={"channel": "zalo"})
+    create_resp = client.post(
+        "/v1/conversations", json={"channel": "zalo"}, headers={"X-API-Key": "tenant-key-a"}
+    )
     assert create_resp.status_code == 201
     conv_id = create_resp.json()["conversation_id"]
 
     mock_llm.script("Reply 1")
-    client.post(f"/v1/conversations/{conv_id}/messages", json={"content": "Msg 1"})
+    client.post(
+        f"/v1/conversations/{conv_id}/messages",
+        json={"content": "Msg 1"},
+        headers={"X-API-Key": "tenant-key-a"},
+    )
 
     mock_llm.script("Reply 2")
-    client.post(f"/v1/conversations/{conv_id}/messages", json={"content": "Msg 2"})
+    client.post(
+        f"/v1/conversations/{conv_id}/messages",
+        json={"content": "Msg 2"},
+        headers={"X-API-Key": "tenant-key-a"},
+    )
 
-    resp = client.get(f"/v1/conversations/{conv_id}/messages")
+    resp = client.get(
+        f"/v1/conversations/{conv_id}/messages",
+        headers={"X-API-Key": "tenant-key-a"},
+    )
     assert resp.status_code == 200, resp.text
     messages = resp.json()
 
@@ -289,13 +339,16 @@ def test_client_supplied_organization_id_is_ignored(client) -> None:
     """Audit fix: org is bound server-side; a client-supplied organization_id
     (body or query) can no longer select another tenant's conversation."""
     client, _ = client
-    create_resp = client.post("/v1/conversations", json={"channel": "web"})
+    create_resp = client.post(
+        "/v1/conversations", json={"channel": "web"}, headers={"X-API-Key": "tenant-key-a"}
+    )
     assert create_resp.status_code == 201
     conv_id = create_resp.json()["conversation_id"]
 
     resp = client.get(
         f"/v1/conversations/{conv_id}",
         params={"organization_id": "00000000-0000-0000-0000-000000000002"},
+        headers={"X-API-Key": "tenant-key-a"},
     )
     assert resp.status_code == 200, resp.text
     # Still bound to the caller's (first/default) org, not the claimed one.
@@ -307,7 +360,9 @@ def test_client_supplied_organization_id_is_ignored(client) -> None:
 def test_org_scoping_append_message_cross_org(client) -> None:
     """POST /v1/conversations/{id}/messages returns 404 for cross-org access."""
     client, mock_llm = client
-    create_resp = client.post("/v1/conversations", json={"channel": "web"})
+    create_resp = client.post(
+        "/v1/conversations", json={"channel": "web"}, headers={"X-API-Key": "tenant-key-a"}
+    )
     assert create_resp.status_code == 201
     conv_id = create_resp.json()["conversation_id"]
 
@@ -318,6 +373,7 @@ def test_org_scoping_append_message_cross_org(client) -> None:
     resp = client.post(
         f"/v1/conversations/{conv_id}/messages",
         json={"content": "Hack attempt", "organization_id": "00000000-0000-0000-0000-000000000002"},
+        headers={"X-API-Key": "tenant-key-a"},
     )
     assert resp.status_code == 200, resp.text
 
@@ -325,13 +381,16 @@ def test_org_scoping_append_message_cross_org(client) -> None:
 def test_org_scoping_list_messages_cross_org(client) -> None:
     """GET /v1/conversations/{id}/messages returns 404 for cross-org access."""
     client, _ = client
-    create_resp = client.post("/v1/conversations", json={"channel": "web"})
+    create_resp = client.post(
+        "/v1/conversations", json={"channel": "web"}, headers={"X-API-Key": "tenant-key-a"}
+    )
     assert create_resp.status_code == 201
     conv_id = create_resp.json()["conversation_id"]
 
     resp = client.get(
         f"/v1/conversations/{conv_id}/messages",
         params={"organization_id": "00000000-0000-0000-0000-000000000002"},
+        headers={"X-API-Key": "tenant-key-a"},
     )
     # Query-param org is ignored: caller keeps access to their own thread.
     assert resp.status_code == 200, resp.text
@@ -342,11 +401,18 @@ def test_list_conversations(client) -> None:
     client, mock_llm = client
     # Create multiple conversations
     for i in range(3):
-        resp = client.post("/v1/conversations", json={"channel": "web", "subject": f"Subject {i}"})
+        resp = client.post(
+            "/v1/conversations",
+            json={"channel": "web", "subject": f"Subject {i}"},
+            headers={"X-API-Key": "tenant-key-a"},
+        )
         assert resp.status_code == 201
 
     # List conversations
-    resp = client.get("/v1/conversations")
+    resp = client.get(
+        "/v1/conversations",
+        headers={"X-API-Key": "tenant-key-a"},
+    )
     assert resp.status_code == 200, resp.text
     data = resp.json()
     assert "conversations" in data
@@ -373,23 +439,39 @@ def test_list_conversations_pagination(client) -> None:
     client, mock_llm = client
     # Create 5 conversations
     for i in range(5):
-        resp = client.post("/v1/conversations", json={"channel": "web", "subject": f"Subject {i}"})
+        resp = client.post(
+            "/v1/conversations",
+            json={"channel": "web", "subject": f"Subject {i}"},
+            headers={"X-API-Key": "tenant-key-a"},
+        )
         assert resp.status_code == 201
 
     # Test limit
-    resp = client.get("/v1/conversations", params={"limit": 2})
+    resp = client.get(
+        "/v1/conversations",
+        params={"limit": 2},
+        headers={"X-API-Key": "tenant-key-a"},
+    )
     assert resp.status_code == 200
     data = resp.json()
     assert len(data["conversations"]) == 2
 
     # Test offset
-    resp = client.get("/v1/conversations", params={"limit": 2, "offset": 2})
+    resp = client.get(
+        "/v1/conversations",
+        params={"limit": 2, "offset": 2},
+        headers={"X-API-Key": "tenant-key-a"},
+    )
     assert resp.status_code == 200
     data = resp.json()
     assert len(data["conversations"]) == 2
 
     # Test empty page
-    resp = client.get("/v1/conversations", params={"limit": 2, "offset": 10})
+    resp = client.get(
+        "/v1/conversations",
+        params={"limit": 2, "offset": 10},
+        headers={"X-API-Key": "tenant-key-a"},
+    )
     assert resp.status_code == 200
     data = resp.json()
     assert len(data["conversations"]) == 0
@@ -400,13 +482,18 @@ def test_list_conversations_org_scoping(client) -> None:
     a client-supplied organization_id cannot select another tenant's view."""
     client, _ = client
     # Create conversation in org 1
-    resp = client.post("/v1/conversations", json={"channel": "web", "subject": "Org 1"})
+    resp = client.post(
+        "/v1/conversations",
+        json={"channel": "web", "subject": "Org 1"},
+        headers={"X-API-Key": "tenant-key-a"},
+    )
     assert resp.status_code == 201
 
     # Listing while claiming org 2 is ignored — caller still sees their own org.
     resp = client.get(
         "/v1/conversations",
         params={"organization_id": "00000000-0000-0000-0000-000000000002"},
+        headers={"X-API-Key": "tenant-key-a"},
     )
     assert resp.status_code == 200
     data = resp.json()
@@ -419,7 +506,9 @@ def test_list_conversations_org_scoping(client) -> None:
 def test_conversation_persists_tool_metadata(client) -> None:
     """Tool metadata is persisted with assistant messages."""
     client, mock_llm = client
-    create_resp = client.post("/v1/conversations", json={"channel": "web"})
+    create_resp = client.post(
+        "/v1/conversations", json={"channel": "web"}, headers={"X-API-Key": "tenant-key-a"}
+    )
     assert create_resp.status_code == 201
     conv_id = create_resp.json()["conversation_id"]
 
@@ -441,10 +530,17 @@ def test_conversation_persists_tool_metadata(client) -> None:
         "Customer found.",
     )
 
-    client.post(f"/v1/conversations/{conv_id}/messages", json={"content": "Lookup customer"})
+    client.post(
+        f"/v1/conversations/{conv_id}/messages",
+        json={"content": "Lookup customer"},
+        headers={"X-API-Key": "tenant-key-a"},
+    )
 
     # Get thread and verify tool_metadata on assistant message
-    resp = client.get(f"/v1/conversations/{conv_id}")
+    resp = client.get(
+        f"/v1/conversations/{conv_id}",
+        headers={"X-API-Key": "tenant-key-a"},
+    )
     assert resp.status_code == 200
     data = resp.json()
 

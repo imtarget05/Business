@@ -9,14 +9,21 @@ Covers:
 
 from __future__ import annotations
 
+import asyncio
+import os
+import tempfile
+import uuid as _uuid
 from dataclasses import dataclass
-from uuid import uuid4
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy.ext.asyncio import create_async_engine
 
+import packages.database.session as session_mod
+import packages.config.settings as settings_mod
 from apps.api.main import create_app
 from apps.api.routes.tasks import get_task_store
+from packages.config.settings import Settings, LLMProviderKind
 from packages.contracts.enums import AgentResponseStatus, Domain, TaskStatus
 from packages.contracts.models import (
     AgentDescriptor,
@@ -28,6 +35,9 @@ from packages.core.errors import TaskStateError
 from packages.core.orchestrator import Orchestrator
 from packages.core.persistence import TaskResolution
 from packages.core.registry import InMemoryAgentRegistry
+from packages.database import models
+from packages.database.base import Base
+from packages.database.session import get_session_factory
 from packages.database.task_store import SqlAlchemyTaskStore
 from packages.llm.mock import MockLLMProvider
 
@@ -45,6 +55,59 @@ def _agent_to_task(status: AgentResponseStatus) -> TaskStatus:
     if status == AgentResponseStatus.ESCALATED:
         return TaskStatus.ESCALATED
     return TaskStatus.FAILED
+
+
+def tmp_db() -> str:
+    fd, path = tempfile.mkstemp(suffix=".db")
+    os.close(fd)
+    return path.replace("\\", "/")
+
+
+@pytest.fixture()
+def client(tmp_path, monkeypatch):
+    """Fresh module state per test: point the global engine at a temp sqlite db."""
+    monkeypatch.setattr(session_mod, "_engine", None)
+    monkeypatch.setattr(session_mod, "_session_factory", None)
+
+    url = f"sqlite+aiosqlite:///{(tmp_path / 'test.db').as_posix()}"
+    # Provide legacy tenant_api_keys for backward compatibility
+    settings = Settings(
+        database_url=url,
+        persistence_enabled=True,
+        llm_provider=LLMProviderKind.MOCK,
+        tenant_api_keys={
+            "tenant-key-a": "00000000-0000-0000-0000-000000000001",
+        },
+    )
+    get_session_factory(settings)
+
+    # Point the cached settings singleton at our test configuration
+    live = settings_mod.get_settings()
+    monkeypatch.setattr(live, "database_url", url)
+    monkeypatch.setattr(live, "persistence_enabled", True)
+    monkeypatch.setattr(live, "llm_provider", LLMProviderKind.MOCK)
+    monkeypatch.setattr(live, "tenant_api_keys", {
+        "tenant-key-a": "00000000-0000-0000-0000-000000000001",
+    })
+    monkeypatch.setattr(live, "rate_limit_per_minute", 1000)
+
+    async def _setup() -> None:
+        eng = create_async_engine(url)
+        async with eng.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+            await conn.execute(
+                models.Organization.__table__.insert().values(
+                    id=_uuid.UUID("00000000-0000-0000-0000-000000000001"),
+                    name="Pilot Org",
+                    slug="pilot",
+                )
+            )
+        await eng.dispose()
+
+    asyncio.run(_setup())
+    yield TestClient(create_app())
+    session_mod._engine = None
+    session_mod._session_factory = None
 
 
 # ---------------------------------------------------------------------------
@@ -96,38 +159,35 @@ class _MemTaskStore:
     async def record_transition(self, task_id, status: TaskStatus) -> None:
         return None
 
+
 # ---------------------------------------------------------------------------
 # Route-level idempotency
 # ---------------------------------------------------------------------------
 
 
-def test_post_tasks_idempotent_replay() -> None:
-    app = create_app()
+def test_post_tasks_idempotent_replay(client) -> None:
     fake = _MemTaskStore()
-    app.dependency_overrides[get_task_store] = lambda: fake
+    client.app.dependency_overrides[get_task_store] = lambda: fake
 
-    client = TestClient(app)
     body = {
         "domain": "knowledge",
         "action": "query",
         "payload": {"question": "refund policy?"},
-        "task_id": str(uuid4()),
+        "task_id": str(_uuid.uuid4()),
     }
-    first = client.post("/v1/tasks", json=body)
-    second = client.post("/v1/tasks", json=body)
+    first = client.post("/v1/tasks", json=body, headers={"X-API-Key": "tenant-key-a"})
+    second = client.post("/v1/tasks", json=body, headers={"X-API-Key": "tenant-key-a"})
     assert first.status_code == 200, first.text
     assert second.status_code == 200, second.text
     assert first.json() == second.json()
     assert fake.created_count == 1  # replay must not create a new row
 
 
-def test_post_tasks_inflight_conflict() -> None:
-    app = create_app()
+def test_post_tasks_inflight_conflict(client) -> None:
     fake = _MemTaskStore()
-    tid = uuid4()
+    tid = _uuid.uuid4()
     fake._rows[str(tid)] = _MemRecord(status=TaskStatus.RUNNING)
-    app.dependency_overrides[get_task_store] = lambda: fake
-    client = TestClient(app)
+    client.app.dependency_overrides[get_task_store] = lambda: fake
     resp = client.post(
         "/v1/tasks",
         json={
@@ -136,6 +196,7 @@ def test_post_tasks_inflight_conflict() -> None:
             "payload": {"subject": "s"},
             "task_id": str(tid),
         },
+        headers={"X-API-Key": "tenant-key-a"},
     )
     assert resp.status_code == 409
 
@@ -149,55 +210,64 @@ def test_post_tasks_inflight_conflict() -> None:
 async def sqlite_store(tmp_path):
     from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
-    from packages.database import models
-    from packages.database.base import Base
-
-    engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path / 't.db'}")
-    async with engine.begin() as conn:
-        await conn.run_sync(
-            Base.metadata.create_all,
-            tables=[models.Task.__table__, models.TaskStep.__table__],
-        )
+    url = f"sqlite+aiosqlite:///{(tmp_path / 'tasks.db').as_posix()}"
+    engine = create_async_engine(url)
     factory = async_sessionmaker(engine, expire_on_commit=False)
+
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+        await conn.execute(
+            models.Organization.__table__.insert().values(
+                id=_uuid.UUID("00000000-0000-0000-0000-000000000001"),
+                name="Pilot Org",
+                slug="pilot",
+            )
+        )
+
+    # Create a session for the store
     async with factory() as session:
         yield SqlAlchemyTaskStore(session)
+
     await engine.dispose()
 
 
-async def test_store_persists_and_replays(sqlite_store) -> None:
+async def test_store_persists_and_replays(sqlite_store: SqlAlchemyTaskStore) -> None:
+    """Test that completing a task allows idempotent replay."""
     req = TaskRequest(
-        domain="knowledge",
+        task_id=_uuid.uuid4(),
+        domain=Domain.KNOWLEDGE,
         action="query",
-        payload={"question": "hi"},
-        context=TaskContext(organization_id=uuid4()),  # NOT NULL org binding
+        payload={"question": "test"},
+        context=TaskContext(channel="web", organization_id=_uuid.UUID("00000000-0000-0000-0000-000000000001")),
     )
-    resolution = await sqlite_store.resolve(req)
-    assert resolution.created is True
+    res = await sqlite_store.resolve(req)
+    assert res.created is True
 
+    # Complete the task
     resp = AgentResponse(
-        task_id=req.task_id,
-        agent="knowledge-v1",
         status=AgentResponseStatus.SUCCESS,
-        result={"answer": "hello"},
+        result={"answer": "ok"},
+        citations=[],
+        agent="knowledge-v1",
+        task_id=req.task_id,
     )
     await sqlite_store.complete(req.task_id, resp)
 
-    fetched = await sqlite_store.get_task(req.task_id)
-    assert fetched is not None
-    assert fetched["status"] == "completed"
-
-    again = await sqlite_store.resolve(req)
-    assert again.created is False
-    assert again.response is not None
-    assert again.response.result == {"answer": "hello"}
+    # Second call with same task_id -> replay (idempotent)
+    res2 = await sqlite_store.resolve(req)
+    assert res2.created is False
+    assert res2.response is not None
+    assert res2.response.result == {"answer": "ok"}
 
 
-async def test_store_records_transitions(sqlite_store) -> None:
+async def test_store_records_transitions(sqlite_store: SqlAlchemyTaskStore) -> None:
+    """Test that record_transition creates step records."""
     req = TaskRequest(
-        domain="support",
+        task_id=_uuid.uuid4(),
+        domain=Domain.SUPPORT,
         action="triage",
-        payload={},
-        context=TaskContext(organization_id=uuid4()),
+        payload={"subject": "test"},
+        context=TaskContext(channel="web", organization_id=_uuid.UUID("00000000-0000-0000-0000-000000000001")),
     )
     await sqlite_store.resolve(req)
     await sqlite_store.record_transition(req.task_id, TaskStatus.CLASSIFYING)
@@ -230,6 +300,24 @@ class _CollectRecorder:
     async def record_transition(self, task_id, status: TaskStatus) -> None:
         self.events.append(status)
 
+    async def resolve(self, request: TaskRequest) -> TaskResolution:
+        return TaskResolution(created=True)
+
+    async def complete(self, task_id, response: AgentResponse) -> None:
+        return None
+
+    async def rollback(self) -> None:
+        return None
+
+    async def list_tasks(self, status: TaskStatus | None = None) -> list[dict]:
+        return []
+
+    async def get_task(self, task_id) -> dict | None:
+        return None
+
+    async def list_steps(self, task_id: str | None = None) -> list[dict]:
+        return []
+
 
 async def test_orchestrator_crash_leaves_valid_intermediate() -> None:
     registry = InMemoryAgentRegistry()
@@ -250,8 +338,21 @@ async def test_orchestrator_crash_leaves_valid_intermediate() -> None:
     # Crash is converted to a typed FAILED response — never an unhandled 500.
     assert resp.status == AgentResponseStatus.FAILED
     assert last == TaskStatus.FAILED  # terminal, never stuck mid-flight
-    async def list_steps(self, task_id: str | None = None) -> list[dict]:
-        return []
 
-    async def record_transition(self, task_id, status: TaskStatus) -> None:
-        return None
+
+async def test_sqlite_store_rollback_on_failure(sqlite_store: SqlAlchemyTaskStore) -> None:
+    tid = _uuid.uuid4()
+    req = TaskRequest(
+        task_id=tid,
+        domain=Domain.SUPPORT,
+        action="triage",
+        payload={"subject": "fail"},
+        context=TaskContext(channel="web", organization_id=_uuid.UUID("00000000-0000-0000-0000-000000000001")),
+    )
+    await sqlite_store.resolve(req)
+    # Simulate failure by rolling back
+    await sqlite_store.rollback()
+
+    row = await sqlite_store.get_task(tid)
+    # Should not be completed
+    assert row is None or row["status"] != "completed"

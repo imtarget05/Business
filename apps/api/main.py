@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import hmac
+import time
+from collections import defaultdict
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
@@ -16,10 +18,13 @@ from packages.config.settings import Environment, get_settings
 from packages.core.bootstrap import get_container
 from packages.core.errors import (
     AuthenticationError,
+    AuthorizationError,
     BusinessOpsError,
+    RateLimitError,
     ValidationError,
 )
-from packages.database.session import dispose_engine
+from packages.database.repositories.api_keys import ApiKeyRepository
+from packages.database.session import dispose_engine, get_session_factory
 from packages.observability.context import (
     RequestContext,
     new_request_id,
@@ -31,24 +36,90 @@ from packages.observability.logging import configure_logging, get_logger
 logger = get_logger("api")
 
 
+class SlidingWindowRateLimiter:
+    """In-memory sliding window rate limiter per API key.
+
+    Simple implementation suitable for pilot scale. For production at scale,
+    replace with Redis-backed distributed limiter.
+    """
+
+    def __init__(self, max_requests: int, window_seconds: int = 60) -> None:
+        self.max_requests = max_requests
+        self.window_seconds = window_seconds
+        # key -> list of request timestamps
+        self._requests: dict[str, list[float]] = defaultdict(list)
+
+    def is_allowed(self, key: str) -> tuple[bool, int]:
+        """Check if request is allowed. Returns (allowed, remaining)."""
+        if self.max_requests <= 0:
+            return True, self.max_requests
+
+        now = time.time()
+        window_start = now - self.window_seconds
+
+        # Clean old entries
+        timestamps = self._requests[key]
+        # Keep only timestamps within the window
+        while timestamps and timestamps[0] < window_start:
+            timestamps.pop(0)
+
+        if len(timestamps) >= self.max_requests:
+            return False, 0
+
+        timestamps.append(now)
+        return True, self.max_requests - len(timestamps)
+
+
+# Rate limiter stored in app.state (initialized at startup)
+# No global to avoid test cross-contamination
+
+def get_rate_limiter(app: FastAPI) -> SlidingWindowRateLimiter | None:
+    return getattr(app.state, "rate_limiter", None)
+
+def init_rate_limiter(app: FastAPI, max_requests: int, window_seconds: int = 60) -> None:
+    app.state.rate_limiter = SlidingWindowRateLimiter(max_requests, window_seconds)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     settings = get_settings()
     configure_logging(settings.log_level)
+    # Initialize rate limiter
+    import logging
+    logging.getLogger("api").warning(f"DEBUG lifespan: STARTED, initializing rate limiter with max_requests={settings.rate_limit_per_minute}, env={settings.environment}")
+    init_rate_limiter(app, settings.rate_limit_per_minute, 60)
+    logging.getLogger("api").warning(f"DEBUG lifespan: rate limiter initialized, rate_limiter={get_rate_limiter(app)}")
     # Fail-closed auth: never start without any authn boundary outside local.
+    env_value = settings.environment.value if hasattr(settings.environment, 'value') else settings.environment
     if (
-        settings.environment is not Environment.LOCAL
+        env_value != Environment.LOCAL.value
         and not settings.api_key
         and not settings.tenant_api_keys
     ):
         raise RuntimeError(
             "Refusing to start: no api_key and no tenant_api_keys configured "
-            f"in environment={settings.environment.value!r}"
+            f"in environment={env_value!r}"
         )
-    logger.info("startup", extra={"environment": settings.environment.value})
+    logger.info("startup", extra={"environment": env_value})
+    logging.getLogger("api").warning(f"DEBUG lifespan: YIELDING")
     yield
+    logging.getLogger("api").warning(f"DEBUG lifespan: AFTER YIELD, shutting down")
     await dispose_engine()
     logger.info("shutdown")
+
+
+async def _verify_api_key(api_key: str) -> str | None:
+    """Verify API key against DB. Returns organization_id (string) or None."""
+    if not api_key:
+        return None
+    
+    factory = get_session_factory()
+    async with factory() as session:
+        repo = ApiKeyRepository(session)
+        org_id = await repo.verify(api_key)
+        if org_id:
+            return str(org_id)
+    return None
 
 
 def create_app() -> FastAPI:
@@ -83,24 +154,86 @@ def create_app() -> FastAPI:
         return response
 
     @app.middleware("http")
-    async def api_key_middleware(request: Request, call_next):
+    async def auth_middleware(request: Request, call_next):
+        """Verify API key for /v1/* routes. Returns org_id in request.state."""
         settings = get_settings()
-        if request.url.path.startswith("/v1") and (
-            settings.api_key or settings.tenant_api_keys
-        ):
+        if request.url.path.startswith("/v1"):
             supplied = request.headers.get("X-API-Key")
-            valid = False
+            org_id = None
+            
             if supplied:
-                if settings.api_key and hmac.compare_digest(supplied, settings.api_key):
-                    valid = True
-                elif supplied in settings.tenant_api_keys:
-                    valid = True
-            if not valid:
+                # First try DB-backed API keys
+                org_id = await _verify_api_key(supplied)
+                
+                # Fallback to tenant_api_keys only in local environment
+                if org_id is None and settings.environment == Environment.LOCAL:
+                    # DEBUG
+                    import logging
+                    logging.getLogger("api").warning(f"DEBUG: supplied={supplied}, tenant_api_keys={settings.tenant_api_keys}, env={settings.environment}")
+                    if supplied in settings.tenant_api_keys:
+                        org_id = settings.tenant_api_keys[supplied]
+                        logging.getLogger("api").warning(f"DEBUG: org_id set to {org_id}")
+            
+            if org_id is None:
+                import logging
+                logging.getLogger("api").warning(f"DEBUG: org_id is None, returning 401")
                 exc = AuthenticationError("Missing or invalid API key")
                 return JSONResponse(
                     status_code=exc.http_status, content={"error": exc.to_payload()}
                 )
+            
+            # Bind org_id to request state for downstream use
+            request.state.organization_id = org_id
+        
         return await call_next(request)
+
+    @app.middleware("http")
+    async def rate_limit_middleware(request: Request, call_next):
+        """Sliding window rate limiting per API key (X-API-Key header)."""
+        # DEBUG
+        import logging
+        logging.getLogger("api").warning(f"DEBUG rate_limit: ENTERED middleware for {request.url.path}")
+        
+        limiter = get_rate_limiter(request.app)
+        if limiter is None:
+            logging.getLogger("api").warning(f"DEBUG rate_limit: limiter is None, skipping")
+            return await call_next(request)
+
+        # Only rate limit /v1/* routes
+        if not request.url.path.startswith("/v1"):
+            logging.getLogger("api").warning(f"DEBUG rate_limit: not /v1 path, skipping")
+            return await call_next(request)
+
+        api_key = request.headers.get("X-API-Key")
+        if not api_key:
+            # No API key - let the auth middleware handle it
+            logging.getLogger("api").warning(f"DEBUG rate_limit: no api_key, skipping")
+            return await call_next(request)
+
+        # DEBUG
+        logging.getLogger("api").warning(f"DEBUG rate_limit: key={api_key[:10]}..., max_requests={limiter.max_requests}, window={limiter.window_seconds}")
+        
+        allowed, remaining = limiter.is_allowed(api_key)
+        
+        # DEBUG
+        logging.getLogger("api").warning(f"DEBUG rate_limit: allowed={allowed}, remaining={remaining}, timestamps={len(limiter._requests.get(api_key, []))}")
+        
+        if not allowed:
+            exc = RateLimitError("Rate limit exceeded")
+            response = JSONResponse(
+                status_code=exc.http_status,
+                content={"error": {"code": "RATE_LIMITED", "message": exc.message}},
+            )
+            response.headers["X-RateLimit-Remaining"] = "0"
+            response.headers["X-RateLimit-Limit"] = str(limiter.max_requests)
+            response.headers["X-RateLimit-Reset"] = str(int(time.time() + limiter.window_seconds))
+            return response
+
+        response = await call_next(request)
+        response.headers["X-RateLimit-Remaining"] = str(remaining)
+        response.headers["X-RateLimit-Limit"] = str(limiter.max_requests)
+        response.headers["X-RateLimit-Reset"] = str(int(time.time() + limiter.window_seconds))
+        return response
 
     @app.exception_handler(BusinessOpsError)
     async def business_ops_error_handler(request: Request, exc: BusinessOpsError):

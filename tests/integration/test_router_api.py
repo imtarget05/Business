@@ -7,20 +7,82 @@ the rule-based fallback and escalation paths (deterministic, no network).
 
 from __future__ import annotations
 
+import asyncio
+import os
+import tempfile
+import uuid as _uuid
+
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy.ext.asyncio import create_async_engine
 
+import packages.database.session as session_mod
+import packages.config.settings as settings_mod
 from apps.api.main import create_app
+from packages.config.settings import Settings, LLMProviderKind
+from packages.database import models
+from packages.database.base import Base
+from packages.database.session import get_session_factory
 
 
-@pytest.fixture()
-def client():
-    return TestClient(create_app())
+def tmp_db() -> str:
+    fd, path = tempfile.mkstemp(suffix=".db")
+    os.close(fd)
+    return path.replace("\\", "/")
+
+
+@ pytest.fixture()
+def client(tmp_path, monkeypatch):
+    """Fresh module state per test: point the global engine at a temp sqlite db."""
+    monkeypatch.setattr(session_mod, "_engine", None)
+    monkeypatch.setattr(session_mod, "_session_factory", None)
+
+    url = f"sqlite+aiosqlite:///{(tmp_path / 'router.db').as_posix()}"
+    # Provide legacy tenant_api_keys for backward compatibility
+    settings = Settings(
+        database_url=url,
+        persistence_enabled=True,
+        llm_provider=LLMProviderKind.MOCK,
+        tenant_api_keys={
+            "tenant-key-a": "00000000-0000-0000-0000-000000000001",
+        },
+    )
+    get_session_factory(settings)
+
+    # Point the cached settings singleton at our test configuration
+    live = settings_mod.get_settings()
+    monkeypatch.setattr(live, "database_url", url)
+    monkeypatch.setattr(live, "persistence_enabled", True)
+    monkeypatch.setattr(live, "llm_provider", LLMProviderKind.MOCK)
+    monkeypatch.setattr(live, "tenant_api_keys", {
+        "tenant-key-a": "00000000-0000-0000-0000-000000000001",
+    })
+    monkeypatch.setattr(live, "rate_limit_per_minute", 1000)
+
+    async def _setup() -> None:
+        eng = create_async_engine(url)
+        async with eng.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+            await conn.execute(
+                models.Organization.__table__.insert().values(
+                    id=_uuid.UUID("00000000-0000-0000-0000-000000000001"),
+                    name="Pilot Org",
+                    slug="pilot",
+                )
+            )
+        await eng.dispose()
+
+    asyncio.run(_setup())
+    yield TestClient(create_app())
+    session_mod._engine = None
+    session_mod._session_factory = None
 
 
 def test_dispatch_routes_refund_email(client) -> None:
     resp = client.post(
-        "/v1/router/dispatch", json={"text": "Tôi muốn hoàn tiền cho đơn #123"}
+        "/v1/router/dispatch",
+        json={"text": "Tôi muốn hoàn tiền cho đơn #123"},
+        headers={"X-API-Key": "tenant-key-a"},
     )
     assert resp.status_code == 200, resp.text
     data = resp.json()
@@ -33,6 +95,7 @@ def test_dispatch_policy_question_to_knowledge(client) -> None:
     resp = client.post(
         "/v1/router/dispatch",
         json={"text": "Chính sách đổi trả như thế nào?"},
+        headers={"X-API-Key": "tenant-key-a"},
     )
     assert resp.status_code == 200, resp.text
     data = resp.json()
@@ -41,7 +104,9 @@ def test_dispatch_policy_question_to_knowledge(client) -> None:
 
 def test_dispatch_escalates_on_gibberish(client) -> None:
     resp = client.post(
-        "/v1/router/dispatch", json={"text": "zzz qqq xyzzy plugh"}
+        "/v1/router/dispatch",
+        json={"text": "zzz qqq xyzzy plugh"},
+        headers={"X-API-Key": "tenant-key-a"},
     )
     assert resp.status_code == 200, resp.text
     data = resp.json()
@@ -50,7 +115,11 @@ def test_dispatch_escalates_on_gibberish(client) -> None:
 
 
 def test_dispatch_rejects_empty_text(client) -> None:
-    resp = client.post("/v1/router/dispatch", json={"text": ""})
+    resp = client.post(
+        "/v1/router/dispatch",
+        json={"text": ""},
+        headers={"X-API-Key": "tenant-key-a"},
+    )
     assert resp.status_code == 422
 
 
@@ -85,7 +154,9 @@ def test_dispatch_uses_container_registry_capabilities(client) -> None:
     # Now test that dispatch actually uses these capabilities
     # Refund email -> support.triage (via rule fallback matching "hoàn tiền")
     resp = client.post(
-        "/v1/router/dispatch", json={"text": "Tôi muốn hoàn tiền cho đơn #123"}
+        "/v1/router/dispatch",
+        json={"text": "Tôi muốn hoàn tiền cho đơn #123"},
+        headers={"X-API-Key": "tenant-key-a"},
     )
     assert resp.status_code == 200, resp.text
     data = resp.json()
@@ -96,6 +167,7 @@ def test_dispatch_uses_container_registry_capabilities(client) -> None:
     resp = client.post(
         "/v1/router/dispatch",
         json={"text": "Chính sách đổi trả như thế nào?"},
+        headers={"X-API-Key": "tenant-key-a"},
     )
     assert resp.status_code == 200, resp.text
     data = resp.json()
