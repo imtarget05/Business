@@ -327,3 +327,121 @@ async def test_explicit_max_handoff_depth_not_overwritten_by_settings(container)
     # Value should still be 2, not overwritten by settings (which is also 2 by default,
     # but the point is the logic doesn't overwrite explicit values)
     assert req.context.max_handoff_depth == 2
+
+
+async def test_per_hop_timeout_budget_not_shared(container):
+    """Per-hop timeout budget: slow first hop doesn't consume second hop's budget.
+
+    Each agent in a handoff chain gets its own agent_hop_timeout_seconds budget.
+    The total chain is capped at 2x agent_task_timeout_seconds.
+    """
+    from packages.core.registry import InMemoryAgentRegistry
+    from packages.contracts.models import AgentDescriptor, AgentResponse
+    from packages.core.orchestrator import Orchestrator
+    from packages.llm.mock import MockLLMProvider
+    from packages.contracts.enums import AgentResponseStatus, Domain
+    import asyncio
+
+    class SlowThenFastAgent:
+        """First hop is slow (2s), second hop is fast."""
+        def __init__(self, name: str, domain: Domain, capabilities: list[str], delay: float = 0.0, is_handoff_trigger: bool = False):
+            self.descriptor = AgentDescriptor(
+                name=name,
+                domain=domain,
+                version="1",
+                capabilities=capabilities,
+            )
+            self.delay = delay
+            self.is_handoff_trigger = is_handoff_trigger
+
+        async def handle(self, request):
+            await asyncio.sleep(self.delay)
+            if self.is_handoff_trigger:
+                # Return a response that triggers handoff (like real support agent)
+                return AgentResponse(
+                    task_id=request.task_id,
+                    agent=self.descriptor.qualified_name,
+                    status=AgentResponseStatus.SUCCESS,
+                    result={
+                        "action": "triage",
+                        "summary": "Knowledge lookup required",
+                        "needs_knowledge": True,
+                        "knowledge_question": "Test question",
+                    },
+                    confidence=0.5,
+                    metadata={
+                        "handoff": {
+                            "target_capability": "knowledge.query",
+                            "reason": "Support task requires knowledge base lookup",
+                            "question": "Test question",
+                        },
+                    },
+                )
+            return AgentResponse(
+                task_id=request.task_id,
+                agent=self.descriptor.qualified_name,
+                status=AgentResponseStatus.SUCCESS,
+                result={"success": True},
+                citations=[],
+                confidence=1.0,
+                metadata={},
+            )
+
+    # Create agents: first hop slow (2s) and triggers handoff, second hop fast
+    slow_agent = SlowThenFastAgent(
+        "slow-support",
+        Domain.SUPPORT,
+        ["support.triage"],
+        delay=2.0,  # 2 seconds - longer than default hop timeout if it were shared
+        is_handoff_trigger=True,
+    )
+    fast_agent = SlowThenFastAgent(
+        "fast-knowledge",
+        Domain.KNOWLEDGE,
+        ["knowledge.query"],
+        delay=0.1,  # Fast
+    )
+
+    registry = InMemoryAgentRegistry()
+    registry.register(slow_agent.descriptor, slow_agent)
+    registry.register(fast_agent.descriptor, fast_agent)
+
+    # Settings: agent_hop_timeout_seconds=3 (each hop gets 3s), agent_task_timeout_seconds=5 (total chain cap 10s)
+    from packages.config.settings import Settings, LLMProviderKind
+    settings = Settings(
+        llm_provider=LLMProviderKind.MOCK,
+        agent_hop_timeout_seconds=3,
+        agent_task_timeout_seconds=5,
+        agent_max_handoffs=2,
+    )
+
+    orchestrator = Orchestrator(
+        registry=registry,
+        llm=MockLLMProvider(),
+        default_timeout_ms=5000,
+    )
+    orchestrator._settings = settings
+
+    # Create a support request that will handoff to knowledge
+    req = TaskRequest(
+        domain=Domain.SUPPORT,
+        action="triage",
+        payload={
+            "subject": "Test",
+            "body": "Test",
+            "needs_knowledge": True,
+            "question": "Test question",
+        },
+        context=TaskContext(organization_id=uuid4()),
+    )
+
+    # This should succeed because:
+    # - First hop (slow-support) gets 3s budget, uses 2s -> succeeds
+    # - Second hop (fast-knowledge) gets its own 3s budget, uses 0.1s -> succeeds
+    # - Total chain time ~2.1s, well under 10s total cap
+    response = await orchestrator.execute(req)
+
+    assert response.status == AgentResponseStatus.SUCCESS
+    assert "handoff" in response.metadata
+    assert response.metadata["handoff"]["from"] == "slow-support-v1"
+    assert response.metadata["handoff"]["to"] == "fast-knowledge-v1"

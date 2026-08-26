@@ -45,8 +45,10 @@ async def dispatch(
     store: TaskStore = Depends(get_task_store),
 ) -> dict:
     settings = get_settings()
+    container = get_container()
     router_agent = RouterAgent(
         llm=get_llm_provider(settings),
+        registry=container.registry,
         confidence_threshold=settings.router_confidence_threshold,
     )
     classification = await router_agent.classify_text(body.text)

@@ -105,6 +105,9 @@ class Settings(BaseSettings):
     agent_max_handoffs: int = 2
     # Per-task execution timeout (Phase 4 Task 4.3)
     agent_task_timeout_seconds: int = 30
+    # Per-hop timeout for handoff chains (Phase 5 FIX 1)
+    # Defaults to agent_task_timeout_seconds; total chain capped at 2x agent_task_timeout_seconds
+    agent_hop_timeout_seconds: int = 30
 
     # --- Cloudflare Workers AI (optional provider) -----------------------------
     cloudflare_account_id: str | None = None

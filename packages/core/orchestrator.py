@@ -60,6 +60,7 @@ class Orchestrator:
         self._llm = llm
         self._default_timeout_ms = default_timeout_ms
         self._settings = get_settings()
+        self._hop_count = 0  # Track number of agent hops in current execution
 
     @staticmethod
     async def _record(
@@ -107,16 +108,22 @@ class Orchestrator:
         handler: DomainAgent,
         *,
         recorder: TaskRecorder = NoopTaskRecorder(),
+        is_handoff: bool = False,
     ) -> AgentResponse:
-        """Execute a single agent, handling timeouts and errors."""
-        timeout_s = (descriptor.timeout_ms or self._default_timeout_ms) / 1000
+        """Execute a single agent, handling timeouts and errors.
+
+        Each agent hop gets its own timeout budget from agent_hop_timeout_seconds.
+        The total chain is still capped by the execute() method's overall timeout.
+        """
+        # Use per-hop timeout for each agent execution
+        hop_timeout_s = self._settings.agent_hop_timeout_seconds
         try:
             response = await asyncio.wait_for(
-                handler.handle(request), timeout=timeout_s
+                handler.handle(request), timeout=hop_timeout_s
             )
         except TimeoutError as exc:  # py>=3.11 alias of asyncio.TimeoutError
             raise AgentTimeoutError(
-                f"Agent {descriptor.qualified_name} timed out",
+                f"Agent {descriptor.qualified_name} timed out after {hop_timeout_s}s (hop budget)",
                 task_id=request.task_id,
             ) from exc
         except BusinessOpsError:
@@ -217,7 +224,7 @@ class Orchestrator:
 
         # Execute the handoff target
         handoff_response = await self._execute_agent(
-            handoff_request, descriptor, handler, recorder=recorder
+            handoff_request, descriptor, handler, recorder=recorder, is_handoff=True
         )
 
         # Validate the handoff response
@@ -311,7 +318,7 @@ class Orchestrator:
                 request.context.max_handoff_depth = self._settings.agent_max_handoffs
 
             response = await self._execute_agent(
-                request, descriptor, handler, recorder=recorder
+                request, descriptor, handler, recorder=recorder, is_handoff=False
             )
 
             # Check if the agent requested a handoff
@@ -394,25 +401,29 @@ class Orchestrator:
     ) -> AgentResponse:
         """Execute task with timeout and single-retry policy.
 
-        Timeout: per-task execution timeout from settings (agent_task_timeout_seconds, default 30s).
+        Timeout: per-hop timeout from settings (agent_hop_timeout_seconds, default 30s).
+        Total chain safety cap: 2x agent_task_timeout_seconds (default 60s).
         Retry: exactly 1 automatic retry on transient failure (timeout, ToolExecutionError).
         Dead-letter: after retry also fails -> task status DEAD_LETTERED.
         """
         max_attempts = 2
-        timeout_s = self._settings.agent_task_timeout_seconds
+        # Total chain safety cap at 2x agent_task_timeout_seconds
+        total_timeout_s = self._settings.agent_task_timeout_seconds * 2
 
         last_exc: BaseException | None = None
         for attempt in range(1, max_attempts + 1):
+            # Reset hop count for each attempt
+            self._hop_count = 0
             try:
-                # Wrap core execution in timeout
+                # Wrap core execution in total chain timeout
                 return await asyncio.wait_for(
                     self._execute_core(request, recorder=recorder, policy=policy),
-                    timeout=timeout_s,
+                    timeout=total_timeout_s,
                 )
             except asyncio.TimeoutError as exc:
                 # Convert asyncio.TimeoutError to TaskTimeoutError
                 last_exc = TaskTimeoutError(
-                    f"Task {request.task_id} timed out after {timeout_s}s",
+                    f"Task {request.task_id} timed out after {total_timeout_s}s (total chain cap)",
                     task_id=request.task_id,
                 )
             except (HandoffDepthExceededError, HandoffCycleDetectedError) as exc:
