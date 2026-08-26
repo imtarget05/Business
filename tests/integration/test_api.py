@@ -43,6 +43,7 @@ def client(tmp_path, monkeypatch):
         llm_provider=LLMProviderKind.MOCK,
         tenant_api_keys={
             "tenant-key-a": "00000000-0000-0000-0000-000000000001",
+            "tenant-key-b": "00000000-0000-0000-0000-000000000002",
         },
     )
     get_session_factory(settings)
@@ -54,6 +55,7 @@ def client(tmp_path, monkeypatch):
     monkeypatch.setattr(live, "llm_provider", LLMProviderKind.MOCK)
     monkeypatch.setattr(live, "tenant_api_keys", {
         "tenant-key-a": "00000000-0000-0000-0000-000000000001",
+        "tenant-key-b": "00000000-0000-0000-0000-000000000002",
     })
     monkeypatch.setattr(live, "rate_limit_per_minute", 1000)
 
@@ -66,6 +68,13 @@ def client(tmp_path, monkeypatch):
                     id=_uuid.UUID("00000000-0000-0000-0000-000000000001"),
                     name="Pilot Org",
                     slug="pilot",
+                )
+            )
+            await conn.execute(
+                models.Organization.__table__.insert().values(
+                    id=_uuid.UUID("00000000-0000-0000-0000-000000000002"),
+                    name="Pilot Org B",
+                    slug="pilot-b",
                 )
             )
         await eng.dispose()
@@ -136,3 +145,75 @@ def test_empty_payload_rejected_with_task_id(client) -> None:
     )
     assert resp.status_code == 422
     assert resp.json()["error"]["task_id"]
+
+
+def test_task_timeline_returns_chronological_events(client) -> None:
+    """Timeline endpoint returns events in chronological order from task, steps, agent_runs, audit_logs."""
+    # Create a task
+    body = {
+        "domain": "knowledge",
+        "action": "query",
+        "payload": {"question": "test timeline"},
+        "context": {"channel": "dashboard"},
+    }
+    resp = client.post("/v1/tasks", json=body, headers={"X-API-Key": "tenant-key-a"})
+    assert resp.status_code == 200, resp.text
+    task_id = resp.json()["task_id"]
+
+    # Fetch timeline
+    resp = client.get(f"/v1/tasks/{task_id}/timeline", headers={"X-API-Key": "tenant-key-a"})
+    assert resp.status_code == 200, resp.text
+    data = resp.json()
+    timeline = data["timeline"]
+
+    # Should have at least task creation event
+    assert len(timeline) >= 1
+    # First event should be task creation
+    assert timeline[0]["stage"] == "task"
+    assert timeline[0]["status"] == "created"
+    # Events should be sorted by time ascending
+    times = [e["time"] for e in timeline if e["time"]]
+    assert times == sorted(times), "Timeline events must be chronologically ordered"
+
+
+def test_task_timeline_cross_org_returns_404(client) -> None:
+    """Cross-org access to timeline returns 404 (not 403/200)."""
+    # Org A creates a task
+    body = {
+        "domain": "knowledge",
+        "action": "query",
+        "payload": {"question": "org A task"},
+        "context": {"channel": "dashboard"},
+    }
+    resp_a = client.post("/v1/tasks", json=body, headers={"X-API-Key": "tenant-key-a"})
+    assert resp_a.status_code == 200, resp_a.text
+    task_id = resp_a.json()["task_id"]
+
+    # Org B tries to access the timeline
+    resp_b = client.get(f"/v1/tasks/{task_id}/timeline", headers={"X-API-Key": "tenant-key-b"})
+    # Must return 404 (not found), not 403 (forbidden) or 200
+    assert resp_b.status_code == 404, f"Expected 404, got {resp_b.status_code}: {resp_b.text}"
+
+
+def test_task_timeline_includes_steps_and_runs(client) -> None:
+    """Timeline includes step transitions and agent run events when they exist."""
+    body = {
+        "domain": "knowledge",
+        "action": "query",
+        "payload": {"question": "timeline with steps"},
+        "context": {"channel": "dashboard"},
+    }
+    resp = client.post("/v1/tasks", json=body, headers={"X-API-Key": "tenant-key-a"})
+    assert resp.status_code == 200, resp.text
+    task_id = resp.json()["task_id"]
+
+    # The mock orchestrator creates steps; verify they appear in timeline
+    resp = client.get(f"/v1/tasks/{task_id}/timeline", headers={"X-API-Key": "tenant-key-a"})
+    assert resp.status_code == 200, resp.text
+    timeline = resp.json()["timeline"]
+
+    # Should have task creation + step events (classifying, routing, running, etc.)
+    stages = {e["stage"] for e in timeline}
+    assert "task" in stages
+    assert "step" in stages
+    # Agent runs may or may not be present depending on mock; at minimum steps should exist

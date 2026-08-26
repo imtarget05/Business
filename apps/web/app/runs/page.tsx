@@ -4,9 +4,11 @@ import { useSearchParams } from "next/navigation";
 import { useEffect, useState, Suspense } from "react";
 import {
   apiGet,
+  getTaskTimeline,
   StatusBadge,
   type TaskStepView,
   type TaskView,
+  type TimelineEvent,
 } from "@/lib/api";
 
 function RunsContent() {
@@ -17,6 +19,11 @@ function RunsContent() {
   const [steps, setSteps] = useState<TaskStepView[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Timeline state
+  const [expandedStepId, setExpandedStepId] = useState<string | null>(null);
+  const [timeline, setTimeline] = useState<TimelineEvent[]>([]);
+  const [timelineLoading, setTimelineLoading] = useState(false);
+  const [timelineError, setTimelineError] = useState<string | null>(null);
 
   const fetchTask = async (id: string) => {
     if (!id.trim()) return;
@@ -28,12 +35,38 @@ function RunsContent() {
       );
       setTask(data.task);
       setSteps(data.steps);
+      setExpandedStepId(null); // Close any open timeline when loading new task
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
       setTask(null);
       setSteps([]);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchTimeline = async (taskId: string, stepId: string) => {
+    setTimelineLoading(true);
+    setTimelineError(null);
+    try {
+      const data = await getTaskTimeline(taskId);
+      setTimeline(data.timeline);
+      setExpandedStepId(stepId);
+    } catch (err) {
+      setTimelineError(err instanceof Error ? err.message : String(err));
+      setTimeline([]);
+      setExpandedStepId(stepId);
+    } finally {
+      setTimelineLoading(false);
+    }
+  };
+
+  const handleTimelineClick = (taskId: string, stepId: string) => {
+    if (expandedStepId === stepId) {
+      setExpandedStepId(null);
+      setTimeline([]);
+    } else {
+      fetchTimeline(taskId, stepId);
     }
   };
 
@@ -104,13 +137,22 @@ function RunsContent() {
       {steps.length > 0 && (
         <div className="mt-4 space-y-3">
           {steps.map((s) => (
-            <div key={s.id} className="rounded-lg border border-slate-200 bg-white p-4">
+            <div
+              key={s.id}
+              className={`rounded-lg border border-slate-200 bg-white p-4 transition-colors cursor-pointer ${
+                expandedStepId === s.id ? "border-blue-300 bg-blue-50" : "hover:bg-slate-50"
+              }`}
+              onClick={() => handleTimelineClick(task!.task_id, s.id)}
+            >
               <div className="flex items-center gap-3">
                 <span className="font-mono text-xs text-slate-400">#{s.sequence}</span>
                 <span className="text-sm font-medium">{s.name}</span>
                 <StatusBadge status={s.status} />
                 <span className="ml-auto font-mono text-xs text-slate-400">
                   {s.correlation_id ?? "—"}
+                </span>
+                <span className="text-slate-400 text-xs">
+                  {expandedStepId === s.id ? "▲" : "▼"} Timeline
                 </span>
               </div>
               {s.output && (
@@ -120,6 +162,59 @@ function RunsContent() {
               )}
             </div>
           ))}
+        </div>
+      )}
+
+      {expandedStepId && (
+        <div className="mt-4 rounded-lg border border-blue-200 bg-blue-50 p-4">
+          <div className="flex items-center gap-2 mb-3">
+            <h3 className="text-sm font-semibold text-blue-900">Full Task Timeline</h3>
+            {timelineLoading && <span className="text-xs text-blue-700 animate-pulse">Loading…</span>}
+            {timelineError && (
+              <span className="text-xs text-red-600">Error: {timelineError}</span>
+            )}
+          </div>
+          {timeline.length === 0 && !timelineLoading && (
+            <p className="text-sm text-slate-500">No timeline events found.</p>
+          )}
+          {timeline.length > 0 && (
+            <div className="space-y-2">
+              {timeline.map((event, idx) => (
+                <div
+                  key={`${event.stage}-${event.time}-${idx}`}
+                  className="flex items-start gap-3 text-sm"
+                >
+                  <div className="flex flex-col items-center min-w-[120px]">
+                    <span className="font-mono text-xs text-slate-400">
+                      {new Date(event.time).toLocaleTimeString()}
+                    </span>
+                    <span className="font-mono text-[10px] text-slate-400">
+                      {new Date(event.time).toLocaleDateString()}
+                    </span>
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span
+                        className={`inline-block rounded-full px-1.5 py-0.5 text-[10px] font-medium ${
+                          event.stage === "task"
+                            ? "bg-slate-100 text-slate-700"
+                            : event.stage === "step"
+                            ? "bg-blue-100 text-blue-800"
+                            : event.stage === "agent_run"
+                            ? "bg-emerald-100 text-emerald-800"
+                            : "bg-amber-100 text-amber-800"
+                        }`}
+                      >
+                        {event.stage}
+                      </span>
+                      <StatusBadge status={event.status} />
+                    </div>
+                    <p className="mt-0.5 text-slate-600">{event.detail}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 

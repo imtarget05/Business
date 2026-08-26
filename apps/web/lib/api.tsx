@@ -88,6 +88,18 @@ export type TaskStepView = {
   finished_at?: string | null;
 };
 
+// Timeline event type for the task timeline endpoint
+export type TimelineEvent = {
+  time: string;
+  stage: string;
+  status: string;
+  detail: string;
+};
+
+export type TaskTimelineResponse = {
+  timeline: TimelineEvent[];
+};
+
 export type AgentView = {
   id: string;
   name: string;
@@ -244,4 +256,10 @@ export async function sendMessage(
     "POST",
     body,
   );
+}
+
+export async function getTaskTimeline(
+  taskId: string,
+): Promise<TaskTimelineResponse> {
+  return apiGet<TaskTimelineResponse>(`/v1/tasks/${taskId}/timeline`);
 }
