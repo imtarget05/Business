@@ -85,10 +85,7 @@ async def lifespan(app: FastAPI):
     settings = get_settings()
     configure_logging(settings.log_level)
     # Initialize rate limiter
-    import logging
-    logging.getLogger("api").warning(f"DEBUG lifespan: STARTED, initializing rate limiter with max_requests={settings.rate_limit_per_minute}, env={settings.environment}")
     init_rate_limiter(app, settings.rate_limit_per_minute, 60)
-    logging.getLogger("api").warning(f"DEBUG lifespan: rate limiter initialized, rate_limiter={get_rate_limiter(app)}")
     # Fail-closed auth: never start without any authn boundary outside local.
     env_value = settings.environment.value if hasattr(settings.environment, 'value') else settings.environment
     if (
@@ -101,9 +98,7 @@ async def lifespan(app: FastAPI):
             f"in environment={env_value!r}"
         )
     logger.info("startup", extra={"environment": env_value})
-    logging.getLogger("api").warning(f"DEBUG lifespan: YIELDING")
     yield
-    logging.getLogger("api").warning(f"DEBUG lifespan: AFTER YIELD, shutting down")
     await dispose_engine()
     logger.info("shutdown")
 
@@ -167,16 +162,10 @@ def create_app() -> FastAPI:
                 
                 # Fallback to tenant_api_keys only in local environment
                 if org_id is None and settings.environment == Environment.LOCAL:
-                    # DEBUG
-                    import logging
-                    logging.getLogger("api").warning(f"DEBUG: supplied={supplied}, tenant_api_keys={settings.tenant_api_keys}, env={settings.environment}")
                     if supplied in settings.tenant_api_keys:
                         org_id = settings.tenant_api_keys[supplied]
-                        logging.getLogger("api").warning(f"DEBUG: org_id set to {org_id}")
             
             if org_id is None:
-                import logging
-                logging.getLogger("api").warning(f"DEBUG: org_id is None, returning 401")
                 exc = AuthenticationError("Missing or invalid API key")
                 return JSONResponse(
                     status_code=exc.http_status, content={"error": exc.to_payload()}
@@ -190,33 +179,23 @@ def create_app() -> FastAPI:
     @app.middleware("http")
     async def rate_limit_middleware(request: Request, call_next):
         """Sliding window rate limiting per API key (X-API-Key header)."""
-        # DEBUG
-        import logging
-        logging.getLogger("api").warning(f"DEBUG rate_limit: ENTERED middleware for {request.url.path}")
         
         limiter = get_rate_limiter(request.app)
         if limiter is None:
-            logging.getLogger("api").warning(f"DEBUG rate_limit: limiter is None, skipping")
             return await call_next(request)
 
         # Only rate limit /v1/* routes
         if not request.url.path.startswith("/v1"):
-            logging.getLogger("api").warning(f"DEBUG rate_limit: not /v1 path, skipping")
             return await call_next(request)
 
         api_key = request.headers.get("X-API-Key")
         if not api_key:
             # No API key - let the auth middleware handle it
-            logging.getLogger("api").warning(f"DEBUG rate_limit: no api_key, skipping")
             return await call_next(request)
 
-        # DEBUG
-        logging.getLogger("api").warning(f"DEBUG rate_limit: key={api_key[:10]}..., max_requests={limiter.max_requests}, window={limiter.window_seconds}")
         
         allowed, remaining = limiter.is_allowed(api_key)
         
-        # DEBUG
-        logging.getLogger("api").warning(f"DEBUG rate_limit: allowed={allowed}, remaining={remaining}, timestamps={len(limiter._requests.get(api_key, []))}")
         
         if not allowed:
             exc = RateLimitError("Rate limit exceeded")

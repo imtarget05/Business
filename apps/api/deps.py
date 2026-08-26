@@ -72,9 +72,6 @@ async def current_org(request: Request, db: AsyncSession = Depends(get_session))
     settings = get_settings()
     supplied = request.headers.get("X-API-Key")
 
-    # DEBUG
-    import logging
-    logging.getLogger("api").warning(f"DEBUG current_org: supplied={supplied}, tenant_api_keys={settings.tenant_api_keys}, env={settings.environment}")
 
     if not supplied:
         # No key supplied at all
@@ -105,12 +102,9 @@ async def current_org(request: Request, db: AsyncSession = Depends(get_session))
     repo = ApiKeyRepository(db)
     try:
         org_id = await repo.verify(supplied)
-        logging.getLogger("api").warning(f"DEBUG current_org: repo.verify returned org_id={org_id}")
     except Exception as e:
-        logging.getLogger("api").warning(f"DEBUG current_org: repo.verify raised {type(e).__name__}: {e}")
         raise
     if org_id is not None:
-        logging.getLogger("api").warning(f"DEBUG current_org: DB verified org_id={org_id}")
         return org_id
 
     # DB verification failed - fall back to legacy keys ONLY in local
@@ -119,7 +113,6 @@ async def current_org(request: Request, db: AsyncSession = Depends(get_session))
             raw = settings.tenant_api_keys[supplied]
             try:
                 org_uuid = UUID(str(raw))
-                logging.getLogger("api").warning(f"DEBUG current_org: tenant fallback org_id={org_uuid}")
                 return org_uuid
             except ValueError as exc:
                 raise AuthenticationError(
