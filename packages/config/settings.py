@@ -116,6 +116,12 @@ class Settings(BaseSettings):
     # --- Ollama (optional provider only) ---------------------------------------
     ollama_base_url: str | None = None
 
+    # --- Reporting (Phase 5) ---------------------------------------------------
+    # When true, ReportingAgent.generate appends a summary row to the configured
+    # Google Sheet (google_sheet_id must also be set). Defaults to false (no side
+    # effects in CI/dev).
+    reporting_sheet_log_enabled: bool = False
+
     # --- Email (support agent) -------------------------------------------------
     # SMTP settings for send_email_reply tool. DRY-RUN mode is DEFAULT (draft-only;
     # real send behind email_send_enabled flag). YAGNI: no retries/queueing.

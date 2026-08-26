@@ -7,6 +7,7 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass
 
 from agents.knowledge import create_knowledge_agent
+from agents.reporting import create_reporting_agent
 from agents.support import create_support_agent
 from packages.config.settings import Settings, get_settings
 from packages.core.orchestrator import Orchestrator
@@ -58,8 +59,11 @@ def build_container(
         repo_factory=_knowledge_repo,
     )
     registry.register(knowledge_agent.descriptor, knowledge_agent)
+    reporting_agent = create_reporting_agent(llm=llm)
+    registry.register(reporting_agent.descriptor, reporting_agent)
     support_agent = create_support_agent(llm=llm)
     registry.register(support_agent.descriptor, support_agent)
+
     return AppContainer(
         settings=s,
         registry=registry,
@@ -83,4 +87,3 @@ def set_container(container: AppContainer | None) -> None:
     """Used by tests to inject a fresh container."""
     global _container
     _container = container
-

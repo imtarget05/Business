@@ -11,6 +11,8 @@ class Domain(StrEnum):
 
     KNOWLEDGE = "knowledge"
     SUPPORT = "support"
+    OPERATIONS = "operations"
+    REPORT = "report"
 
 
 class AgentResponseStatus(StrEnum):
