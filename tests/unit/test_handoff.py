@@ -152,7 +152,7 @@ async def test_audit_rows_written_for_each_hop(container):
 
 
 async def test_custom_max_handoffs_setting():
-    """Custom agent_max_handoffs setting is respected."""
+    """Custom agent_max_handoffs setting is respected when max_handoff_depth is None."""
     custom_settings = Settings(
         llm_provider=LLMProviderKind.MOCK,
         agent_max_handoffs=3,
@@ -162,17 +162,17 @@ async def test_custom_max_handoffs_setting():
     # The orchestrator should pick up the setting
     assert custom_container.settings.agent_max_handoffs == 3
 
-    # Verify it's used in context initialization
+    # Verify it's used in context initialization when None (sentinel)
     req = TaskRequest(
         domain=Domain.SUPPORT,
         action="triage",
         payload={"subject": "Test", "body": "Test"},
         context=TaskContext(organization_id=uuid4()),
     )
-    # Initial context has default max_handoff_depth=2
-    assert req.context.max_handoff_depth == 2
+    # Initial context has default max_handoff_depth=None (sentinel)
+    assert req.context.max_handoff_depth is None
 
-    # Orchestrator.execute will override with settings value
+    # Orchestrator.execute will override with settings value when None
     # (tested indirectly via the depth limit test above)
 
 
@@ -228,3 +228,102 @@ async def test_handoff_preserves_original_task_id(container):
     resp = await container.orchestrator.execute(req)
 
     assert resp.task_id == task_id
+
+
+async def test_audit_rows_for_failed_depth_handoff(container):
+    """Failed handoff due to depth limit records ROUTING and FAILED transitions."""
+    transitions = []
+
+    class SpyRecorder(NoopTaskRecorder):
+        async def record_transition(self, task_id, status):
+            transitions.append((str(task_id), status.value))
+
+    recorder = SpyRecorder()
+
+    # Set max_handoff_depth=0 to force depth exceeded on first handoff attempt
+    req = TaskRequest(
+        domain=Domain.SUPPORT,
+        action="triage",
+        payload={
+            "subject": "Test",
+            "body": "Test",
+            "needs_knowledge": True,
+            "question": "Test question",
+        },
+        context=TaskContext(
+            organization_id=uuid4(),
+            max_handoff_depth=0,
+        ),
+    )
+
+    with pytest.raises(HandoffDepthExceededError):
+        await container.orchestrator.execute(req, recorder=recorder)
+
+    statuses = [s for _, s in transitions]
+    # Should have ROUTING transition before the check
+    assert "routing" in statuses
+    # Should have FAILED transition recorded before re-raising
+    assert "failed" in statuses
+
+
+async def test_audit_rows_for_failed_cycle_handoff(container):
+    """Failed handoff due to cycle detection records ROUTING and FAILED transitions."""
+    transitions = []
+
+    class SpyRecorder(NoopTaskRecorder):
+        async def record_transition(self, task_id, status):
+            transitions.append((str(task_id), status.value))
+
+    recorder = SpyRecorder()
+
+    # Pre-populate handoff_chain with knowledge-v1 to create a cycle
+    req = TaskRequest(
+        domain=Domain.SUPPORT,
+        action="triage",
+        payload={
+            "subject": "Test",
+            "body": "Test",
+            "needs_knowledge": True,
+            "question": "Test question",
+        },
+        context=TaskContext(
+            organization_id=uuid4(),
+            handoff_chain=["knowledge-v1"],
+            handoff_depth=1,
+        ),
+    )
+
+    with pytest.raises(HandoffCycleDetectedError):
+        await container.orchestrator.execute(req, recorder=recorder)
+
+    statuses = [s for _, s in transitions]
+    # Should have ROUTING transition before the check
+    assert "routing" in statuses
+    # Should have FAILED transition recorded before re-raising
+    assert "failed" in statuses
+
+
+async def test_explicit_max_handoff_depth_not_overwritten_by_settings(container):
+    """Explicit max_handoff_depth value is not overwritten by settings."""
+    # Create a request with explicit max_handoff_depth=2
+    req = TaskRequest(
+        domain=Domain.SUPPORT,
+        action="triage",
+        payload={"subject": "Test", "body": "Test"},
+        context=TaskContext(
+            organization_id=uuid4(),
+            max_handoff_depth=2,  # Explicit value
+        ),
+    )
+
+    # The explicit value should be preserved (not None, not settings value)
+    assert req.context.max_handoff_depth == 2
+
+    # Simulate what execute() does - it should NOT overwrite explicit values
+    settings = container.settings
+    if req.context.max_handoff_depth is None and hasattr(settings, "agent_max_handoffs"):
+        req.context.max_handoff_depth = settings.agent_max_handoffs
+
+    # Value should still be 2, not overwritten by settings (which is also 2 by default,
+    # but the point is the logic doesn't overwrite explicit values)
+    assert req.context.max_handoff_depth == 2

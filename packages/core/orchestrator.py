@@ -148,8 +148,12 @@ class Orchestrator:
         current_depth = ctx.handoff_depth
         max_depth = ctx.max_handoff_depth
 
+        # Record the handoff transition BEFORE checks (audit trail for failed hops)
+        await self._record(recorder, request.task_id, TaskStatus.ROUTING)
+
         # Check depth limit
         if current_depth >= max_depth:
+            await self._record(recorder, request.task_id, TaskStatus.FAILED)
             raise HandoffDepthExceededError(
                 f"Handoff depth {current_depth} exceeds maximum {max_depth}",
                 task_id=request.task_id,
@@ -161,6 +165,7 @@ class Orchestrator:
         target_descriptor, _ = await self.route(target_capability)
         target_agent = target_descriptor.qualified_name
         if target_agent in ctx.handoff_chain:
+            await self._record(recorder, request.task_id, TaskStatus.FAILED)
             raise HandoffCycleDetectedError(
                 f"Handoff cycle detected: {' -> '.join(ctx.handoff_chain)} -> {target_agent}",
                 task_id=request.task_id,
@@ -190,9 +195,6 @@ class Orchestrator:
             ),
             metadata=request.metadata,
         )
-
-        # Record the handoff transition
-        await self._record(recorder, request.task_id, TaskStatus.ROUTING)
 
         # Route to the target capability
         descriptor, handler = await self.route(target_capability)
@@ -298,8 +300,8 @@ class Orchestrator:
             sm.transition(TaskStatus.RUNNING)
             await self._record(recorder, request.task_id, TaskStatus.RUNNING)
 
-            # Initialize handoff state from settings if not already set
-            if request.context.max_handoff_depth == 2 and hasattr(
+            # Initialize handoff state from settings if not explicitly set (None sentinel)
+            if request.context.max_handoff_depth is None and hasattr(
                 self._settings, "agent_max_handoffs"
             ):
                 request.context.max_handoff_depth = self._settings.agent_max_handoffs
@@ -332,10 +334,21 @@ class Orchestrator:
             )
             return response
 
+        except (HandoffDepthExceededError, HandoffCycleDetectedError) as exc:
+            # Handoff-specific errors: record terminal FAILED state, then re-raise
+            # so API layer receives the typed error
+            exc.task_id = exc.task_id or request.task_id
+            if not sm.is_terminal():
+                sm.transition(TaskStatus.FAILED)
+                await self._record(recorder, request.task_id, TaskStatus.FAILED)
+            logger.warning(
+                "task_failed",
+                extra={"error_code": exc.code.value, "state": sm.status.value},
+            )
+            raise
+
         except BusinessOpsError as exc:
-            # Re-raise handoff-specific errors so callers can catch them
-            if isinstance(exc, (HandoffDepthExceededError, HandoffCycleDetectedError)):
-                raise
+            # Other business errors: record terminal state and return error response
             exc.task_id = exc.task_id or request.task_id
             if not sm.is_terminal():
                 target = (

@@ -52,7 +52,7 @@ class TaskContext(BaseModel):
     # Handoff state for multi-agent chains (Phase 4 Task 4.2)
     handoff_chain: list[str] = Field(default_factory=list)
     handoff_depth: int = 0
-    max_handoff_depth: int = 2
+    max_handoff_depth: int | None = None
     prior_results: dict[str, dict] = Field(default_factory=dict)
 
 
