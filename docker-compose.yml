@@ -1,11 +1,12 @@
-# Business Ops Agent Swarm — local development stack (Phase 0)
+# Business Ops Agent Swarm — local development stack (Phase 0 + n8n)
 #
 #   docker compose up --build
 #
 # - No Ollama, no GPU, no model downloads (ADR-001).
 # - Local Postgres is pgvector-enabled; production uses Neon PostgreSQL (ADR-002).
 # - n8n is an integration layer only — it is NOT part of the core runtime
-#   (ADR-003). Add it later as a separate compose profile if needed.
+#   (ADR-003). Run as a separate service in the same stack for local dev.
+# - All environment variables come from .env.example template.
 
 services:
   db:
@@ -33,13 +34,41 @@ services:
       LOG_LEVEL: INFO
       DATABASE_URL: postgresql+psycopg://postgres:postgres@db:5432/business_ops
       LLM_PROVIDER: mock
+      EMBEDDING_PROVIDER: mock
       PERSISTENCE_ENABLED: ${PERSISTENCE_ENABLED:-true}
       API_KEY: ${API_KEY:-}
+      # Tenant keys loaded from .env at runtime
+      TENANT_API_KEYS: ${TENANT_API_KEYS:-}
+      RATE_LIMIT_PER_MINUTE: ${RATE_LIMIT_PER_MINUTE:-60}
+      # Optional: Cloudflare / Ollama / Gmail / Google Sheets
+      CLOUDFLARE_ACCOUNT_ID: ${CLOUDFLARE_ACCOUNT_ID:-}
+      CLOUDFLARE_API_TOKEN: ${CLOUDFLARE_API_TOKEN:-}
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-}
+      EMAIL_SMTP_HOST: ${EMAIL_SMTP_HOST:-}
+      EMAIL_SMTP_PORT: ${EMAIL_SMTP_PORT:-587}
+      EMAIL_SMTP_USERNAME: ${EMAIL_SMTP_USERNAME:-}
+      EMAIL_SMTP_PASSWORD: ${EMAIL_SMTP_PASSWORD:-}
+      EMAIL_FROM_ADDRESS: ${EMAIL_FROM_ADDRESS:-}
+      EMAIL_SEND_ENABLED: ${EMAIL_SEND_ENABLED:-false}
+      EMAIL_RECIPIENT_ALLOWLIST: ${EMAIL_RECIPIENT_ALLOWLIST:-}
+      GOOGLE_REFRESH_TOKEN: ${GOOGLE_REFRESH_TOKEN:-}
+      GOOGLE_OAUTH_CLIENT_ID: ${GOOGLE_OAUTH_CLIENT_ID:-}
+      GOOGLE_OAUTH_CLIENT_SECRET: ${GOOGLE_OAUTH_CLIENT_SECRET:-}
+      GOOGLE_SHEET_ID: ${GOOGLE_SHEET_ID:-}
+      GMAIL_SEND_ENABLED: ${GMAIL_SEND_ENABLED:-false}
+      GMAIL_ALLOWED_RECIPIENTS: ${GMAIL_ALLOWED_RECIPIENTS:-}
+      REPORTING_SHEET_LOG_ENABLED: ${REPORTING_SHEET_LOG_ENABLED:-false}
     ports:
       - "8000:8000"
     depends_on:
       db:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8000/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
 
   web:
     build:
@@ -50,7 +79,50 @@ services:
     ports:
       - "3000:3000"
     depends_on:
-      - api
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:3000 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  n8n:
+    image: n8nio/n8n:latest
+    environment:
+      N8N_BASIC_AUTH_ACTIVE: "true"
+      N8N_BASIC_AUTH_USER: ${N8N_BASIC_AUTH_USER:-admin}
+      N8N_BASIC_AUTH_PASSWORD: ${N8N_BASIC_AUTH_PASSWORD:-admin}
+      N8N_HOST: localhost
+      N8N_PORT: 5678
+      N8N_PROTOCOL: http
+      WEBHOOK_URL: http://localhost:5678/
+      GENERIC_TIMEZONE: ${TZ:-UTC}
+      # Business Ops API connection (used by n8n workflows)
+      BUSINESS_OPS_API_URL: http://api:8000
+      BUSINESS_OPS_API_KEY: ${API_KEY:-}
+      SLACK_WEBHOOK_URL: ${SLACK_WEBHOOK_URL:-}
+      DASHBOARD_URL: http://localhost:3000
+      # Gmail workflow settings
+      BASE_URL: http://api:8000
+      API_KEY: ${API_KEY:-}
+      GMAIL_SENDER_EMAIL: ${GMAIL_SENDER_EMAIL:-}
+    ports:
+      - "5678:5678"
+    volumes:
+      - n8n_data:/home/node/.n8n
+      - ./integrations/n8n:/workflows:ro
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:5678/healthz || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
 
 volumes:
   pgdata:
+  n8n_data:

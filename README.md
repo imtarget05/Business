@@ -20,7 +20,7 @@ Next.js Dashboard ──> FastAPI Backend ──> Orchestrator
 External: Slack / Gmail / Cron / Webhook → n8n → Business Ops API
 ```
 
-\* Ollama is an **optional** provider only. The system never requires a local
+* Ollama is an **optional** provider only. The system never requires a local
 LLM (see [ADR-001](docs/adr/ADR-001-no-local-llm.md)).
 
 ## Repository layout
@@ -42,7 +42,41 @@ LLM (see [ADR-001](docs/adr/ADR-001-no-local-llm.md)).
 
 ## Quick start
 
-### Backend
+### Docker (recommended for local development)
+
+```bash
+# 1. Copy env template and adjust if needed
+copy .env.example .env           # Windows
+# cp .env.example .env           # Linux/macOS
+
+# 2. Start all services (API, Web, Postgres+pgvector, n8n)
+docker compose up --build -d
+
+# 3. Seed demo data (pilot org, customer, knowledge doc, conversation)
+docker compose exec api python scripts/seed_demo.py
+
+# 4. Open services
+#    API docs:     http://localhost:8000/docs
+#    Dashboard:    http://localhost:3000
+#    n8n UI:       http://localhost:5678  (admin/admin by default)
+```
+
+### Import n8n workflows
+
+1. Open n8n UI at `http://localhost:5678` → Workflows → **Import from File**
+2. Select `integrations/n8n/inbound-task-relay.json` (and `gmail-inbound-reply.json` if needed)
+3. Set environment variables in n8n **Settings → Variables**:
+   - `BUSINESS_OPS_API_URL` = `http://api:8000`
+   - `BUSINESS_OPS_API_KEY` = value from `.env` `API_KEY`
+   - `SLACK_WEBHOOK_URL` = your Slack incoming webhook (optional)
+   - `DASHBOARD_URL` = `http://localhost:3000`
+4. For Gmail workflow: also set `BASE_URL`, `API_KEY`, `GMAIL_SENDER_EMAIL` and
+   configure Gmail OAuth2 credentials (see `integrations/n8n/README.md`)
+5. **Activate** the workflow(s)
+
+### Local development (without Docker)
+
+#### Backend
 
 ```bash
 python -m venv .venv
@@ -67,7 +101,7 @@ curl -X POST http://localhost:8000/v1/tasks \
 
 With `LLM_PROVIDER=mock` this works with zero credentials and zero network.
 
-### Frontend
+#### Frontend
 
 ```bash
 cd apps/web
@@ -75,7 +109,7 @@ npm install
 npm run dev    # http://localhost:3000
 ```
 
-### Database migrations (requires a PostgreSQL with pgvector)
+#### Database migrations (requires a PostgreSQL with pgvector)
 
 ```bash
 alembic upgrade head
@@ -83,16 +117,6 @@ alembic upgrade head
 
 Local development can use the compose `pgvector/pgvector:pg16` container or a
 Neon connection string directly.
-
-### Docker
-
-```bash
-docker compose up --build
-# api  -> http://localhost:8000/docs
-# web  -> http://localhost:3000
-```
-
-No GPU, no model downloads, no Ollama service in the stack.
 
 ## Tests & quality gates
 
