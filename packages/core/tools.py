@@ -94,6 +94,7 @@ async def execute_tool_loop(
     temperature: float = 0.2,
     max_tokens: int = 1024,
     on_tool_call: Any | None = None,
+    organization_id: Any | None = None,
 ) -> str:
     """Run the tool-call loop until the model returns a final text answer.
 
@@ -138,6 +139,9 @@ async def execute_tool_loop(
                 continue
             arguments = call.get("arguments") or {}
             tool = registry.get(name)
+            # Server-side org injection: the LLM never supplies organization_id.
+            if organization_id is not None and hasattr(tool, "bind_organization"):
+                tool.bind_organization(organization_id)
             result = await tool.run(arguments)
 
             # Invoke callback if provided

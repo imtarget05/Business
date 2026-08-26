@@ -4,8 +4,8 @@
 - POST /v1/knowledge/query   — RAG answer with citations (threshold-gated)
 - DELETE /v1/knowledge/documents/{id} — remove doc + chunks (org-scoped)
 
-NOTE: single-tenant dev default — organization_id comes from the request body
-until Phase 5 adds per-tenant API keys.
+Organization binding is SERVER-SIDE: the caller's organization comes from
+their API key (`current_org`), never from the request body.
 """
 
 from __future__ import annotations
@@ -13,15 +13,15 @@ from __future__ import annotations
 import uuid
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from agents.knowledge.agent import NO_INFO_ANSWER, KnowledgeAgent
 from agents.knowledge.ingest import IngestionService
-from apps.api.deps import resolve_org
+from apps.api.deps import current_org
 from packages.config.settings import get_settings
-from packages.core.errors import NotFoundError
+from packages.core.errors import DatabaseError, NotFoundError, ValidationError
 from packages.database.repositories.documents import KnowledgeRepository
 from packages.database.session import get_session
 from packages.llm.factory import get_embedding_provider, get_llm_provider
@@ -36,19 +36,18 @@ class IngestRequest(BaseModel):
     content: str = Field(min_length=1)
     source_type: str = "text"
     source_ref: str | None = None
-    organization_id: UUID | None = None
 
 
 class QueryRequest(BaseModel):
     question: str = Field(min_length=1)
-    organization_id: UUID | None = None
 
 
 @router.post("/ingest")
 async def ingest(
     body: IngestRequest,
+    request: Request,
     db: AsyncSession = Depends(get_session),
-    org_id: UUID = Depends(resolve_org),
+    org_id: UUID = Depends(current_org),
 ) -> dict:
     service = IngestionService(KnowledgeRepository(db), get_embedding_provider(get_settings()))
     try:
@@ -61,7 +60,8 @@ async def ingest(
         )
     except Exception as exc:
         await db.rollback()
-        raise HTTPException(status_code=500, detail=f"ingest failed: {exc}") from exc
+        logger.error("knowledge_ingest_failed", extra={"type": type(exc).__name__})
+        raise DatabaseError("ingest failed") from exc
     await db.commit()
     logger.info("knowledge_ingested", extra={"document_id": str(doc.id), "chunks": doc.chunk_count})
     return {
@@ -75,8 +75,9 @@ async def ingest(
 @router.post("/query")
 async def query(
     body: QueryRequest,
+    request: Request,
     db: AsyncSession = Depends(get_session),
-    org_id: UUID = Depends(resolve_org),
+    org_id: UUID = Depends(current_org),
 ) -> dict:
     s = get_settings()
     agent = KnowledgeAgent(
@@ -88,17 +89,17 @@ async def query(
     from packages.contracts.enums import Domain
     from packages.contracts.models import TaskContext, TaskRequest
 
-    request = TaskRequest(
+    req = TaskRequest(
         domain=Domain.KNOWLEDGE,
         action="query",
         payload={"question": body.question},
         context=TaskContext(organization_id=org_id, channel="dashboard"),
         task_id=uuid.uuid4(),
     )
-    response = await agent.handle(request)
+    response = await agent.handle(req)
     if response.status.value == "rejected":
         detail = response.error.message if response.error else "rejected"
-        raise HTTPException(status_code=422, detail=detail)
+        raise ValidationError(detail)
     return {
         "answer": response.result.get("answer"),
         "confidence": response.confidence,
@@ -109,7 +110,10 @@ async def query(
 
 @router.delete("/documents/{document_id}")
 async def delete_document(
-    document_id: UUID, db: AsyncSession = Depends(get_session), org_id: UUID = Depends(resolve_org)
+    document_id: UUID,
+    request: Request,
+    db: AsyncSession = Depends(get_session),
+    org_id: UUID = Depends(current_org),
 ) -> dict:
     repo = KnowledgeRepository(db)
     deleted = await repo.delete_document(org_id, document_id)
@@ -121,8 +125,9 @@ async def delete_document(
 
 @router.get("/documents")
 async def list_documents(
+    request: Request,
     db: AsyncSession = Depends(get_session),
-    org_id: UUID = Depends(resolve_org),
+    org_id: UUID = Depends(current_org),
 ) -> dict:
     repo = KnowledgeRepository(db)
     docs = await repo.list_documents(org_id)

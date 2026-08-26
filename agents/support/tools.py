@@ -10,6 +10,7 @@ All tools are org-scoped and use the async SQLAlchemy session.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import smtplib
 import ssl
@@ -18,9 +19,46 @@ from typing import Any
 from uuid import UUID
 
 from packages.config.settings import get_settings
+from packages.core.errors import ToolExecutionError
 from packages.core.tools import Tool
-from packages.database.models import Customer, Ticket, TicketStatus
+from packages.database.models import Conversation, Customer, Ticket, TicketStatus
 from packages.database.session import AsyncSession, async_sessionmaker, get_session_factory
+
+
+class _OrgBoundTool(Tool):
+    """Mixin for tools whose organization context is injected SERVER-SIDE.
+
+    The LLM never supplies ``organization_id``. If it tries (or supplies one
+    that differs from the bound principal), the call is rejected.
+    """
+
+    def __init__(self) -> None:
+        self._bound_org: UUID | None = None
+
+    def bind_organization(self, organization_id: UUID | str | None) -> None:
+        """Called by the tool loop / route with the TaskContext's org id."""
+        if organization_id is None:
+            self._bound_org = None
+        elif isinstance(organization_id, UUID):
+            self._bound_org = organization_id
+        else:
+            self._bound_org = UUID(str(organization_id))
+
+    def _resolve_org(self, arguments: dict[str, Any]) -> UUID:
+        """Resolve the caller's org strictly from the server-side binding."""
+        supplied = arguments.pop("organization_id", None)
+        if supplied is not None and self._bound_org is not None and str(supplied) != str(
+            self._bound_org
+        ):
+            raise ToolExecutionError(
+                "organization mismatch: tool arguments may not specify an "
+                "organization other than the authenticated caller"
+            )
+        if self._bound_org is None:
+            raise ToolExecutionError(
+                "no server-side organization context bound for this tool run"
+            )
+        return self._bound_org
 
 
 def _default_session_factory() -> async_sessionmaker[AsyncSession]:
@@ -28,11 +66,15 @@ def _default_session_factory() -> async_sessionmaker[AsyncSession]:
     return get_session_factory()
 
 
-class SendEmailReplyTool(Tool):
+class SendEmailReplyTool(_OrgBoundTool):
     """Send an email reply via SMTP.
 
     DRY-RUN mode is DEFAULT (draft-only). Real send requires
     `email_send_enabled=True` in settings. YAGNI: no retries/queueing.
+
+    Recipient allowlist (send path only): when sending is enabled, ``to_email``
+    must belong to a customer record in the bound organization, or appear in
+    ``settings.email_recipient_allowlist``. Otherwise ToolExecutionError.
     """
 
     name = "send_email_reply"
@@ -55,8 +97,17 @@ class SendEmailReplyTool(Tool):
     def __init__(
         self, session_factory: async_sessionmaker[AsyncSession] | None = None
     ) -> None:
-        # session_factory accepted for DI consistency with other tools; unused currently
+        super().__init__()
         self._session_factory = session_factory or _default_session_factory()
+
+    def _smtp_send(self, msg: EmailMessage, host: str, port: int) -> None:
+        context = ssl.create_default_context()
+        settings = get_settings()
+        with smtplib.SMTP(host, port) as server:
+            server.starttls(context=context)
+            if settings.email_smtp_username and settings.email_smtp_password:
+                server.login(settings.email_smtp_username, settings.email_smtp_password)
+            server.send_message(msg)
 
     async def run(self, arguments: dict[str, Any]) -> str:
         settings = get_settings()
@@ -76,7 +127,7 @@ class SendEmailReplyTool(Tool):
         if body_html:
             msg.add_alternative(body_html, subtype="html")
 
-        # DRY-RUN mode default
+        # DRY-RUN mode default (allowlist not enforced on drafts)
         if not settings.email_send_enabled:
             draft = {
                 "mode": "DRY_RUN",
@@ -95,12 +146,17 @@ class SendEmailReplyTool(Tool):
                 "email_send_enabled=True but email_smtp_host not configured"
             )
 
-        context = ssl.create_default_context()
-        with smtplib.SMTP(settings.email_smtp_host, settings.email_smtp_port) as server:
-            server.starttls(context=context)
-            if settings.email_smtp_username and settings.email_smtp_password:
-                server.login(settings.email_smtp_username, settings.email_smtp_password)
-            server.send_message(msg)
+        org_id = self._resolve_org(arguments)
+        if not await self._recipient_allowed(org_id, to_email, conversation_id):
+            raise ToolExecutionError(
+                f"recipient {to_email!r} is not allowlisted for this "
+                "organization's conversations"
+            )
+
+        # Blocking SMTP I/O must not stall the event loop.
+        await asyncio.to_thread(
+            self._smtp_send, msg, settings.email_smtp_host, settings.email_smtp_port
+        )
 
         result = {
             "mode": "SENT",
@@ -111,8 +167,27 @@ class SendEmailReplyTool(Tool):
         }
         return json.dumps(result, ensure_ascii=False)
 
+    async def _recipient_allowed(
+        self, org_id: UUID, to_email: str, conversation_id: Any
+    ) -> bool:
+        if to_email.lower() in {
+            e.lower() for e in get_settings().email_recipient_allowlist
+        }:
+            return True
+        # Recipient must be a customer record in this org (optionally tied to
+        # the conversation's organization).
+        from sqlalchemy import select
 
-class CreateTicketTool(Tool):
+        async with self._session_factory() as session:
+            stmt = select(Customer).where(
+                Customer.organization_id == org_id,
+                Customer.email == to_email,
+            )
+            customer = (await session.execute(stmt)).scalar_one_or_none()
+        return customer is not None
+
+
+class CreateTicketTool(_OrgBoundTool):
     """Create a support ticket record."""
 
     name = "create_ticket"
@@ -120,20 +195,20 @@ class CreateTicketTool(Tool):
     schema = {
         "type": "object",
         "properties": {
-            "organization_id": {"type": "string", "format": "uuid"},
             "customer_id": {"type": "string", "format": "uuid"},
             "subject": {"type": "string"},
             "description": {"type": "string"},
             "assignee_id": {"type": "string", "format": "uuid"},
         },
-        "required": ["organization_id", "customer_id", "subject"],
+        "required": ["customer_id", "subject"],
     }
 
     def __init__(self, session_factory: async_sessionmaker[AsyncSession] | None = None) -> None:
+        super().__init__()
         self._session_factory = session_factory or _default_session_factory()
 
     async def run(self, arguments: dict[str, Any]) -> str:
-        org_id = UUID(arguments["organization_id"])
+        org_id = self._resolve_org(arguments)
         customer_id = UUID(arguments["customer_id"])
         subject = arguments["subject"]
         description = arguments.get("description")
@@ -173,11 +248,11 @@ class CreateTicketTool(Tool):
             )
 
 
-class LookupCustomerTool(Tool):
+class LookupCustomerTool(_OrgBoundTool):
     """CRUD-lite operations on customers table.
 
     Operations: create, get, update, list, delete (soft via status if needed).
-    All operations are org-scoped.
+    All operations are org-scoped; the org comes from the server-side binding.
     """
 
     name = "lookup_customer"
@@ -189,7 +264,6 @@ class LookupCustomerTool(Tool):
                 "type": "string",
                 "enum": ["create", "get", "update", "list", "delete"],
             },
-            "organization_id": {"type": "string", "format": "uuid"},
             "customer_id": {"type": "string", "format": "uuid"},
             "email": {"type": "string", "format": "email"},
             "name": {"type": "string"},
@@ -197,15 +271,16 @@ class LookupCustomerTool(Tool):
             "limit": {"type": "integer", "minimum": 1, "maximum": 100, "default": 20},
             "offset": {"type": "integer", "minimum": 0, "default": 0},
         },
-        "required": ["operation", "organization_id"],
+        "required": ["operation"],
     }
 
     def __init__(self, session_factory: async_sessionmaker[AsyncSession] | None = None) -> None:
+        super().__init__()
         self._session_factory = session_factory or _default_session_factory()
 
     async def run(self, arguments: dict[str, Any]) -> str:
         operation = arguments["operation"]
-        org_id = UUID(arguments["organization_id"])
+        org_id = self._resolve_org(arguments)
 
         async with self._session_factory() as session:
             if operation == "create":

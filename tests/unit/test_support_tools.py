@@ -168,9 +168,9 @@ class TestCreateTicketTool:
     @pytest.mark.asyncio
     async def test_create_ticket_success(self, tool, db, org_id, test_customer):
         """Create a ticket successfully."""
+        tool.bind_organization(org_id)
         result = await tool.run(
             {
-                "organization_id": str(org_id),
                 "customer_id": str(test_customer.id),
                 "subject": "Billing issue",
                 "description": "Customer reports incorrect charge",
@@ -194,9 +194,9 @@ class TestCreateTicketTool:
     async def test_create_ticket_with_assignee(self, tool, db, org_id, test_customer):
         """Create a ticket with an assignee."""
         assignee_id = uuid.uuid4()
+        tool.bind_organization(org_id)
         result = await tool.run(
             {
-                "organization_id": str(org_id),
                 "customer_id": str(test_customer.id),
                 "subject": "Technical issue",
                 "assignee_id": str(assignee_id),
@@ -223,9 +223,9 @@ class TestCreateTicketTool:
         await db.commit()
 
         with pytest.raises(NotFoundError, match="not found in organization"):
+            tool.bind_organization(org_id)
             await tool.run(
                 {
-                    "organization_id": str(org_id),
                     "customer_id": str(other_customer.id),
                     "subject": "Should fail",
                 }
@@ -235,9 +235,9 @@ class TestCreateTicketTool:
     async def test_create_ticket_rejects_nonexistent_customer(self, tool, org_id):
         """Reject creating ticket with nonexistent customer."""
         with pytest.raises(NotFoundError, match="not found in organization"):
+            tool.bind_organization(org_id)
             await tool.run(
                 {
-                    "organization_id": str(org_id),
                     "customer_id": str(uuid.uuid4()),
                     "subject": "Should fail",
                 }
@@ -261,10 +261,10 @@ class TestLookupCustomerTool:
     @pytest.mark.asyncio
     async def test_create_customer_success(self, tool, db, org_id):
         """Create a new customer."""
+        tool.bind_organization(org_id)
         result = await tool.run(
             {
                 "operation": "create",
-                "organization_id": str(org_id),
                 "email": "new@example.com",
                 "name": "New Customer",
                 "notes": "VIP",
@@ -286,10 +286,10 @@ class TestLookupCustomerTool:
     async def test_create_customer_rejects_duplicate_email(self, tool, db, org_id, test_customer):
         """Reject creating customer with duplicate email in same org."""
         with pytest.raises(ValidationError, match="already exists"):
+            tool.bind_organization(org_id)
             await tool.run(
                 {
                     "operation": "create",
-                    "organization_id": str(org_id),
                     "email": test_customer.email,  # duplicate
                     "name": "Duplicate",
                 }
@@ -300,10 +300,10 @@ class TestLookupCustomerTool:
         self, tool, db, org_id, other_org_id, test_customer
     ):
         """Allow same email in different organization."""
+        tool.bind_organization(other_org_id)
         result = await tool.run(
             {
                 "operation": "create",
-                "organization_id": str(other_org_id),
                 "email": test_customer.email,  # same email, different org
                 "name": "Other Org Customer",
             }
@@ -318,10 +318,10 @@ class TestLookupCustomerTool:
     @pytest.mark.asyncio
     async def test_get_customer_by_id(self, tool, db, org_id, test_customer):
         """Get customer by ID."""
+        tool.bind_organization(org_id)
         result = await tool.run(
             {
                 "operation": "get",
-                "organization_id": str(org_id),
                 "customer_id": str(test_customer.id),
             }
         )
@@ -334,10 +334,10 @@ class TestLookupCustomerTool:
     @pytest.mark.asyncio
     async def test_get_customer_by_email(self, tool, db, org_id, test_customer):
         """Get customer by email."""
+        tool.bind_organization(org_id)
         result = await tool.run(
             {
                 "operation": "get",
-                "organization_id": str(org_id),
                 "email": test_customer.email,
             }
         )
@@ -350,10 +350,10 @@ class TestLookupCustomerTool:
     async def test_get_customer_not_found(self, tool, org_id):
         """Get raises NotFoundError for non-existent customer."""
         with pytest.raises(NotFoundError, match="Customer not found"):
+            tool.bind_organization(org_id)
             await tool.run(
                 {
                     "operation": "get",
-                    "organization_id": str(org_id),
                     "customer_id": str(uuid.uuid4()),
                 }
             )
@@ -363,11 +363,11 @@ class TestLookupCustomerTool:
         self, tool, db, org_id, other_org_id, test_customer
     ):
         """Get rejects customer from different org."""
+        tool.bind_organization(other_org_id)
         with pytest.raises(NotFoundError, match="Customer not found"):
             await tool.run(
                 {
                     "operation": "get",
-                    "organization_id": str(other_org_id),
                     "customer_id": str(test_customer.id),
                 }
             )
@@ -377,10 +377,10 @@ class TestLookupCustomerTool:
     @pytest.mark.asyncio
     async def test_update_customer_name(self, tool, db, org_id, test_customer):
         """Update customer name."""
+        tool.bind_organization(org_id)
         result = await tool.run(
             {
                 "operation": "update",
-                "organization_id": str(org_id),
                 "customer_id": str(test_customer.id),
                 "name": "Updated Name",
             }
@@ -396,10 +396,10 @@ class TestLookupCustomerTool:
     @pytest.mark.asyncio
     async def test_update_customer_email(self, tool, db, org_id, test_customer):
         """Update customer email."""
+        tool.bind_organization(org_id)
         result = await tool.run(
             {
                 "operation": "update",
-                "organization_id": str(org_id),
                 "customer_id": str(test_customer.id),
                 "email": "updated@example.com",
             }
@@ -422,10 +422,10 @@ class TestLookupCustomerTool:
         await db.commit()
 
         with pytest.raises(ValidationError, match="already exists"):
+            tool.bind_organization(org_id)
             await tool.run(
                 {
                     "operation": "update",
-                    "organization_id": str(org_id),
                     "customer_id": str(test_customer.id),
                     "email": "other@example.com",  # duplicate
                 }
@@ -447,10 +447,11 @@ class TestLookupCustomerTool:
             db.add(c)
         await db.commit()
 
+        tool.bind_organization(org_id)
+
         result = await tool.run(
             {
                 "operation": "list",
-                "organization_id": str(org_id),
                 "limit": 3,
                 "offset": 0,
             }
@@ -463,10 +464,10 @@ class TestLookupCustomerTool:
         assert len(data["customers"]) == 3
 
         # Test pagination
+        tool.bind_organization(org_id)
         result2 = await tool.run(
             {
                 "operation": "list",
-                "organization_id": str(org_id),
                 "limit": 3,
                 "offset": 3,
             }
@@ -485,8 +486,10 @@ class TestLookupCustomerTool:
         db.add_all([c1, c2])
         await db.commit()
 
+        tool.bind_organization(org_id)
+
         result = await tool.run(
-            {"operation": "list", "organization_id": str(org_id)}
+            {"operation": "list"}
         )
         data = json.loads(result)
         assert data["count"] == 1
@@ -497,10 +500,10 @@ class TestLookupCustomerTool:
     @pytest.mark.asyncio
     async def test_delete_customer(self, tool, test_session_factory, org_id, test_customer):
         """Delete a customer."""
+        tool.bind_organization(org_id)
         result = await tool.run(
             {
                 "operation": "delete",
-                "organization_id": str(org_id),
                 "customer_id": str(test_customer.id),
             }
         )
@@ -519,11 +522,11 @@ class TestLookupCustomerTool:
         self, tool, db, org_id, other_org_id, test_customer
     ):
         """Delete rejects customer from different org."""
+        tool.bind_organization(other_org_id)
         with pytest.raises(NotFoundError, match="Customer not found"):
             await tool.run(
                 {
                     "operation": "delete",
-                    "organization_id": str(other_org_id),
                     "customer_id": str(test_customer.id),
                 }
             )

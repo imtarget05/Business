@@ -13,13 +13,13 @@ import uuid
 from typing import Literal
 from uuid import UUID
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from agents.support.agent import SupportAgent, create_support_agent
 from agents.support.tools import create_support_tools
-from apps.api.deps import resolve_org
+from apps.api.deps import current_org
 from packages.config.settings import get_settings
 from packages.contracts.enums import Domain
 from packages.contracts.models import TaskContext, TaskRequest
@@ -46,9 +46,6 @@ class ConversationCreateRequest(BaseModel):
         ..., description="Channel: web, email, zalo, or facebook"
     )
     subject: str | None = Field(None, max_length=512, description="Optional subject/title")
-    organization_id: UUID | None = Field(
-        None, description="Organization ID (defaults to pilot org)"
-    )
 
 
 class ConversationCreateResponse(BaseModel):
@@ -65,9 +62,6 @@ class MessageCreateRequest(BaseModel):
     """Request to append a user message and run the support agent."""
 
     content: str = Field(..., min_length=1, description="User message content")
-    organization_id: UUID | None = Field(
-        None, description="Organization ID (defaults to pilot org)"
-    )
 
 
 class ActionMetadata(BaseModel):
@@ -190,6 +184,7 @@ async def _run_support_agent_with_actions(
         temperature=0.2,
         max_tokens=1024,
         on_tool_call=capture_action,
+        organization_id=org_id,
     )
 
     return assistant_reply, actions
@@ -203,8 +198,9 @@ async def _run_support_agent_with_actions(
 @router.post("", response_model=ConversationCreateResponse, status_code=201)
 async def create_conversation(
     body: ConversationCreateRequest,
+    request: Request,
     db: AsyncSession = Depends(get_session),
-    org_id: UUID = Depends(resolve_org),
+    org_id: UUID = Depends(current_org),
 ) -> ConversationCreateResponse:
     """Create a new conversation thread."""
     repo = ConversationRepository(db)
@@ -237,15 +233,15 @@ async def create_conversation(
 async def append_message(
     conversation_id: UUID,
     body: MessageCreateRequest,
+    request: Request,
     db: AsyncSession = Depends(get_session),
-    org_id: UUID = Depends(resolve_org),
+    org_id: UUID = Depends(current_org),
 ) -> MessageCreateResponse:
     """Append a user message, run the support agent, persist assistant reply + actions."""
     repo = ConversationRepository(db)
 
-    # Org from request (body/query) — explicit here because this endpoint has a body
-    from apps.api.deps import _resolve_org
-    effective_org = await _resolve_org(body.organization_id, db)
+    # Org is bound server-side from the caller's API key.
+    effective_org = org_id
 
     # Verify conversation exists and belongs to org
     conv = await repo.get_conversation(effective_org, conversation_id)
@@ -331,8 +327,9 @@ async def append_message(
 @router.get("/{conversation_id}", response_model=ConversationThreadResponse)
 async def get_conversation(
     conversation_id: UUID,
+    request: Request,
     db: AsyncSession = Depends(get_session),
-    org_id: UUID = Depends(resolve_org),
+    org_id: UUID = Depends(current_org),
 ) -> ConversationThreadResponse:
     """Get full conversation thread with all messages."""
     repo = ConversationRepository(db)
@@ -364,8 +361,9 @@ async def get_conversation(
 @router.get("/{conversation_id}/messages", response_model=list[MessageResponse])
 async def list_messages(
     conversation_id: UUID,
+    request: Request,
     db: AsyncSession = Depends(get_session),
-    org_id: UUID = Depends(resolve_org),
+    org_id: UUID = Depends(current_org),
 ) -> list[MessageResponse]:
     """Get messages for a conversation (org-scoped)."""
     repo = ConversationRepository(db)
@@ -389,8 +387,9 @@ async def list_messages(
 
 @router.get("", response_model=ConversationListResponse)
 async def list_conversations(
+    request: Request,
     db: AsyncSession = Depends(get_session),
-    org_id: UUID = Depends(resolve_org),
+    org_id: UUID = Depends(current_org),
     limit: int = 50,
     offset: int = 0,
 ) -> ConversationListResponse:

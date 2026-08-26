@@ -105,8 +105,10 @@ Commit sau mỗi task: `feat(knowledge): ...`
 
 ## Phase 5 — Integrations & Go-live cho 1 doanh nghiệp cụ thể
 
-### Task 5.1: Chọn bài toán + khách hàng thí điểm (quyết định cần user)
-- Use case 1 (mặc định): **tự động trả lời & phân loại email/hỗ trợ khách hàng cho 1 shop dịch vụ**.
+### Task 5.1: Chọn bài toán + khách hàng thí điểm (QUYẾT ĐỊNH ĐÃ CHỐT bởi user 2026-08-26)
+- Use case 1: **tự động trả lời & phân loại email/hỗ trợ khách hàng** — khách hàng thí điểm: doanh nghiệp đang săn đón cao (user sẽ cung cấp cụ thể khi go-live).
+- Email channel: **Gmail** (đã chốt).
+- LLM production: **Llama 70B** qua Cloudflare AI (user sẽ cung cấp credentials sau).
 - Use case 2 (bổ sung từ video TikTok "5 AI Agents tự động làm báo cáo"): **báo cáo vận hành định kỳ** —
   - `ReportingAgent` (agent thứ 3): capabilities `report.generate`, `report.schedule`
   - Chain 5 bước ánh xạ multi-agent handoff (Phase 4): collect → analyze → root-cause → recommend → report

@@ -1,0 +1,437 @@
+..F.........FFF..F...................................................... [ 51%]
+.......F.............................FFFFFFFFFFFFFFFFFFF...FF........    [100%]
+================================== FAILURES ===================================
+_________________________ test_create_task_happy_path _________________________
+tests\integration\test_api.py:46: in test_create_task_happy_path
+    assert data["status"] in ("success", "rejected")
+E   AssertionError: assert 'timeout' in ('success', 'rejected')
+------------------------------ Captured log call ------------------------------
+WARNING  orchestrator:orchestrator.py:162 task_failed
+______________ test_org_scoping_conversation_not_found_cross_org ______________
+tests\integration\test_conversations_api.py:301: in test_org_scoping_conversation_not_found_cross_org
+    assert resp.status_code == 404, resp.text
+E   AssertionError: {"conversation_id":"a8e1585a-7e75-4fe8-9efe-840a0c294a16","organization_id":"00000000-0000-0000-0000-000000000001","channel":"web","status":"open","subject":null,"messages":[]}
+E   assert 200 == 404
+E    +  where 200 = <Response [200 OK]>.status_code
+__________________ test_org_scoping_append_message_cross_org __________________
+tests\integration\test_conversations_api.py:319: in test_org_scoping_append_message_cross_org
+    assert resp.status_code == 404, resp.text
+E   AssertionError: {"conversation_id":"f8d269a6-a0c9-4bef-86e6-6c7cd227b879","user_message_id":"9a886fca-99bd-46b0-a746-e651f992266a","assistant_message_id":"721da319-9be8-43ba-99c8-5c536b293503","assistant_reply":"Reply","actions":[]}
+E   assert 200 == 404
+E    +  where 200 = <Response [200 OK]>.status_code
+__________________ test_org_scoping_list_messages_cross_org ___________________
+tests\integration\test_conversations_api.py:334: in test_org_scoping_list_messages_cross_org
+    assert resp.status_code == 404, resp.text
+E   AssertionError: []
+E   assert 200 == 404
+E    +  where 200 = <Response [200 OK]>.status_code
+_____________________ test_list_conversations_org_scoping _____________________
+tests\integration\test_conversations_api.py:410: in test_list_conversations_org_scoping
+    assert len(data["conversations"]) == 0
+E   AssertionError: assert 1 == 0
+E    +  where 1 = len([{'conversation_id': '987efa48-a893-4dbf-b185-cb33059eafdb', 'organization_id': '00000000-0000-0000-0000-000000000001', 'channel': 'web', 'status': 'open', ...}])
+__________________________ test_mock_llm_was_called ___________________________
+tests\unit\test_orchestrator.py:63: in test_mock_llm_was_called
+    assert len(provider.calls) == before + 1
+E   AssertionError: assert 2 == (0 + 1)
+E    +  where 2 = len([{'prompt': 'Classify this task and return the target capability.\ndomain=support action=draft_reply', 'system': 'You ...et), lookup_customer (CRUD on customers). All tools are org-scoped. Always use the organization_id from the context.'}])
+E    +    where [{'prompt': 'Classify this task and return the target capability.\ndomain=support action=draft_reply', 'system': 'You ...et), lookup_customer (CRUD on customers). All tools are org-scoped. Always use the organization_id from the context.'}] = <packages.llm.mock.MockLLMProvider object at 0x000001B977366990>.calls
+_________ TestSendEmailReplyTool.test_real_send_requires_smtp_config __________
+tests\unit\test_support_tools.py:142: in test_real_send_requires_smtp_config
+    await tool.run(
+agents\support\tools.py:144: in run
+    org_id = self._resolve_org(arguments)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+agents\support\tools.py:58: in _resolve_org
+    raise ToolExecutionError(
+E   packages.core.errors.ToolExecutionError: no server-side organization context bound for this tool run
+_______________ TestCreateTicketTool.test_create_ticket_success _______________
+tests\unit\test_support_tools.py:171: in test_create_ticket_success
+    result = await tool.run(
+agents\support\tools.py:211: in run
+    org_id = self._resolve_org(arguments)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+agents\support\tools.py:58: in _resolve_org
+    raise ToolExecutionError(
+E   packages.core.errors.ToolExecutionError: no server-side organization context bound for this tool run
+____________ TestCreateTicketTool.test_create_ticket_with_assignee ____________
+tests\unit\test_support_tools.py:197: in test_create_ticket_with_assignee
+    result = await tool.run(
+agents\support\tools.py:211: in run
+    org_id = self._resolve_org(arguments)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+agents\support\tools.py:58: in _resolve_org
+    raise ToolExecutionError(
+E   packages.core.errors.ToolExecutionError: no server-side organization context bound for this tool run
+______ TestCreateTicketTool.test_create_ticket_rejects_foreign_customer _______
+tests\unit\test_support_tools.py:226: in test_create_ticket_rejects_foreign_customer
+    await tool.run(
+agents\support\tools.py:211: in run
+    org_id = self._resolve_org(arguments)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+agents\support\tools.py:58: in _resolve_org
+    raise ToolExecutionError(
+E   packages.core.errors.ToolExecutionError: no server-side organization context bound for this tool run
+____ TestCreateTicketTool.test_create_ticket_rejects_nonexistent_customer _____
+tests\unit\test_support_tools.py:238: in test_create_ticket_rejects_nonexistent_customer
+    await tool.run(
+agents\support\tools.py:211: in run
+    org_id = self._resolve_org(arguments)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+agents\support\tools.py:58: in _resolve_org
+    raise ToolExecutionError(
+E   packages.core.errors.ToolExecutionError: no server-side organization context bound for this tool run
+_____________ TestLookupCustomerTool.test_create_customer_success _____________
+tests\unit\test_support_tools.py:264: in test_create_customer_success
+    result = await tool.run(
+agents\support\tools.py:283: in run
+    org_id = self._resolve_org(arguments)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+agents\support\tools.py:58: in _resolve_org
+    raise ToolExecutionError(
+E   packages.core.errors.ToolExecutionError: no server-side organization context bound for this tool run
+_____ TestLookupCustomerTool.test_create_customer_rejects_duplicate_email _____
+tests\unit\test_support_tools.py:289: in test_create_customer_rejects_duplicate_email
+    await tool.run(
+agents\support\tools.py:283: in run
+    org_id = self._resolve_org(arguments)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+agents\support\tools.py:58: in _resolve_org
+    raise ToolExecutionError(
+E   packages.core.errors.ToolExecutionError: no server-side organization context bound for this tool run
+_ TestLookupCustomerTool.test_create_customer_allows_same_email_different_org _
+tests\unit\test_support_tools.py:303: in test_create_customer_allows_same_email_different_org
+    result = await tool.run(
+agents\support\tools.py:283: in run
+    org_id = self._resolve_org(arguments)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+agents\support\tools.py:58: in _resolve_org
+    raise ToolExecutionError(
+E   packages.core.errors.ToolExecutionError: no server-side organization context bound for this tool run
+_______________ TestLookupCustomerTool.test_get_customer_by_id ________________
+tests\unit\test_support_tools.py:321: in test_get_customer_by_id
+    result = await tool.run(
+agents\support\tools.py:283: in run
+    org_id = self._resolve_org(arguments)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+agents\support\tools.py:58: in _resolve_org
+    raise ToolExecutionError(
+E   packages.core.errors.ToolExecutionError: no server-side organization context bound for this tool run
+______________ TestLookupCustomerTool.test_get_customer_by_email ______________
+tests\unit\test_support_tools.py:337: in test_get_customer_by_email
+    result = await tool.run(
+agents\support\tools.py:283: in run
+    org_id = self._resolve_org(arguments)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+agents\support\tools.py:58: in _resolve_org
+    raise ToolExecutionError(
+E   packages.core.errors.ToolExecutionError: no server-side organization context bound for this tool run
+_____________ TestLookupCustomerTool.test_get_customer_not_found ______________
+tests\unit\test_support_tools.py:353: in test_get_customer_not_found
+    await tool.run(
+agents\support\tools.py:283: in run
+    org_id = self._resolve_org(arguments)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+agents\support\tools.py:58: in _resolve_org
+    raise ToolExecutionError(
+E   packages.core.errors.ToolExecutionError: no server-side organization context bound for this tool run
+________ TestLookupCustomerTool.test_get_customer_rejects_foreign_org _________
+tests\unit\test_support_tools.py:367: in test_get_customer_rejects_foreign_org
+    await tool.run(
+agents\support\tools.py:283: in run
+    org_id = self._resolve_org(arguments)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+agents\support\tools.py:58: in _resolve_org
+    raise ToolExecutionError(
+E   packages.core.errors.ToolExecutionError: no server-side organization context bound for this tool run
+______________ TestLookupCustomerTool.test_update_customer_name _______________
+tests\unit\test_support_tools.py:380: in test_update_customer_name
+    result = await tool.run(
+agents\support\tools.py:283: in run
+    org_id = self._resolve_org(arguments)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+agents\support\tools.py:58: in _resolve_org
+    raise ToolExecutionError(
+E   packages.core.errors.ToolExecutionError: no server-side organization context bound for this tool run
+______________ TestLookupCustomerTool.test_update_customer_email ______________
+tests\unit\test_support_tools.py:399: in test_update_customer_email
+    result = await tool.run(
+agents\support\tools.py:283: in run
+    org_id = self._resolve_org(arguments)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+agents\support\tools.py:58: in _resolve_org
+    raise ToolExecutionError(
+E   packages.core.errors.ToolExecutionError: no server-side organization context bound for this tool run
+_____ TestLookupCustomerTool.test_update_customer_rejects_duplicate_email _____
+tests\unit\test_support_tools.py:425: in test_update_customer_rejects_duplicate_email
+    await tool.run(
+agents\support\tools.py:283: in run
+    org_id = self._resolve_org(arguments)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+agents\support\tools.py:58: in _resolve_org
+    raise ToolExecutionError(
+E   packages.core.errors.ToolExecutionError: no server-side organization context bound for this tool run
+_________________ TestLookupCustomerTool.test_list_customers __________________
+tests\unit\test_support_tools.py:450: in test_list_customers
+    result = await tool.run(
+agents\support\tools.py:283: in run
+    org_id = self._resolve_org(arguments)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+agents\support\tools.py:58: in _resolve_org
+    raise ToolExecutionError(
+E   packages.core.errors.ToolExecutionError: no server-side organization context bound for this tool run
+____________ TestLookupCustomerTool.test_list_customers_org_scoped ____________
+tests\unit\test_support_tools.py:488: in test_list_customers_org_scoped
+    result = await tool.run(
+agents\support\tools.py:283: in run
+    org_id = self._resolve_org(arguments)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+agents\support\tools.py:58: in _resolve_org
+    raise ToolExecutionError(
+E   packages.core.errors.ToolExecutionError: no server-side organization context bound for this tool run
+_________________ TestLookupCustomerTool.test_delete_customer _________________
+tests\unit\test_support_tools.py:500: in test_delete_customer
+    result = await tool.run(
+agents\support\tools.py:283: in run
+    org_id = self._resolve_org(arguments)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+agents\support\tools.py:58: in _resolve_org
+    raise ToolExecutionError(
+E   packages.core.errors.ToolExecutionError: no server-side organization context bound for this tool run
+_______ TestLookupCustomerTool.test_delete_customer_rejects_foreign_org _______
+tests\unit\test_support_tools.py:523: in test_delete_customer_rejects_foreign_org
+    await tool.run(
+agents\support\tools.py:283: in run
+    org_id = self._resolve_org(arguments)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+agents\support\tools.py:58: in _resolve_org
+    raise ToolExecutionError(
+E   packages.core.errors.ToolExecutionError: no server-side organization context bound for this tool run
+_______________________ test_store_persists_and_replays _______________________
+.venv\Lib\site-packages\sqlalchemy\engine\base.py:1969: in _exec_single_context
+    self.dialect.do_execute(
+.venv\Lib\site-packages\sqlalchemy\engine\default.py:952: in do_execute
+    cursor.execute(statement, parameters)
+.venv\Lib\site-packages\sqlalchemy\dialects\sqlite\aiosqlite.py:213: in execute
+    self._adapt_connection._handle_exception(error)
+.venv\Lib\site-packages\sqlalchemy\dialects\sqlite\aiosqlite.py:373: in _handle_exception
+    raise error
+.venv\Lib\site-packages\sqlalchemy\dialects\sqlite\aiosqlite.py:195: in execute
+    self.await_(_cursor.execute(operation, parameters))
+.venv\Lib\site-packages\sqlalchemy\util\_concurrency_py3k.py:132: in await_only
+    return current.parent.switch(awaitable)  # type: ignore[no-any-return,attr-defined] # noqa: E501
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv\Lib\site-packages\sqlalchemy\util\_concurrency_py3k.py:196: in greenlet_spawn
+    value = await result
+            ^^^^^^^^^^^^
+.venv\Lib\site-packages\aiosqlite\cursor.py:40: in execute
+    await self._execute(self._cursor.execute, sql, parameters)
+.venv\Lib\site-packages\aiosqlite\cursor.py:32: in _execute
+    return await self._conn._execute(fn, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv\Lib\site-packages\aiosqlite\core.py:160: in _execute
+    return await future
+           ^^^^^^^^^^^^
+.venv\Lib\site-packages\aiosqlite\core.py:63: in _connection_worker_thread
+    result = function()
+             ^^^^^^^^^^
+E   sqlite3.IntegrityError: NOT NULL constraint failed: tasks.organization_id
+
+The above exception was the direct cause of the following exception:
+tests\unit\test_task_persistence.py:164: in test_store_persists_and_replays
+    resolution = await sqlite_store.resolve(req)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+packages\database\task_store.py:106: in resolve
+    await self._session.flush()
+.venv\Lib\site-packages\sqlalchemy\ext\asyncio\session.py:786: in flush
+    await greenlet_spawn(self.sync_session.flush, objects=objects)
+.venv\Lib\site-packages\sqlalchemy\util\_concurrency_py3k.py:203: in greenlet_spawn
+    result = context.switch(value)
+             ^^^^^^^^^^^^^^^^^^^^^
+.venv\Lib\site-packages\sqlalchemy\orm\session.py:4353: in flush
+    self._flush(objects)
+.venv\Lib\site-packages\sqlalchemy\orm\session.py:4488: in _flush
+    with util.safe_reraise():
+.venv\Lib\site-packages\sqlalchemy\util\langhelpers.py:122: in __exit__
+    raise exc_value.with_traceback(exc_tb)
+.venv\Lib\site-packages\sqlalchemy\orm\session.py:4449: in _flush
+    flush_context.execute()
+.venv\Lib\site-packages\sqlalchemy\orm\unitofwork.py:465: in execute
+    rec.execute(self)
+.venv\Lib\site-packages\sqlalchemy\orm\unitofwork.py:641: in execute
+    util.preloaded.orm_persistence.save_obj(
+.venv\Lib\site-packages\sqlalchemy\orm\persistence.py:94: in save_obj
+    _emit_insert_statements(
+.venv\Lib\site-packages\sqlalchemy\orm\persistence.py:1234: in _emit_insert_statements
+    result = connection.execute(
+.venv\Lib\site-packages\sqlalchemy\engine\base.py:1421: in execute
+    return meth(
+.venv\Lib\site-packages\sqlalchemy\sql\elements.py:526: in _execute_on_connection
+    return connection._execute_clauseelement(
+.venv\Lib\site-packages\sqlalchemy\engine\base.py:1643: in _execute_clauseelement
+    ret = self._execute_context(
+.venv\Lib\site-packages\sqlalchemy\engine\base.py:1848: in _execute_context
+    return self._exec_single_context(
+.venv\Lib\site-packages\sqlalchemy\engine\base.py:1988: in _exec_single_context
+    self._handle_dbapi_exception(
+.venv\Lib\site-packages\sqlalchemy\engine\base.py:2365: in _handle_dbapi_exception
+    raise sqlalchemy_exception.with_traceback(exc_info[2]) from e
+.venv\Lib\site-packages\sqlalchemy\engine\base.py:1969: in _exec_single_context
+    self.dialect.do_execute(
+.venv\Lib\site-packages\sqlalchemy\engine\default.py:952: in do_execute
+    cursor.execute(statement, parameters)
+.venv\Lib\site-packages\sqlalchemy\dialects\sqlite\aiosqlite.py:213: in execute
+    self._adapt_connection._handle_exception(error)
+.venv\Lib\site-packages\sqlalchemy\dialects\sqlite\aiosqlite.py:373: in _handle_exception
+    raise error
+.venv\Lib\site-packages\sqlalchemy\dialects\sqlite\aiosqlite.py:195: in execute
+    self.await_(_cursor.execute(operation, parameters))
+.venv\Lib\site-packages\sqlalchemy\util\_concurrency_py3k.py:132: in await_only
+    return current.parent.switch(awaitable)  # type: ignore[no-any-return,attr-defined] # noqa: E501
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv\Lib\site-packages\sqlalchemy\util\_concurrency_py3k.py:196: in greenlet_spawn
+    value = await result
+            ^^^^^^^^^^^^
+.venv\Lib\site-packages\aiosqlite\cursor.py:40: in execute
+    await self._execute(self._cursor.execute, sql, parameters)
+.venv\Lib\site-packages\aiosqlite\cursor.py:32: in _execute
+    return await self._conn._execute(fn, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv\Lib\site-packages\aiosqlite\core.py:160: in _execute
+    return await future
+           ^^^^^^^^^^^^
+.venv\Lib\site-packages\aiosqlite\core.py:63: in _connection_worker_thread
+    result = function()
+             ^^^^^^^^^^
+E   sqlalchemy.exc.IntegrityError: (sqlite3.IntegrityError) NOT NULL constraint failed: tasks.organization_id
+E   [SQL: INSERT INTO tasks (id, organization_id, domain, action, status, payload, error_code, error_message, correlation_id, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING created_at, updated_at]
+E   [parameters: ('afe4a2fb669745e2aa83b98b08b52e1b', None, 'knowledge', 'query', 'pending', '{"question": "hi"}', None, None, '9f95878d277843418a82bb985ffb2fd0', None)]
+E   (Background on this error at: https://sqlalche.me/e/20/gkpj)
+_______________________ test_store_records_transitions ________________________
+.venv\Lib\site-packages\sqlalchemy\engine\base.py:1969: in _exec_single_context
+    self.dialect.do_execute(
+.venv\Lib\site-packages\sqlalchemy\engine\default.py:952: in do_execute
+    cursor.execute(statement, parameters)
+.venv\Lib\site-packages\sqlalchemy\dialects\sqlite\aiosqlite.py:213: in execute
+    self._adapt_connection._handle_exception(error)
+.venv\Lib\site-packages\sqlalchemy\dialects\sqlite\aiosqlite.py:373: in _handle_exception
+    raise error
+.venv\Lib\site-packages\sqlalchemy\dialects\sqlite\aiosqlite.py:195: in execute
+    self.await_(_cursor.execute(operation, parameters))
+.venv\Lib\site-packages\sqlalchemy\util\_concurrency_py3k.py:132: in await_only
+    return current.parent.switch(awaitable)  # type: ignore[no-any-return,attr-defined] # noqa: E501
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv\Lib\site-packages\sqlalchemy\util\_concurrency_py3k.py:196: in greenlet_spawn
+    value = await result
+            ^^^^^^^^^^^^
+.venv\Lib\site-packages\aiosqlite\cursor.py:40: in execute
+    await self._execute(self._cursor.execute, sql, parameters)
+.venv\Lib\site-packages\aiosqlite\cursor.py:32: in _execute
+    return await self._conn._execute(fn, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv\Lib\site-packages\aiosqlite\core.py:160: in _execute
+    return await future
+           ^^^^^^^^^^^^
+.venv\Lib\site-packages\aiosqlite\core.py:63: in _connection_worker_thread
+    result = function()
+             ^^^^^^^^^^
+E   sqlite3.IntegrityError: NOT NULL constraint failed: tasks.organization_id
+
+The above exception was the direct cause of the following exception:
+tests\unit\test_task_persistence.py:187: in test_store_records_transitions
+    await sqlite_store.resolve(req)
+packages\database\task_store.py:106: in resolve
+    await self._session.flush()
+.venv\Lib\site-packages\sqlalchemy\ext\asyncio\session.py:786: in flush
+    await greenlet_spawn(self.sync_session.flush, objects=objects)
+.venv\Lib\site-packages\sqlalchemy\util\_concurrency_py3k.py:203: in greenlet_spawn
+    result = context.switch(value)
+             ^^^^^^^^^^^^^^^^^^^^^
+.venv\Lib\site-packages\sqlalchemy\orm\session.py:4353: in flush
+    self._flush(objects)
+.venv\Lib\site-packages\sqlalchemy\orm\session.py:4488: in _flush
+    with util.safe_reraise():
+.venv\Lib\site-packages\sqlalchemy\util\langhelpers.py:122: in __exit__
+    raise exc_value.with_traceback(exc_tb)
+.venv\Lib\site-packages\sqlalchemy\orm\session.py:4449: in _flush
+    flush_context.execute()
+.venv\Lib\site-packages\sqlalchemy\orm\unitofwork.py:465: in execute
+    rec.execute(self)
+.venv\Lib\site-packages\sqlalchemy\orm\unitofwork.py:641: in execute
+    util.preloaded.orm_persistence.save_obj(
+.venv\Lib\site-packages\sqlalchemy\orm\persistence.py:94: in save_obj
+    _emit_insert_statements(
+.venv\Lib\site-packages\sqlalchemy\orm\persistence.py:1234: in _emit_insert_statements
+    result = connection.execute(
+.venv\Lib\site-packages\sqlalchemy\engine\base.py:1421: in execute
+    return meth(
+.venv\Lib\site-packages\sqlalchemy\sql\elements.py:526: in _execute_on_connection
+    return connection._execute_clauseelement(
+.venv\Lib\site-packages\sqlalchemy\engine\base.py:1643: in _execute_clauseelement
+    ret = self._execute_context(
+.venv\Lib\site-packages\sqlalchemy\engine\base.py:1848: in _execute_context
+    return self._exec_single_context(
+.venv\Lib\site-packages\sqlalchemy\engine\base.py:1988: in _exec_single_context
+    self._handle_dbapi_exception(
+.venv\Lib\site-packages\sqlalchemy\engine\base.py:2365: in _handle_dbapi_exception
+    raise sqlalchemy_exception.with_traceback(exc_info[2]) from e
+.venv\Lib\site-packages\sqlalchemy\engine\base.py:1969: in _exec_single_context
+    self.dialect.do_execute(
+.venv\Lib\site-packages\sqlalchemy\engine\default.py:952: in do_execute
+    cursor.execute(statement, parameters)
+.venv\Lib\site-packages\sqlalchemy\dialects\sqlite\aiosqlite.py:213: in execute
+    self._adapt_connection._handle_exception(error)
+.venv\Lib\site-packages\sqlalchemy\dialects\sqlite\aiosqlite.py:373: in _handle_exception
+    raise error
+.venv\Lib\site-packages\sqlalchemy\dialects\sqlite\aiosqlite.py:195: in execute
+    self.await_(_cursor.execute(operation, parameters))
+.venv\Lib\site-packages\sqlalchemy\util\_concurrency_py3k.py:132: in await_only
+    return current.parent.switch(awaitable)  # type: ignore[no-any-return,attr-defined] # noqa: E501
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv\Lib\site-packages\sqlalchemy\util\_concurrency_py3k.py:196: in greenlet_spawn
+    value = await result
+            ^^^^^^^^^^^^
+.venv\Lib\site-packages\aiosqlite\cursor.py:40: in execute
+    await self._execute(self._cursor.execute, sql, parameters)
+.venv\Lib\site-packages\aiosqlite\cursor.py:32: in _execute
+    return await self._conn._execute(fn, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv\Lib\site-packages\aiosqlite\core.py:160: in _execute
+    return await future
+           ^^^^^^^^^^^^
+.venv\Lib\site-packages\aiosqlite\core.py:63: in _connection_worker_thread
+    result = function()
+             ^^^^^^^^^^
+E   sqlalchemy.exc.IntegrityError: (sqlite3.IntegrityError) NOT NULL constraint failed: tasks.organization_id
+E   [SQL: INSERT INTO tasks (id, organization_id, domain, action, status, payload, error_code, error_message, correlation_id, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING created_at, updated_at]
+E   [parameters: ('f75104003de1496d87b46ff7c8143db3', None, 'support', 'triage', 'pending', '{}', None, None, 'c697bed7ec4e45c6af5892f7aea51d22', None)]
+E   (Background on this error at: https://sqlalche.me/e/20/gkpj)
+=========================== short test summary info ===========================
+FAILED tests/integration/test_api.py::test_create_task_happy_path - Assertion...
+FAILED tests/integration/test_conversations_api.py::test_org_scoping_conversation_not_found_cross_org
+FAILED tests/integration/test_conversations_api.py::test_org_scoping_append_message_cross_org
+FAILED tests/integration/test_conversations_api.py::test_org_scoping_list_messages_cross_org
+FAILED tests/integration/test_conversations_api.py::test_list_conversations_org_scoping
+FAILED tests/unit/test_orchestrator.py::test_mock_llm_was_called - AssertionE...
+FAILED tests/unit/test_support_tools.py::TestSendEmailReplyTool::test_real_send_requires_smtp_config
+FAILED tests/unit/test_support_tools.py::TestCreateTicketTool::test_create_ticket_success
+FAILED tests/unit/test_support_tools.py::TestCreateTicketTool::test_create_ticket_with_assignee
+FAILED tests/unit/test_support_tools.py::TestCreateTicketTool::test_create_ticket_rejects_foreign_customer
+FAILED tests/unit/test_support_tools.py::TestCreateTicketTool::test_create_ticket_rejects_nonexistent_customer
+FAILED tests/unit/test_support_tools.py::TestLookupCustomerTool::test_create_customer_success
+FAILED tests/unit/test_support_tools.py::TestLookupCustomerTool::test_create_customer_rejects_duplicate_email
+FAILED tests/unit/test_support_tools.py::TestLookupCustomerTool::test_create_customer_allows_same_email_different_org
+FAILED tests/unit/test_support_tools.py::TestLookupCustomerTool::test_get_customer_by_id
+FAILED tests/unit/test_support_tools.py::TestLookupCustomerTool::test_get_customer_by_email
+FAILED tests/unit/test_support_tools.py::TestLookupCustomerTool::test_get_customer_not_found
+FAILED tests/unit/test_support_tools.py::TestLookupCustomerTool::test_get_customer_rejects_foreign_org
+FAILED tests/unit/test_support_tools.py::TestLookupCustomerTool::test_update_customer_name
+FAILED tests/unit/test_support_tools.py::TestLookupCustomerTool::test_update_customer_email
+FAILED tests/unit/test_support_tools.py::TestLookupCustomerTool::test_update_customer_rejects_duplicate_email
+FAILED tests/unit/test_support_tools.py::TestLookupCustomerTool::test_list_customers
+FAILED tests/unit/test_support_tools.py::TestLookupCustomerTool::test_list_customers_org_scoped
+FAILED tests/unit/test_support_tools.py::TestLookupCustomerTool::test_delete_customer
+FAILED tests/unit/test_support_tools.py::TestLookupCustomerTool::test_delete_customer_rejects_foreign_org
+FAILED tests/unit/test_task_persistence.py::test_store_persists_and_replays
+FAILED tests/unit/test_task_persistence.py::test_store_records_transitions - ...
+DONE

@@ -70,9 +70,20 @@ class TaskStore(Protocol):
     async def resolve(self, request: TaskRequest) -> TaskResolution: ...
     async def complete(self, task_id: UUID | str, response: AgentResponse) -> None: ...
     async def rollback(self) -> None: ...
-    async def list_tasks(self, status: TaskStatus | None = None) -> list[dict]: ...
-    async def get_task(self, task_id: UUID | str) -> dict | None: ...
-    async def list_steps(self, correlation_id: str | None = None) -> list[dict]: ...
+    async def list_tasks(
+        self, status: TaskStatus | None = None, *, organization_id: UUID | None = None
+    ) -> list[dict]: ...
+    async def get_task(
+        self, task_id: UUID | str, *, organization_id: UUID | None = None
+    ) -> dict | None: ...
+    async def list_steps(
+        self,
+        task_id: str | None = None,
+        *,
+        correlation_id: str | None = None,
+        limit: int = 200,
+        organization_id: UUID | None = None,
+    ) -> list[dict]: ...
 
 
 class NoopTaskStore:
@@ -87,13 +98,30 @@ class NoopTaskStore:
     async def rollback(self) -> None:
         return None
 
-    async def list_tasks(self, status: TaskStatus | None = None) -> list[dict]:
+    async def list_tasks(
+        self,
+        status: TaskStatus | None = None,
+        *,
+        organization_id: UUID | None = None,
+    ) -> list[dict]:
         return []
 
-    async def get_task(self, task_id: UUID | str) -> dict | None:
+    async def get_task(
+        self,
+        task_id: UUID | str,
+        *,
+        organization_id: UUID | None = None,
+    ) -> dict | None:
         return None
 
-    async def list_steps(self, task_id: str | None = None) -> list[dict]:
+    async def list_steps(
+        self,
+        task_id: str | None = None,
+        *,
+        correlation_id: str | None = None,
+        limit: int = 200,
+        organization_id: UUID | None = None,
+    ) -> list[dict]:
         return []
 
     # Also satisfies TaskRecorder so routes can pass it to the orchestrator.

@@ -60,5 +60,7 @@ async def test_mock_llm_was_called(container) -> None:
     await container.orchestrator.execute(
         TaskRequest(domain="support", action="draft_reply", payload={"subject": "s"})
     )
-    assert len(provider.calls) == before + 1
+    # Audit fix wave: the support agent now shares the container LLM, so one
+    # call is the router/capability classification and one is the tool loop.
+    assert len(provider.calls) == before + 2
 

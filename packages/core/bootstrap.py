@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
 
 from agents.knowledge import create_knowledge_agent
@@ -43,26 +45,20 @@ def build_container(
     embeddings = get_embedding_provider(s)
     session_factory = get_session_factory(s)
 
-    async def _knowledge_repo() -> KnowledgeRepository:
-        return KnowledgeRepository(session_factory())
+    @asynccontextmanager
+    async def _knowledge_repo() -> AsyncIterator[KnowledgeRepository]:
+        async with session_factory() as session:
+            yield KnowledgeRepository(session)
 
-    registry.register(
-        create_knowledge_agent(
-            repository=None,  # resolved per-request (async session); see handle()
-            llm=llm,
-            embeddings=embeddings,
-            similarity_threshold=s.knowledge_similarity_threshold,
-            repo_factory=_knowledge_repo,
-        ).descriptor,
-        create_knowledge_agent(
-            repository=None,
-            llm=llm,
-            embeddings=embeddings,
-            similarity_threshold=s.knowledge_similarity_threshold,
-            repo_factory=_knowledge_repo,
-        ),
+    knowledge_agent = create_knowledge_agent(
+        repository=None,  # resolved per-request (async session); see handle()
+        llm=llm,
+        embeddings=embeddings,
+        similarity_threshold=s.knowledge_similarity_threshold,
+        repo_factory=_knowledge_repo,
     )
-    registry.register(create_support_agent().descriptor, create_support_agent())
+    registry.register(knowledge_agent.descriptor, knowledge_agent)
+    registry.register(create_support_agent(llm=llm).descriptor, create_support_agent(llm=llm))
     return AppContainer(
         settings=s,
         registry=registry,

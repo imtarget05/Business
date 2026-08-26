@@ -21,8 +21,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from packages.config.settings import get_settings
 from packages.contracts.enums import TaskStatus
 from packages.contracts.models import TaskRequest
+from apps.api.deps import current_org
 from packages.core.bootstrap import get_container
-from packages.core.errors import RoutingError, ValidationError
+from packages.core.errors import NotFoundError, ValidationError
 from packages.core.persistence import NoopTaskStore, TaskStore
 from packages.database.session import get_session
 from packages.database.task_store import SqlAlchemyTaskStore
@@ -46,8 +47,11 @@ async def get_task_store(
 async def create_task(
     request: TaskRequest,
     store: TaskStore = Depends(get_task_store),
+    org_id=Depends(current_org),
 ) -> dict:
     container = get_container()
+    # Server-side tenant binding: ignore any client-supplied organization.
+    request.context.organization_id = org_id
     if not request.payload and request.action != "ping":
         raise ValidationError("payload must not be empty", task_id=request.task_id)
 
@@ -72,21 +76,25 @@ async def create_task(
 async def list_tasks(
     request: Request,
     store: TaskStore = Depends(get_task_store),
+    org_id=Depends(current_org),
     status: TaskStatus | None = None,
 ) -> dict:
-    tasks = await store.list_tasks(status)
+    tasks = await store.list_tasks(status, organization_id=org_id)
     return {"tasks": tasks}
 
 
 @router.get("/tasks/{task_id}")
 async def get_task(
     task_id: UUID,
+    request: Request,
     store: TaskStore = Depends(get_task_store),
+    org_id=Depends(current_org),
 ) -> dict:
-    task = await store.get_task(task_id)
+    task = await store.get_task(task_id, organization_id=org_id)
     if task is None:
-        raise RoutingError("Task not found")
-    return {"task": task, "steps": await store.list_steps(task_id=str(task_id))}
+        raise NotFoundError("Task not found", task_id=task_id)
+    steps = await store.list_steps(task_id=str(task_id), organization_id=org_id)
+    return {"task": task, "steps": steps}
 
 
 @router.get("/agents")
@@ -101,10 +109,13 @@ async def list_agents() -> dict:
 async def list_steps(
     request: Request,
     store: TaskStore = Depends(get_task_store),
+    org_id=Depends(current_org),
     correlation_id: str | None = None,
     limit: int = 200,
 ) -> dict:
     """Audit trail: recent task steps, optionally filtered by correlation_id."""
     limit = max(1, min(limit, 500))
-    steps = await store.list_steps(correlation_id=correlation_id, limit=limit)
+    steps = await store.list_steps(
+        correlation_id=correlation_id, limit=limit, organization_id=org_id
+    )
     return {"steps": steps}

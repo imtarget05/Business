@@ -58,16 +58,42 @@ class KnowledgeAgent:
         self._threshold = similarity_threshold
         self._repo_factory = repo_factory
 
-    async def _get_repo(self) -> KnowledgeRepository | None:
+    async def _get_repo(self) -> tuple[KnowledgeRepository | None, Any]:
+        """Return (repo, ctx). ``ctx`` is an async context manager to exit when
+        the repo was created per-request from the repo factory (session cleanup).
+        """
         if self._repo is not None:
-            return self._repo
+            return self._repo, None
         if self._repo_factory is not None:
-            return await self._repo_factory()
-        return None
+            candidate = self._repo_factory()
+            if hasattr(candidate, "__aenter__"):
+                # Async context manager (e.g. session-scoped repo): enter now,
+                # caller must __aexit__ it in finally.
+                return await candidate.__aenter__(), candidate
+            return await candidate, None
+        return None, None
 
     async def handle(self, request: TaskRequest) -> AgentResponse:
         question = str(request.payload.get("question", "")).strip()
-        repo = await self._get_repo() if question else None
+        try:
+            return await self._handle(request, question)
+        finally:
+            pass
+
+    async def _handle(self, request: TaskRequest, question: str) -> AgentResponse:
+        repo, repo_ctx = (
+            await self._get_repo() if question else (None, None)
+        )
+        if repo_ctx is not None:
+            try:
+                return await self._handle_with_repo(request, question, repo)
+            finally:
+                await repo_ctx.__aexit__(None, None, None)
+        return await self._handle_with_repo(request, question, repo)
+
+    async def _handle_with_repo(
+        self, request: TaskRequest, question: str, repo: KnowledgeRepository | None
+    ) -> AgentResponse:
         if not question or repo is None or self._llm is None:
             return AgentResponse(
                 task_id=request.task_id,
@@ -93,13 +119,18 @@ class KnowledgeAgent:
         query_vec = None
         if self._embeddings is not None:
             query_vec = (await self._embeddings.embed([question]))[0]
-        hits = await repo.search(
-            organization_id=org_id,
-            query=question,
-            top_k=4,
-            threshold=self._threshold,
-            query_embedding=query_vec,
-        )
+        try:
+            hits = await repo.search(
+                organization_id=org_id,
+                query=question,
+                top_k=4,
+                threshold=self._threshold,
+                query_embedding=query_vec,
+            )
+        except Exception:
+            # Retrieval backend unavailable: refuse to guess instead of failing
+            # the whole task (hard rule: never answer without verified context).
+            hits = []
 
         if not hits:
             # HARD RULE: never let the LLM answer from weak/no context.

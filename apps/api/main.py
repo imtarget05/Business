@@ -12,7 +12,7 @@ from apps.api.routes.health import router as health_router
 from apps.api.routes.knowledge import router as knowledge_router
 from apps.api.routes.router import router as dispatch_router
 from apps.api.routes.tasks import router as v1_router
-from packages.config.settings import get_settings
+from packages.config.settings import Environment, get_settings
 from packages.core.bootstrap import get_container
 from packages.core.errors import (
     AuthenticationError,
@@ -35,6 +35,16 @@ logger = get_logger("api")
 async def lifespan(app: FastAPI):
     settings = get_settings()
     configure_logging(settings.log_level)
+    # Fail-closed auth: never start without any authn boundary outside local.
+    if (
+        settings.environment is not Environment.LOCAL
+        and not settings.api_key
+        and not settings.tenant_api_keys
+    ):
+        raise RuntimeError(
+            "Refusing to start: no api_key and no tenant_api_keys configured "
+            f"in environment={settings.environment.value!r}"
+        )
     logger.info("startup", extra={"environment": settings.environment.value})
     yield
     await dispose_engine()
@@ -75,9 +85,17 @@ def create_app() -> FastAPI:
     @app.middleware("http")
     async def api_key_middleware(request: Request, call_next):
         settings = get_settings()
-        if request.url.path.startswith("/v1") and settings.api_key:
+        if request.url.path.startswith("/v1") and (
+            settings.api_key or settings.tenant_api_keys
+        ):
             supplied = request.headers.get("X-API-Key")
-            if not supplied or not hmac.compare_digest(supplied, settings.api_key):
+            valid = False
+            if supplied:
+                if settings.api_key and hmac.compare_digest(supplied, settings.api_key):
+                    valid = True
+                elif supplied in settings.tenant_api_keys:
+                    valid = True
+            if not valid:
                 exc = AuthenticationError("Missing or invalid API key")
                 return JSONResponse(
                     status_code=exc.http_status, content={"error": exc.to_payload()}

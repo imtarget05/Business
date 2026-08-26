@@ -59,6 +59,10 @@ class Settings(BaseSettings):
     api_base_url: str = "http://localhost:8000"
     # API key for the minimum authn boundary (X-API-Key header). Empty = open.
     api_key: str | None = None
+    # Per-tenant keys: X-API-Key value -> organization_id (UUID string).
+    # When non-empty, callers are bound to their organization server-side;
+    # client-supplied organization_id values are ignored everywhere.
+    tenant_api_keys: dict[str, str] = {}
 
     # --- Database (Neon PostgreSQL in production; pgvector-enabled locally) ---
     database_url: str = (
@@ -114,6 +118,9 @@ class Settings(BaseSettings):
     email_smtp_password: str | None = None
     email_from_address: str | None = None
     email_send_enabled: bool = False  # DRY-RUN default: False = draft-only
+    # Explicit recipient allowlist for send_email_reply when sending is enabled.
+    # Recipients must also match the conversation's customer record otherwise.
+    email_recipient_allowlist: list[str] = []
 
 
 @lru_cache

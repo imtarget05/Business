@@ -22,6 +22,7 @@ from sqlalchemy import (
     Integer,
     String,
     Text,
+    UniqueConstraint,
     Uuid,
     func,
 )
@@ -137,8 +138,8 @@ class Task(Base, TimestampMixin):
     __tablename__ = "tasks"
 
     id: Mapped[UUID] = _uuid_pk()
-    organization_id: Mapped[UUID | None] = mapped_column(
-        ForeignKey("organizations.id", ondelete="SET NULL"), index=True
+    organization_id: Mapped[UUID] = mapped_column(
+        ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True
     )
     domain: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     action: Mapped[str] = mapped_column(String(64), nullable=False)
@@ -172,6 +173,10 @@ class TaskStepStatus(StrEnum):
 
 class TaskStep(Base, TimestampMixin):
     __tablename__ = "task_steps"
+
+    __table_args__ = (
+        UniqueConstraint("task_id", "sequence", name="uq_task_step_sequence"),
+    )
 
     id: Mapped[UUID] = _uuid_pk()
     task_id: Mapped[UUID] = mapped_column(
@@ -345,6 +350,10 @@ class MessageRole(StrEnum):
 
 class Message(Base, TimestampMixin):
     __tablename__ = "messages"
+
+    __table_args__ = (
+        UniqueConstraint("conversation_id", "sequence", name="uq_message_sequence"),
+    )
 
     id: Mapped[UUID] = _uuid_pk()
     conversation_id: Mapped[UUID] = mapped_column(

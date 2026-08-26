@@ -285,21 +285,23 @@ def test_list_messages_only(client) -> None:
     assert messages[3]["content"] == "Reply 2"
 
 
-def test_org_scoping_conversation_not_found_cross_org(client) -> None:
-    """GET /v1/conversations/{id} returns 404 for cross-org access."""
+def test_client_supplied_organization_id_is_ignored(client) -> None:
+    """Audit fix: org is bound server-side; a client-supplied organization_id
+    (body or query) can no longer select another tenant's conversation."""
     client, _ = client
-    # Create conversation in org 1
     create_resp = client.post("/v1/conversations", json={"channel": "web"})
     assert create_resp.status_code == 201
     conv_id = create_resp.json()["conversation_id"]
 
-    # Try to access from org 2 (pass organization_id query param)
     resp = client.get(
         f"/v1/conversations/{conv_id}",
         params={"organization_id": "00000000-0000-0000-0000-000000000002"},
     )
-    assert resp.status_code == 404, resp.text
-    assert resp.json()["error"]["message"] == "conversation not found"
+    assert resp.status_code == 200, resp.text
+    # Still bound to the caller's (first/default) org, not the claimed one.
+    assert str(resp.json()["organization_id"]) == (
+        "00000000-0000-0000-0000-000000000001"
+    )
 
 
 def test_org_scoping_append_message_cross_org(client) -> None:
@@ -311,13 +313,13 @@ def test_org_scoping_append_message_cross_org(client) -> None:
 
     mock_llm.script("Reply")
 
-    # Try to append message from org 2
+    # A body-supplied organization_id cannot select another tenant's thread;
+    # the message lands in the caller's own org-scoped conversation.
     resp = client.post(
         f"/v1/conversations/{conv_id}/messages",
         json={"content": "Hack attempt", "organization_id": "00000000-0000-0000-0000-000000000002"},
     )
-    assert resp.status_code == 404, resp.text
-    assert resp.json()["error"]["message"] == "conversation not found"
+    assert resp.status_code == 200, resp.text
 
 
 def test_org_scoping_list_messages_cross_org(client) -> None:
@@ -331,8 +333,8 @@ def test_org_scoping_list_messages_cross_org(client) -> None:
         f"/v1/conversations/{conv_id}/messages",
         params={"organization_id": "00000000-0000-0000-0000-000000000002"},
     )
-    assert resp.status_code == 404, resp.text
-    assert resp.json()["error"]["message"] == "conversation not found"
+    # Query-param org is ignored: caller keeps access to their own thread.
+    assert resp.status_code == 200, resp.text
 
 
 def test_list_conversations(client) -> None:
@@ -394,20 +396,24 @@ def test_list_conversations_pagination(client) -> None:
 
 
 def test_list_conversations_org_scoping(client) -> None:
-    """GET /v1/conversations only returns conversations for the current org."""
+    """GET /v1/conversations only returns conversations for the caller's org;
+    a client-supplied organization_id cannot select another tenant's view."""
     client, _ = client
     # Create conversation in org 1
     resp = client.post("/v1/conversations", json={"channel": "web", "subject": "Org 1"})
     assert resp.status_code == 201
 
-    # List from org 2
+    # Listing while claiming org 2 is ignored — caller still sees their own org.
     resp = client.get(
         "/v1/conversations",
         params={"organization_id": "00000000-0000-0000-0000-000000000002"},
     )
     assert resp.status_code == 200
     data = resp.json()
-    assert len(data["conversations"]) == 0
+    assert len(data["conversations"]) == 1
+    assert str(data["conversations"][0]["organization_id"]) == (
+        "00000000-0000-0000-0000-000000000001"
+    )
 
 
 def test_conversation_persists_tool_metadata(client) -> None:

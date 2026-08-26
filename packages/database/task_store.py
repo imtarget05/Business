@@ -131,16 +131,35 @@ class SqlAlchemyTaskStore:
     async def rollback(self) -> None:
         await self._session.rollback()
 
-    async def list_tasks(self, status: TaskStatus | None = None) -> list[dict]:
+    async def list_tasks(
+        self,
+        status: TaskStatus | None = None,
+        *,
+        organization_id: UUID | None = None,
+    ) -> list[dict]:
         stmt = select(Task).order_by(Task.created_at.desc())
         if status is not None:
             stmt = stmt.where(Task.status == _to_db_status(status))
+        if organization_id is not None:
+            stmt = stmt.where(Task.organization_id == organization_id)
         rows = (await self._session.execute(stmt)).scalars().all()
         return [_task_to_dict(t) for t in rows]
 
-    async def get_task(self, task_id: UUID | str) -> dict | None:
+    async def get_task(
+        self,
+        task_id: UUID | str,
+        *,
+        organization_id: UUID | None = None,
+    ) -> dict | None:
         task = await self._session.get(Task, task_id)
-        return _task_to_dict(task) if task is not None else None
+        if task is None:
+            return None
+        if (
+            organization_id is not None
+            and task.organization_id != organization_id
+        ):
+            return None  # cross-tenant access: behave as not-found
+        return _task_to_dict(task)
 
     async def list_steps(
         self,
@@ -148,6 +167,7 @@ class SqlAlchemyTaskStore:
         *,
         correlation_id: str | None = None,
         limit: int = 200,
+        organization_id: UUID | None = None,
     ) -> list[dict]:
         # Per-task view: chronological by step sequence. Global audit view:
         # most recent first.
@@ -155,11 +175,18 @@ class SqlAlchemyTaskStore:
             tid = task_id if isinstance(task_id, UUID) else UUID(task_id)
             stmt = (
                 select(TaskStep)
+                .join(Task, Task.id == TaskStep.task_id)
                 .where(TaskStep.task_id == tid)
                 .order_by(TaskStep.sequence)
             )
+            if organization_id is not None:
+                stmt = stmt.where(Task.organization_id == organization_id)
         else:
             stmt = select(TaskStep).order_by(TaskStep.started_at.desc())
+            if organization_id is not None:
+                stmt = stmt.join(Task, Task.id == TaskStep.task_id).where(
+                    Task.organization_id == organization_id
+                )
         if correlation_id is not None:
             stmt = stmt.where(TaskStep.correlation_id == correlation_id)
         rows = ((await self._session.execute(stmt.limit(limit))).scalars().all())

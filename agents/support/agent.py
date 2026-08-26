@@ -85,6 +85,7 @@ class SupportAgent:
                 prompt=prompt,
                 registry=self._registry,
                 system=self._system_prompt(),
+                organization_id=request.context.organization_id,
             )
             return AgentResponse(
                 task_id=request.task_id,
@@ -104,8 +105,9 @@ class SupportAgent:
             "You are a support agent. Use the available tools to help customers. "
             "Available tools: send_email_reply (drafts or sends email), "
             "create_ticket (creates a ticket), "
-            "lookup_customer (CRUD on customers). All tools are org-scoped. "
-            "Always use the organization_id from the context."
+            "lookup_customer (CRUD on customers). All tools are org-scoped: the "
+            "organization is injected server-side; never supply an "
+            "organization_id argument."
         )
 
     def _build_prompt(self, request: TaskRequest) -> str:

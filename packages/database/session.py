@@ -27,7 +27,14 @@ def get_engine(settings: Settings | None = None) -> AsyncEngine:
     global _engine
     if _engine is None:
         s = settings or get_settings()
-        _engine = create_async_engine(s.database_url, echo=s.db_echo, future=True)
+        connect_args = {}
+        if "postgresql" in s.database_url:
+            # Bound connection attempts so an unreachable DB fails fast instead
+            # of stalling requests for the OS-level TCP timeout.
+            connect_args["timeout"] = 5
+        _engine = create_async_engine(
+            s.database_url, echo=s.db_echo, future=True, connect_args=connect_args
+        )
     return _engine
 
 

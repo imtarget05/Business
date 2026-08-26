@@ -18,7 +18,12 @@ from fastapi.testclient import TestClient
 from apps.api.main import create_app
 from apps.api.routes.tasks import get_task_store
 from packages.contracts.enums import AgentResponseStatus, Domain, TaskStatus
-from packages.contracts.models import AgentDescriptor, AgentResponse, TaskRequest
+from packages.contracts.models import (
+    AgentDescriptor,
+    AgentResponse,
+    TaskContext,
+    TaskRequest,
+)
 from packages.core.errors import TaskStateError
 from packages.core.orchestrator import Orchestrator
 from packages.core.persistence import TaskResolution
@@ -160,7 +165,12 @@ async def sqlite_store(tmp_path):
 
 
 async def test_store_persists_and_replays(sqlite_store) -> None:
-    req = TaskRequest(domain="knowledge", action="query", payload={"question": "hi"})
+    req = TaskRequest(
+        domain="knowledge",
+        action="query",
+        payload={"question": "hi"},
+        context=TaskContext(organization_id=uuid4()),  # NOT NULL org binding
+    )
     resolution = await sqlite_store.resolve(req)
     assert resolution.created is True
 
@@ -183,7 +193,12 @@ async def test_store_persists_and_replays(sqlite_store) -> None:
 
 
 async def test_store_records_transitions(sqlite_store) -> None:
-    req = TaskRequest(domain="support", action="triage", payload={})
+    req = TaskRequest(
+        domain="support",
+        action="triage",
+        payload={},
+        context=TaskContext(organization_id=uuid4()),
+    )
     await sqlite_store.resolve(req)
     await sqlite_store.record_transition(req.task_id, TaskStatus.CLASSIFYING)
     await sqlite_store.record_transition(req.task_id, TaskStatus.ROUTING)
