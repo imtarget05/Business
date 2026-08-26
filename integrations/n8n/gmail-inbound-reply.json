@@ -1,0 +1,265 @@
+{
+  "name": "Business Ops — Gmail Inbound Auto-Reply",
+  "nodes": [
+    {
+      "parameters": {
+        "pollTimes": {
+          "item": [
+            {
+              "mode": "everyMinute"
+            }
+          ]
+        },
+        "filters": {
+          "labelIds": [
+            "INBOX"
+          ],
+          "includeSpamTrash": false,
+          "maxResults": 10
+        },
+        "options": {}
+      },
+      "id": "gmail-trigger",
+      "name": "Gmail Trigger (Unread)",
+      "type": "n8n-nodes-base.gmailTrigger",
+      "typeVersion": 1,
+      "position": [
+        250,
+        300
+      ],
+      "credentials": {
+        "gmailOAuth2Api": {
+          "id": "YOUR_GMAIL_OAUTH_CREDENTIALS_ID",
+          "name": "Gmail OAuth2 Account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "// Extract email data and build conversation payload\nconst emails = items[0].json;\nconst messageId = emails.id;\nconst threadId = emails.threadId;\n\n// Parse headers to get sender, subject, date\nconst headers = emails.payload.headers || [];\nconst getHeader = (name) => headers.find(h => h.name.toLowerCase() === name.toLowerCase())?.value || '';\n\nconst fromEmail = getHeader('from');\nconst subject = getHeader('subject') || '(No Subject)';\nconst date = getHeader('date');\n\n// Extract body (prefer text/plain, fallback to text/html)\nlet bodyText = '';\nconst parts = emails.payload.parts || [];\n\nfunction extractBody(payload) {\n  if (payload.mimeType === 'text/plain' && payload.body?.data) {\n    return Buffer.from(payload.body.data, 'base64').toString('utf-8');\n  }\n  if (payload.mimeType === 'text/html' && payload.body?.data && !bodyText) {\n    // Simple HTML to text conversion\n    const html = Buffer.from(payload.body.data, 'base64').toString('utf-8');\n    return html.replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ').trim();\n  }\n  if (payload.parts) {\n    for (const part of payload.parts) {\n      const result = extractBody(part);\n      if (result) return result;\n    }\n  }\n  return '';\n}\n\nbodyText = extractBody(emails.payload);\n\n// Build payload for POST /v1/conversations\nconst conversationPayload = {\n  channel: 'email',\n  subject: subject\n};\n\n// Return enriched data for downstream nodes\nreturn [{\n  json: {\n    // Original email identifiers\n    gmail_message_id: messageId,\n    gmail_thread_id: threadId,\n    // Sender info\n    from_email: fromEmail,\n    subject: subject,\n    date: date,\n    // Email body\n    body: bodyText,\n    // Payload for conversation creation\n    conversation_payload: conversationPayload\n  }\n}];"
+      },
+      "id": "extract-email-data",
+      "name": "Extract Email Data",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        500,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.BASE_URL }}/v1/conversations",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-API-Key",
+              "value": "={{ $env.API_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "X-Request-ID",
+              "value": "={{ $json.gmail_message_id || $executionId }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.conversation_payload) }}",
+        "options": {}
+      },
+      "id": "create-conversation",
+      "name": "POST /v1/conversations",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        750,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.BASE_URL }}/v1/conversations/{{ $json.conversation_id }}/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-API-Key",
+              "value": "={{ $env.API_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "X-Request-ID",
+              "value": "={{ $json.gmail_message_id || $executionId }}-msg"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ content: $json.body }) }}",
+        "options": {}
+      },
+      "id": "append-message",
+      "name": "POST /v1/conversations/{id}/messages",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        1000,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.actions?.some(a => a.mode === 'SENT' || a.mode === 'DRAFT') ? 'true' : 'false' }}",
+              "operation": "equals",
+              "value2": "true"
+            }
+          ]
+        }
+      },
+      "id": "check-auto-reply",
+      "name": "Has Auto-Reply Action?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        1250,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "fromEmail": "={{ $env.GMAIL_SENDER_EMAIL || $credentials.gmailOAuth2Api.email }}",
+        "toEmail": "={{ $json.from_email }}",
+        "subject": "Re: {{ $json.subject }}",
+        "text": "={{ $json.assistant_reply }}",
+        "options": {
+          "threadId": "={{ $json.gmail_thread_id }}"
+        }
+      },
+      "id": "send-reply",
+      "name": "Gmail Send Reply",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        1500,
+        100
+      ],
+      "credentials": {
+        "gmailOAuth2Api": {
+          "id": "YOUR_GMAIL_OAUTH_CREDENTIALS_ID",
+          "name": "Gmail OAuth2 Account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "content": "## 📋 Gmail Inbound Auto-Reply Setup (Tiếng Việt)\n\n### 1. Tạo OAuth Credentials cho Gmail\n1. Vào Google Cloud Console → APIs & Services → Credentials\n2. Tạo **OAuth 2.0 Client ID** (Application type: Web application)\n3. Authorized redirect URIs: `https://your-n8n-domain.com/rest/oauth2-credential/callback`\n4. Copy **Client ID** và **Client Secret**\n5. Trong n8n: Settings → Credentials → New Credential → Gmail OAuth2 API → Paste Client ID/Secret\n6. Save → **Copy Credential ID** (dạng số, ví dụ: `123`)\n7. Dán Credential ID vào 2 node: **Gmail Trigger** và **Gmail Send Reply** (thay `YOUR_GMAIL_OAUTH_CREDENTIALS_ID`)\n\n### 2. Cấu hình Environment Variables (n8n Settings → Variables)\n| Variable | Mô tả | Ví dụ |\n|---|---|---|\n| `BASE_URL` | Base URL của Business Ops API | `http://host.docker.internal:8000` |\n| `API_KEY` | Giá trị header `X-API-Key` (phải khớp `.env` API_KEY) | `sk-live-xxxxx` |\n| `GMAIL_SENDER_EMAIL` | (Tùy chọn) Email gửi reply, mặc định dùng email của OAuth account | `support@yourdomain.com` |\n\n### 3. Import & Activate Workflow\n1. n8n UI → Workflows → Import from File → Chọn `gmail-inbound-reply.json`\n2. Mở workflow → Thay `YOUR_GMAIL_OAUTH_CREDENTIALS_ID` bằng Credential ID thực tế\n3. Set Environment Variables (bước 2)\n4. Click **Activate** (góc trên phải)\n\n### 4. Test Checklist\n- [ ] Gửi email test đến inbox Gmail đã kết nối\n- [ ] Kiểm tra n8n Executions: workflow chạy mỗi phút, thấy email mới\n- [ ] Kiểm tra API logs: `POST /v1/conversations` → 201, `POST /v1/conversations/{id}/messages` → 200\n- [ ] Kiểm tra response có `actions` với `mode: \"SENT\"` hoặc `\"DRAFT\"`\n- [ ] Nếu có action SENT/DRAFT → Gmail Send Reply node chạy, người gửi nhận reply\n- [ ] Kiểm tra thread Gmail: reply nằm cùng thread (threadId conserved)\n\n### 5. Lưu ý quan trọng\n- Workflow chỉ xử lý email **chưa đọc** (unread) trong INBOX\n- Mỗi email tạo 1 conversation mới (channel: \"email\")\n- Agent reply được gửi tự động **chỉ khi** tool `send_email_reply` trả về `mode: \"SENT\"` hoặc `\"DRAFT\"`\n- X-Request-ID dùng `gmail_message_id` để trace audit log\n- Nếu API trả về lỗi → execution fail, n8n retry theo policy"
+      },
+      "id": "sticky-setup-vi",
+      "name": "📋 Setup Guide (Vietnamese)",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        250,
+        50
+      ],
+      "color": 4
+    },
+    {
+      "parameters": {
+        "content": "## 🔧 Flow Logic\n\n```\nGmail Trigger (poll unread)\n        ↓\nExtract Email Data (Function)\n  → from_email, subject, body, conversation_payload\n        ↓\nPOST /v1/conversations {channel: \"email\", subject}\n  → returns {conversation_id, ...}\n        ↓\nPOST /v1/conversations/{id}/messages {content: body}\n  → returns {assistant_reply, actions[]}\n        ↓\nIF actions.some(a => a.mode === 'SENT' || a.mode === 'DRAFT')\n  ├── YES → Gmail Send Reply (to from_email, threadId conserved)\n  └── NO  → End (no auto-reply needed)\n```\n\n**Key Contract (apps/api/routes/conversations.py):**\n- `ConversationCreateRequest`: `{channel: \"email\", subject?: string}`\n- `ConversationCreateResponse`: `{conversation_id: UUID, ...}`\n- `MessageCreateRequest`: `{content: string}`\n- `MessageCreateResponse`: `{assistant_reply: string, actions: ActionMetadata[]}`\n- `ActionMetadata`: `{tool, arguments, result, mode?: string}`  ← check `mode === \"SENT\" || \"DRAFT\"`"
+      },
+      "id": "sticky-flow-logic",
+      "name": "🔧 Flow Logic & API Contract",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        1000,
+        400
+      ],
+      "color": 3
+    }
+  ],
+  "connections": {
+    "Gmail Trigger (Unread)": {
+      "main": [
+        [
+          {
+            "node": "Extract Email Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Email Data": {
+      "main": [
+        [
+          {
+            "node": "POST /v1/conversations",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "POST /v1/conversations": {
+      "main": [
+        [
+          {
+            "node": "POST /v1/conversations/{id}/messages",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "POST /v1/conversations/{id}/messages": {
+      "main": [
+        [
+          {
+            "node": "Has Auto-Reply Action?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Auto-Reply Action?": {
+      "main": [
+        [
+          {
+            "node": "Gmail Send Reply",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "End (No Reply)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "meta": {
+    "description": "Phase 3 Gmail inbound auto-reply: polls unread emails → creates conversation → appends message → if agent returns SENT/DRAFT action → replies via Gmail. ADR-003 compliant: no business logic in nodes."
+  }
+}
