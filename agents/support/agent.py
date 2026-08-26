@@ -1,4 +1,8 @@
-"""Support Agent with tool integration (Phase 3, Task 3.3)."""
+"""Support Agent with tool integration (Phase 3, Task 3.3).
+
+Phase 4 Task 4.2: Support for handoff to knowledge agent when
+payload.needs_knowledge=true.
+"""
 
 from __future__ import annotations
 
@@ -15,7 +19,13 @@ from packages.core.tools import ToolRegistry, execute_tool_loop
 from packages.llm.base import LLMProvider
 from packages.llm.mock import MockLLMProvider
 
-SUPPORTED_ACTIONS = {"triage", "draft_reply", "create_ticket", "lookup_customer", "send_email"}
+SUPPORTED_ACTIONS = {
+    "triage",
+    "draft_reply",
+    "create_ticket",
+    "lookup_customer",
+    "send_email",
+}
 
 
 class SupportAgent:
@@ -74,6 +84,37 @@ class SupportAgent:
                     code="ROUTING_ERROR",
                     message="payload.subject missing; escalating to human operator",
                 ),
+            )
+
+        # Check if this support task needs knowledge (handoff trigger)
+        needs_knowledge = request.payload.get("needs_knowledge", False)
+        if needs_knowledge:
+            # Signal to orchestrator to handoff to knowledge.query
+            # The actual handoff is performed by the orchestrator after this response
+            question = str(request.payload.get("question", "")).strip()
+            if not question:
+                # If no explicit question, use subject+body as the question
+                body = str(request.payload.get("body", "")).strip()
+                question = f"{subject}. {body}".strip()
+            return AgentResponse(
+                task_id=request.task_id,
+                agent=self.descriptor.qualified_name,
+                status=AgentResponseStatus.SUCCESS,
+                result={
+                    "action": request.action,
+                    "summary": "Knowledge lookup required",
+                    "needs_knowledge": True,
+                    "knowledge_question": question,
+                },
+                confidence=0.5,
+                metadata={
+                    "channel": request.context.channel,
+                    "handoff": {
+                        "target_capability": "knowledge.query",
+                        "reason": "Support task requires knowledge base lookup",
+                        "question": question,
+                    },
+                },
             )
 
         # Build a prompt that includes the action and payload

@@ -101,6 +101,8 @@ class Settings(BaseSettings):
 
     # --- Agent tool loop (Phase 3) -------------------------------------------
     agent_max_tool_rounds: int = 5
+    # Max handoff depth for multi-agent chains (Phase 4 Task 4.2)
+    agent_max_handoffs: int = 2
 
     # --- Cloudflare Workers AI (optional provider) -----------------------------
     cloudflare_account_id: str | None = None

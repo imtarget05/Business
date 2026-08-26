@@ -30,6 +30,8 @@ class ErrorCode(StrEnum):
     ROUTING_ERROR = "ROUTING_ERROR"
     TOOL_EXECUTION_ERROR = "TOOL_EXECUTION_ERROR"
     INTERNAL_ERROR = "INTERNAL_ERROR"
+    HANDOFF_DEPTH_EXCEEDED = "HANDOFF_DEPTH_EXCEEDED"
+    HANDOFF_CYCLE_DETECTED = "HANDOFF_CYCLE_DETECTED"
 
 
 _HTTP_STATUS = {
@@ -45,6 +47,8 @@ _HTTP_STATUS = {
     ErrorCode.ROUTING_ERROR: 422,
     ErrorCode.TOOL_EXECUTION_ERROR: 500,
     ErrorCode.INTERNAL_ERROR: 500,
+    ErrorCode.HANDOFF_DEPTH_EXCEEDED: 422,
+    ErrorCode.HANDOFF_CYCLE_DETECTED: 422,
 }
 
 HTTP_STATUS_BY_CODE = dict(_HTTP_STATUS)
@@ -146,6 +150,20 @@ class ToolExecutionError(BusinessOpsError):
 
     code = ErrorCode.TOOL_EXECUTION_ERROR
     default_message = "Tool execution failed"
+
+
+class HandoffDepthExceededError(BusinessOpsError):
+    """Raised when the maximum handoff depth is exceeded."""
+
+    code = ErrorCode.HANDOFF_DEPTH_EXCEEDED
+    default_message = "Maximum handoff depth exceeded"
+
+
+class HandoffCycleDetectedError(BusinessOpsError):
+    """Raised when a handoff cycle is detected (e.g., A -> B -> A)."""
+
+    code = ErrorCode.HANDOFF_CYCLE_DETECTED
+    default_message = "Handoff cycle detected"
 
 
 class NotFoundError(BusinessOpsError):
