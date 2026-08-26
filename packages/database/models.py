@@ -132,6 +132,7 @@ class TaskStatusDB(StrEnum):
     failed = "failed"
     escalated = "escalated"
     cancelled = "cancelled"
+    dead_lettered = "dead_lettered"
 
 
 class Task(Base, TimestampMixin):

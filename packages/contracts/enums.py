@@ -48,6 +48,7 @@ class TaskStatus(StrEnum):
     FAILED = "failed"
     ESCALATED = "escalated"
     CANCELLED = "cancelled"
+    DEAD_LETTERED = "dead_lettered"
 
 
 

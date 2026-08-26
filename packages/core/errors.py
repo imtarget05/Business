@@ -32,6 +32,7 @@ class ErrorCode(StrEnum):
     INTERNAL_ERROR = "INTERNAL_ERROR"
     HANDOFF_DEPTH_EXCEEDED = "HANDOFF_DEPTH_EXCEEDED"
     HANDOFF_CYCLE_DETECTED = "HANDOFF_CYCLE_DETECTED"
+    TASK_TIMEOUT = "TASK_TIMEOUT"
 
 
 _HTTP_STATUS = {
@@ -49,6 +50,7 @@ _HTTP_STATUS = {
     ErrorCode.INTERNAL_ERROR: 500,
     ErrorCode.HANDOFF_DEPTH_EXCEEDED: 422,
     ErrorCode.HANDOFF_CYCLE_DETECTED: 422,
+    ErrorCode.TASK_TIMEOUT: 504,
 }
 
 HTTP_STATUS_BY_CODE = dict(_HTTP_STATUS)
@@ -164,6 +166,13 @@ class HandoffCycleDetectedError(BusinessOpsError):
 
     code = ErrorCode.HANDOFF_CYCLE_DETECTED
     default_message = "Handoff cycle detected"
+
+
+class TaskTimeoutError(BusinessOpsError):
+    """Raised when a task exceeds the configured execution timeout."""
+
+    code = ErrorCode.TASK_TIMEOUT
+    default_message = "Task execution timed out"
 
 
 class NotFoundError(BusinessOpsError):

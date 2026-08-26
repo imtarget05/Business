@@ -10,10 +10,10 @@ from packages.core.errors import TaskStateError
 
 ALLOWED_TRANSITIONS: dict[TaskStatus, frozenset[TaskStatus]] = {
     TaskStatus.PENDING: frozenset(
-        {TaskStatus.CLASSIFYING, TaskStatus.CANCELLED}
+        {TaskStatus.CLASSIFYING, TaskStatus.CANCELLED, TaskStatus.DEAD_LETTERED}
     ),
     TaskStatus.CLASSIFYING: frozenset(
-        {TaskStatus.ROUTING, TaskStatus.FAILED, TaskStatus.CANCELLED}
+        {TaskStatus.ROUTING, TaskStatus.FAILED, TaskStatus.CANCELLED, TaskStatus.DEAD_LETTERED}
     ),
     TaskStatus.ROUTING: frozenset(
         {
@@ -21,19 +21,21 @@ ALLOWED_TRANSITIONS: dict[TaskStatus, frozenset[TaskStatus]] = {
             TaskStatus.FAILED,
             TaskStatus.ESCALATED,
             TaskStatus.CANCELLED,
+            TaskStatus.DEAD_LETTERED,
         }
     ),
     TaskStatus.RUNNING: frozenset(
-        {TaskStatus.VALIDATING, TaskStatus.FAILED, TaskStatus.CANCELLED}
+        {TaskStatus.VALIDATING, TaskStatus.FAILED, TaskStatus.CANCELLED, TaskStatus.DEAD_LETTERED}
     ),
     TaskStatus.VALIDATING: frozenset(
-        {TaskStatus.COMPLETED, TaskStatus.FAILED, TaskStatus.ESCALATED}
+        {TaskStatus.COMPLETED, TaskStatus.FAILED, TaskStatus.ESCALATED, TaskStatus.DEAD_LETTERED}
     ),
     # Terminal states
     TaskStatus.COMPLETED: frozenset(),
     TaskStatus.FAILED: frozenset(),  # retries are modelled as NEW agent_runs, not state flips
     TaskStatus.ESCALATED: frozenset(),
     TaskStatus.CANCELLED: frozenset(),
+    TaskStatus.DEAD_LETTERED: frozenset(),
 }
 
 

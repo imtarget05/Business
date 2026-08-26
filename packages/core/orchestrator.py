@@ -31,9 +31,12 @@ from packages.core.errors import (
     AgentUnavailableError,
     AuthorizationError,
     BusinessOpsError,
+    ErrorCode,
     HandoffCycleDetectedError,
     HandoffDepthExceededError,
     RoutingError,
+    TaskTimeoutError,
+    ToolExecutionError,
 )
 from packages.core.persistence import NoopTaskRecorder, TaskRecorder
 from packages.core.policy import AllowAllPolicy, PolicyChecker
@@ -269,13 +272,14 @@ class Orchestrator:
             metadata=merged_metadata,
         )
 
-    async def execute(
+    async def _execute_core(
         self,
         request: TaskRequest,
         *,
         recorder: TaskRecorder = NoopTaskRecorder(),
         policy: PolicyChecker = AllowAllPolicy(),
     ) -> AgentResponse:
+        """Core execution logic without retry/timeout wrapping."""
         sm = TaskStateMachine()
         ctx = get_context()
         ctx.task_id = request.task_id
@@ -348,8 +352,12 @@ class Orchestrator:
             raise
 
         except BusinessOpsError as exc:
-            # Other business errors: record terminal state and return error response
+            # Other business errors: check if transient (retryable) or permanent
             exc.task_id = exc.task_id or request.task_id
+            if self._is_transient_error(exc):
+                # Transient error - re-raise for retry logic in execute()
+                raise
+            # Permanent error - record terminal state and return error response
             if not sm.is_terminal():
                 target = (
                     TaskStatus.ESCALATED
@@ -373,6 +381,106 @@ class Orchestrator:
                 error=ErrorDetail(code=exc.code.value, message=exc.message),
             )
 
+    def _is_transient_error(self, exc: BaseException) -> bool:
+        """Check if an error is transient and eligible for retry."""
+        return isinstance(exc, (TaskTimeoutError, AgentTimeoutError, ToolExecutionError))
+
+    async def execute(
+        self,
+        request: TaskRequest,
+        *,
+        recorder: TaskRecorder = NoopTaskRecorder(),
+        policy: PolicyChecker = AllowAllPolicy(),
+    ) -> AgentResponse:
+        """Execute task with timeout and single-retry policy.
+
+        Timeout: per-task execution timeout from settings (agent_task_timeout_seconds, default 30s).
+        Retry: exactly 1 automatic retry on transient failure (timeout, ToolExecutionError).
+        Dead-letter: after retry also fails -> task status DEAD_LETTERED.
+        """
+        max_attempts = 2
+        timeout_s = self._settings.agent_task_timeout_seconds
+
+        last_exc: BaseException | None = None
+        for attempt in range(1, max_attempts + 1):
+            try:
+                # Wrap core execution in timeout
+                return await asyncio.wait_for(
+                    self._execute_core(request, recorder=recorder, policy=policy),
+                    timeout=timeout_s,
+                )
+            except asyncio.TimeoutError as exc:
+                # Convert asyncio.TimeoutError to TaskTimeoutError
+                last_exc = TaskTimeoutError(
+                    f"Task {request.task_id} timed out after {timeout_s}s",
+                    task_id=request.task_id,
+                )
+            except (HandoffDepthExceededError, HandoffCycleDetectedError) as exc:
+                # Handoff-specific errors: never retry, always propagate immediately
+                # so API layer receives the typed error (same as original behavior)
+                raise
+            except BusinessOpsError as exc:
+                # Check if this is a transient error we should retry
+                if self._is_transient_error(exc) and attempt < max_attempts:
+                    last_exc = exc
+                    logger.warning(
+                        "task_retry",
+                        extra={
+                            "task_id": str(request.task_id),
+                            "attempt": attempt,
+                            "error_code": exc.code.value,
+                        },
+                    )
+                    continue  # retry
+                # Permanent error or last attempt - record and return/raise
+                last_exc = exc
+                break
+            except Exception as exc:
+                # Unexpected error - treat as transient for retry purposes
+                if attempt < max_attempts:
+                    last_exc = exc
+                    logger.warning(
+                        "task_retry",
+                        extra={
+                            "task_id": str(request.task_id),
+                            "attempt": attempt,
+                            "error": str(exc),
+                        },
+                    )
+                    continue  # retry
+                last_exc = exc
+                break
+
+        # All attempts exhausted - dead-letter the task
+        sm = TaskStateMachine()
+        ctx = get_context()
+        ctx.task_id = request.task_id
+        if not sm.is_terminal():
+            sm.transition(TaskStatus.DEAD_LETTERED)
+            await self._record(recorder, request.task_id, TaskStatus.DEAD_LETTERED)
+
+        logger.error(
+            "task_dead_lettered",
+            extra={
+                "task_id": str(request.task_id),
+                "attempts": max_attempts,
+                "final_error": str(last_exc) if last_exc else "unknown",
+            },
+        )
+
+        # Return a FAILED response (API layer will convert to DEAD_LETTERED via store)
+        return AgentResponse(
+            task_id=request.task_id,
+            agent="orchestrator",
+            status=AgentResponseStatus.FAILED,
+            error=ErrorDetail(
+                code=ErrorCode.TASK_TIMEOUT.value
+                if isinstance(last_exc, TaskTimeoutError)
+                else ErrorCode.INTERNAL_ERROR.value,
+                message=str(last_exc) if last_exc else "Task dead-lettered after retries",
+            ),
+        )
+
 
 __all__ = [
     "Orchestrator",
@@ -380,4 +488,5 @@ __all__ = [
     "RoutingError",
     "HandoffDepthExceededError",
     "HandoffCycleDetectedError",
+    "TaskTimeoutError",
 ]

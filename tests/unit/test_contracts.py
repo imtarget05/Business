@@ -107,7 +107,7 @@ def test_qualified_name() -> None:
 def test_task_status_enum_complete() -> None:
     expected = {
         "pending", "classifying", "routing", "running", "validating",
-        "completed", "failed", "escalated", "cancelled",
+        "completed", "failed", "escalated", "cancelled", "dead_lettered",
     }
     assert {s.value for s in TaskStatus} == expected
 

@@ -50,6 +50,7 @@ _TERMINAL_DB = frozenset(
         TaskStatusDB.failed,
         TaskStatusDB.escalated,
         TaskStatusDB.cancelled,
+        TaskStatusDB.dead_lettered,
     }
 )
 
