@@ -58,7 +58,8 @@ def build_container(
         repo_factory=_knowledge_repo,
     )
     registry.register(knowledge_agent.descriptor, knowledge_agent)
-    registry.register(create_support_agent(llm=llm).descriptor, create_support_agent(llm=llm))
+    support_agent = create_support_agent(llm=llm)
+    registry.register(support_agent.descriptor, support_agent)
     return AppContainer(
         settings=s,
         registry=registry,
