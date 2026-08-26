@@ -187,6 +187,167 @@ class SendEmailReplyTool(_OrgBoundTool):
         return customer is not None
 
 
+class SendGmailReplyTool(_OrgBoundTool):
+    """Send an email reply via Gmail API.
+
+    DRY-RUN mode is DEFAULT (draft-only; returns draft without sending).
+    Real send requires `gmail_send_enabled=True` in settings.
+    Logs every attempt (draft or sent) to Google Sheets.
+
+    Recipient allowlist (send path only): when sending is enabled, ``to_email``
+    must belong to a customer record in the bound organization, or appear in
+    ``settings.gmail_allowed_recipients``. Otherwise ToolExecutionError.
+    """
+
+    name = "send_gmail_reply"
+    description = (
+        "Send an email reply to a customer via Gmail API. DRY-RUN mode is default — "
+        "returns the draft without sending unless gmail_send_enabled=True in settings. "
+        "All attempts are logged to Google Sheets."
+    )
+    schema = {
+        "type": "object",
+        "properties": {
+            "to_email": {"type": "string", "format": "email"},
+            "subject": {"type": "string"},
+            "body": {"type": "string"},
+            "conversation_id": {"type": "string", "format": "uuid"},
+        },
+        "required": ["to_email", "subject", "body"],
+    }
+
+    def __init__(
+        self,
+        session_factory: async_sessionmaker[AsyncSession] | None = None,
+        dry_run: bool | None = None,
+    ) -> None:
+        super().__init__()
+        self._session_factory = session_factory or _default_session_factory()
+        # Per-tool dry_run flag overrides settings when explicitly provided.
+        # Default is None meaning "use settings.gmail_send_enabled".
+        self._dry_run = dry_run
+
+    def _build_sheet_row(
+        self,
+        conversation_id: str | None,
+        customer_email: str,
+        body: str,
+        action: str,
+    ) -> list[str]:
+        """Build a row for the Google Sheet log."""
+        from datetime import datetime, timezone
+
+        timestamp = datetime.now(timezone.utc).isoformat()
+        return [
+            timestamp,
+            conversation_id or "",
+            customer_email,
+            body[:500],
+            action,
+        ]
+
+    async def _log_to_sheet(self, row: list[str]) -> None:
+        """Log a row to Google Sheets (fire-and-forget, errors don't block)."""
+        try:
+            from integrations.google_client import sheet_log_row
+
+            await asyncio.to_thread(sheet_log_row, row)
+        except Exception:
+            # Sheet logging failures should not block the tool result
+            pass
+
+    async def run(self, arguments: dict[str, Any]) -> str:
+        settings = get_settings()
+
+        to_email = arguments["to_email"]
+        subject = arguments["subject"]
+        body = arguments["body"]
+        conversation_id = arguments.get("conversation_id")
+
+        # Determine dry-run mode: per-tool flag overrides settings
+        dry_run = (
+            self._dry_run if self._dry_run is not None else not settings.gmail_send_enabled
+        )
+
+        # DRY-RUN mode: return draft, still log to sheet
+        if dry_run:
+            draft = {
+                "mode": "DRY_RUN",
+                "to": to_email,
+                "subject": subject,
+                "body": body,
+                "conversation_id": conversation_id,
+            }
+            # Log to sheet as draft
+            row = self._build_sheet_row(
+                conversation_id, to_email, body, "draft"
+            )
+            await self._log_to_sheet(row)
+            return json.dumps(draft, ensure_ascii=False)
+
+        # Real send path: check allowlist
+        if not settings.google_refresh_token:
+            raise RuntimeError(
+                "gmail_send_enabled=True but google_refresh_token not configured"
+            )
+        if not settings.google_oauth_client_id:
+            raise RuntimeError(
+                "gmail_send_enabled=True but google_oauth_client_id not configured"
+            )
+        if not settings.google_oauth_client_secret:
+            raise RuntimeError(
+                "gmail_send_enabled=True but google_oauth_client_secret not configured"
+            )
+        if not settings.google_sheet_id:
+            raise RuntimeError(
+                "gmail_send_enabled=True but google_sheet_id not configured"
+            )
+
+        org_id = self._resolve_org(arguments)
+        if not await self._recipient_allowed(org_id, to_email):
+            raise ToolExecutionError(
+                f"recipient {to_email!r} is not allowlisted for this "
+                "organization's conversations"
+            )
+
+        # Send via Gmail API (blocking I/O offloaded to thread)
+        from integrations.google_client import gmail_send
+
+        await asyncio.to_thread(gmail_send, to_email, subject, body)
+
+        # Log to sheet as sent
+        row = self._build_sheet_row(
+            conversation_id, to_email, body, "gmail_send"
+        )
+        await self._log_to_sheet(row)
+
+        result = {
+            "mode": "SENT",
+            "to": to_email,
+            "subject": subject,
+            "conversation_id": conversation_id,
+        }
+        return json.dumps(result, ensure_ascii=False)
+
+    async def _recipient_allowed(self, org_id: UUID, to_email: str) -> bool:
+        """Check if recipient is allowed for this organization."""
+        settings = get_settings()
+        if to_email.lower() in {
+            e.lower() for e in settings.gmail_allowed_recipients
+        }:
+            return True
+        # Recipient must be a customer record in this org
+        from sqlalchemy import select
+
+        async with self._session_factory() as session:
+            stmt = select(Customer).where(
+                Customer.organization_id == org_id,
+                Customer.email == to_email,
+            )
+            customer = (await session.execute(stmt)).scalar_one_or_none()
+        return customer is not None
+
+
 class CreateTicketTool(_OrgBoundTool):
     """Create a support ticket record."""
 
@@ -490,6 +651,7 @@ def create_support_tools(
     """
     return [
         SendEmailReplyTool(),
+        SendGmailReplyTool(session_factory),
         CreateTicketTool(session_factory),
         LookupCustomerTool(session_factory),
     ]
@@ -497,6 +659,7 @@ def create_support_tools(
 
 __all__ = [
     "SendEmailReplyTool",
+    "SendGmailReplyTool",
     "CreateTicketTool",
     "LookupCustomerTool",
     "create_support_tools",

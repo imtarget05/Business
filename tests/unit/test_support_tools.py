@@ -546,16 +546,21 @@ class TestSupportToolsRegistry:
 
     @pytest.mark.asyncio
     async def test_all_tools_registered(self, test_session_factory):
-        """All three tools are registered and have correct schemas."""
+        """All four tools are registered and have correct schemas."""
         from packages.core.tools import ToolRegistry
 
         tools = create_support_tools(session_factory=test_session_factory)
         registry = ToolRegistry(*tools)
 
-        assert set(registry.names()) == {"send_email_reply", "create_ticket", "lookup_customer"}
+        assert set(registry.names()) == {
+            "send_email_reply",
+            "send_gmail_reply",
+            "create_ticket",
+            "lookup_customer",
+        }
 
         schemas = registry.list_schemas()
-        assert len(schemas) == 3
+        assert len(schemas) == 4
 
         for schema in schemas:
             assert "name" in schema

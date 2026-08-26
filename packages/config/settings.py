@@ -129,6 +129,18 @@ class Settings(BaseSettings):
     # Recipients must also match the conversation's customer record otherwise.
     email_recipient_allowlist: list[str] = []
 
+    # --- Gmail API (support agent) ---------------------------------------------
+    # Gmail API settings for send_gmail_reply tool. DRY-RUN mode is DEFAULT (draft-only;
+    # real send behind gmail_send_enabled flag). Uses OAuth2 refresh token flow.
+    google_refresh_token: str | None = None
+    google_oauth_client_id: str | None = None
+    google_oauth_client_secret: str | None = None
+    google_sheet_id: str | None = None
+    gmail_send_enabled: bool = False  # DRY-RUN default: False = draft-only
+    # Explicit recipient allowlist for send_gmail_reply when sending is enabled.
+    # Recipients must also match the conversation's customer record otherwise.
+    gmail_allowed_recipients: list[str] = []
+
 
 @lru_cache
 def get_settings() -> Settings:

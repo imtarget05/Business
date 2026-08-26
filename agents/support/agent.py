@@ -25,6 +25,7 @@ SUPPORTED_ACTIONS = {
     "create_ticket",
     "lookup_customer",
     "send_email",
+    "send_gmail",
 }
 
 
@@ -47,6 +48,7 @@ class SupportAgent:
                     "support.create_ticket",
                     "support.lookup_customer",
                     "support.send_email",
+                    "support.send_gmail",
                 }
             ),
         )
@@ -144,7 +146,8 @@ class SupportAgent:
     def _system_prompt(self) -> str:
         return (
             "You are a support agent. Use the available tools to help customers. "
-            "Available tools: send_email_reply (drafts or sends email), "
+            "Available tools: send_email_reply (drafts or sends email via SMTP), "
+            "send_gmail_reply (drafts or sends email via Gmail API + Sheets logging), "
             "create_ticket (creates a ticket), "
             "lookup_customer (CRUD on customers). All tools are org-scoped: the "
             "organization is injected server-side; never supply an "
@@ -157,24 +160,26 @@ class SupportAgent:
         channel = request.context.channel
 
         base = (
-            f"Action: {request.action}\n"
-            f"Organization: {org_id}\n"
-            f"Channel: {channel}\n"
-            f"Subject: {payload.get('subject', '')}\n"
-            f"Body: {payload.get('body', '')}\n"
+            f"Action: {request.action}\\n"
+            f"Organization: {org_id}\\n"
+            f"Channel: {channel}\\n"
+            f"Subject: {payload.get('subject', '')}\\n"
+            f"Body: {payload.get('body', '')}\\n"
         )
 
         if request.action == "triage":
-            return base + "\nTriage this request and decide next steps. Use tools if needed."
+            return base + "\\nTriage this request and decide next steps. Use tools if needed."
         elif request.action == "draft_reply":
-            return base + "\nDraft a reply to the customer. Use send_email_reply in DRY-RUN mode."
+            return base + "\\nDraft a reply to the customer. Use send_email_reply in DRY-RUN mode."
         elif request.action == "create_ticket":
             customer_id = payload.get("customer_id")
-            return base + f"\nCreate a ticket for customer {customer_id}. Use create_ticket tool."
+            return base + f"\\nCreate a ticket for customer {customer_id}. Use create_ticket tool."
         elif request.action == "lookup_customer":
-            return base + "\nLook up or manage customer record. Use lookup_customer tool."
+            return base + "\\nLook up or manage customer record. Use lookup_customer tool."
         elif request.action == "send_email":
-            return base + "\nSend an email reply. Use send_email_reply tool."
+            return base + "\\nSend an email reply. Use send_email_reply tool."
+        elif request.action == "send_gmail":
+            return base + "\\nSend an email reply via Gmail API. Use send_gmail_reply tool."
         return base
 
     def script_tool_calls(self, *outputs: str | dict) -> None:

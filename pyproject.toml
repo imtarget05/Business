@@ -25,6 +25,10 @@ dev = [
     "ruff>=0.4",
     "mypy>=1.10",
 ]
+google = [
+    "google-api-python-client>=2.199.0",
+    "google-auth>=2.57.0",
+]
 
 # ---------------------------------------------------------------------------
 # Packaging layout (see docs/adr/ADR-007-repository-structure.md):
