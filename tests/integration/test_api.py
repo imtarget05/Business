@@ -59,6 +59,10 @@ def client(tmp_path, monkeypatch):
     })
     monkeypatch.setattr(live, "rate_limit_per_minute", 1000)
 
+    # Force container rebuild with patched settings (singleton cache)
+    from packages.core.bootstrap import set_container
+    set_container(None)
+
     async def _setup() -> None:
         eng = create_async_engine(url)
         async with eng.begin() as conn:
