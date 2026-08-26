@@ -145,7 +145,19 @@ class CloudflareAIProvider:
             },
             model_path=self.model,
         )
+        # Chat-style models (OpenAI-compatible) return choices[0].message.content;
+        # legacy text models return a plain "response" string. Support both.
         text = result.get("response")
+        if not isinstance(text, str):
+            choices = result.get("choices")
+            if (
+                isinstance(choices, list)
+                and choices
+                and isinstance(choices[0], dict)
+            ):
+                message = choices[0].get("message")
+                if isinstance(message, dict) and isinstance(message.get("content"), str):
+                    text = message["content"]
         if not isinstance(text, str):
             raise provider_error(self.name, f"unexpected result shape: {result!r}")
         return text
@@ -211,8 +223,17 @@ class CloudflareAIProvider:
             raise provider_error(
                 self.name, f"response is not valid JSON: {raw[:200]!r}"
             ) from exc
+        # Coerce loose scalar types the model guessed (int where str expected, etc.)
         try:
             return schema.model_validate(data)
+        except Exception:
+            pass
+        try:
+            coerced = {
+                k: (str(v) if isinstance(v, (int, float, bool)) else v)
+                for k, v in data.items()
+            } if isinstance(data, dict) else data
+            return schema.model_validate(coerced)
         except Exception as exc:  # pydantic validation failure
             raise provider_error(
                 self.name,
@@ -251,9 +272,16 @@ class CloudflareAIProvider:
         )
         response = result.get("response")
         if not isinstance(response, dict):
-            # Some models return plain text even when tools are offered.
-            if isinstance(response := result.get("response"), str):
-                return {"content": response, "tool_calls": None}
+            # OpenAI-compatible chat models return choices[0].message;
+            # legacy text models return a plain "response" string.
+            choices = result.get("choices")
+            if isinstance(choices, list) and choices and isinstance(choices[0], dict):
+                message = choices[0].get("message")
+                if isinstance(message, dict):
+                    response = message
+        if isinstance(response, str):
+            return {"content": response, "tool_calls": None}
+        if not isinstance(response, dict):
             raise provider_error(self.name, f"unexpected result shape: {result!r}")
         raw_calls = response.get("tool_calls") or []
         tool_calls: list[dict[str, Any]] = []
