@@ -40,9 +40,15 @@ class Answer(BaseModel):
     reply: str
 
 
-async def test_missing_credentials_raises() -> None:
+async def test_missing_credentials_raises(monkeypatch) -> None:
+    # Isolate from any real .env credentials so the missing-credentials path is exercised.
+    monkeypatch.setattr(Settings, "model_config", {**Settings.model_config, "env_file": None})
+    monkeypatch.delenv("CLOUDFLARE_ACCOUNT_ID", raising=False)
+    monkeypatch.delenv("CLOUDFLARE_API_TOKEN", raising=False)
     with pytest.raises(LLMProviderError):
-        CloudflareAIProvider(Settings(llm_provider="cloudflare_ai"))
+        CloudflareAIProvider(
+            Settings(llm_provider="cloudflare_ai", cloudflare_account_id=None, cloudflare_api_token=None)
+        )
 
 
 async def test_generate_success() -> None:
