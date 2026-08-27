@@ -112,6 +112,17 @@ class Settings(BaseSettings):
     # Defaults to agent_task_timeout_seconds; total chain capped at 2x agent_task_timeout_seconds
     agent_hop_timeout_seconds: int = 30
 
+    # --- LangGraph (Phase A) --------------------------------------------------
+    # When True, Orchestrator.execute() delegates to a LangGraph StateGraph
+    # (packages/core/graph.py) instead of the classic async state machine.
+    # Default False so CI stays green until the graph path passes its own tests.
+    langgraph_enabled: bool = False
+
+    # SQLite checkpoint database path for LangGraph durability/resume.
+    # Relative to CWD; in production this should be an absolute path or a
+    # named memory database. Defaults to a file next to the working directory.
+    langgraph_checkpointer_db: str = "checkpoints.sqlite"
+
     # --- Cloudflare Workers AI (optional provider) -----------------------------
     cloudflare_account_id: str | None = None
     cloudflare_api_token: str | None = None

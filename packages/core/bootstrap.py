@@ -5,12 +5,14 @@ from __future__ import annotations
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
+from typing import Union
 
 from agents.knowledge import create_knowledge_agent
 from agents.reporting import create_reporting_agent
 from agents.support import create_support_agent
 from packages.config.settings import Settings, get_settings
 from packages.core.orchestrator import Orchestrator
+from packages.core.graph import GraphOrchestrator
 from packages.core.persistence import NoopTaskStore, TaskStore
 from packages.core.policy import AllowAllPolicy, PolicyChecker
 from packages.core.registry import InMemoryAgentRegistry
@@ -23,7 +25,7 @@ from packages.llm.factory import get_embedding_provider, get_llm_provider
 class AppContainer:
     settings: Settings
     registry: InMemoryAgentRegistry
-    orchestrator: Orchestrator
+    orchestrator: Union[Orchestrator, GraphOrchestrator]  # type: ignore[annotation]  # classic or graph path
     task_store: TaskStore = None
     policy: PolicyChecker = None
 
@@ -64,10 +66,15 @@ def build_container(
     support_agent = create_support_agent(llm=llm)
     registry.register(support_agent.descriptor, support_agent)
 
+    if s.langgraph_enabled:
+        orchestrator = GraphOrchestrator(registry, llm)
+    else:
+        orchestrator = Orchestrator(registry, llm)
+
     return AppContainer(
         settings=s,
         registry=registry,
-        orchestrator=Orchestrator(registry, llm),
+        orchestrator=orchestrator,
         task_store=task_store,
         policy=policy,
     )

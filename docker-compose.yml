@@ -33,7 +33,9 @@ services:
       ENVIRONMENT: local
       LOG_LEVEL: INFO
       DATABASE_URL: postgresql+psycopg://postgres:postgres@db:5432/business_ops
-      LLM_PROVIDER: mock
+      LLM_PROVIDER: ollama
+      LLM_MODEL: qwen2.5:3b
+      OLLAMA_BASE_URL: http://ollama:11434
       EMBEDDING_PROVIDER: mock
       PERSISTENCE_ENABLED: ${PERSISTENCE_ENABLED:-true}
       API_KEY: ${API_KEY:-}
@@ -43,7 +45,6 @@ services:
       # Optional: Cloudflare / Ollama / Gmail / Google Sheets
       CLOUDFLARE_ACCOUNT_ID: ${CLOUDFLARE_ACCOUNT_ID:-}
       CLOUDFLARE_API_TOKEN: ${CLOUDFLARE_API_TOKEN:-}
-      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-}
       EMAIL_SMTP_HOST: ${EMAIL_SMTP_HOST:-}
       EMAIL_SMTP_PORT: ${EMAIL_SMTP_PORT:-587}
       EMAIL_SMTP_USERNAME: ${EMAIL_SMTP_USERNAME:-}
@@ -63,6 +64,8 @@ services:
     depends_on:
       db:
         condition: service_healthy
+      ollama:
+        condition: service_started
     healthcheck:
       test: ["CMD-SHELL", "curl -f http://localhost:8000/health || exit 1"]
       interval: 10s
@@ -123,6 +126,17 @@ services:
       retries: 5
       start_period: 20s
 
+  ollama:
+    build:
+      context: ..
+      dockerfile: infrastructure/docker/ollama.Dockerfile
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_models:/root/.ollama
+    restart: unless-stopped
+
 volumes:
   pgdata:
   n8n_data:
+  ollama_models:
