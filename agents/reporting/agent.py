@@ -15,7 +15,6 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
-from integrations.google_client import sheet_log_row
 from packages.config.settings import get_settings
 from packages.contracts.enums import AgentResponseStatus, Domain
 from packages.contracts.models import (
@@ -26,6 +25,11 @@ from packages.contracts.models import (
 )
 from packages.llm.base import LLMProvider
 from packages.llm.mock import MockLLMProvider
+
+try:
+    from integrations.google_client import sheet_log_row
+except ImportError:  # optional dependency (google-auth) not installed in minimal image
+    sheet_log_row = None  # type: ignore
 
 SUPPORTED_ACTIONS = {"generate"}
 
@@ -321,6 +325,8 @@ class ReportingAgent:
 
     async def _log_to_sheets(self, result: dict[str, Any]) -> None:
         """Append a summary row to the configured Google Sheet."""
+        if sheet_log_row is None:
+            return
         report = result.get("report", {})
         summary = report.get("summary", "")
         highlights = "; ".join(report.get("highlights", []))

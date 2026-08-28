@@ -14,6 +14,7 @@ RUN npm run build
 FROM node:22-alpine AS runtime
 WORKDIR /app
 ENV NODE_ENV=production NEXT_TELEMETRY_DISABLED=1
+RUN apk add --no-cache curl
 COPY --from=build /app ./
 EXPOSE 3000
 CMD ["npm", "run", "start"]

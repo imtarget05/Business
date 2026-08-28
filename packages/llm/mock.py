@@ -61,17 +61,21 @@ class MockLLMProvider:
     async def generate_structured(
         self,
         prompt: str,
-        schema: type[T],
+        schema: T | dict[str, Any],
         *,
         system: str | None = None,
         temperature: float = 0.0,
         max_tokens: int = 1024,
         **kwargs: Any,
     ) -> T:
-        self.calls.append({"prompt": prompt, "schema": schema.__name__})
+        schema_name = getattr(schema, "__name__", "dict")
+        self.calls.append({"prompt": prompt, "schema": schema_name})
         raw = self._next_raw()
         if isinstance(raw, dict):
-            return schema.model_validate(raw)
+            # schema could be a dict (PO Agent passes dict) or a Pydantic class
+            if hasattr(schema, "model_validate"):
+                return schema.model_validate(raw)
+            return raw  # return dict as-is when schema is dict
         try:
             data = json.loads(raw)
         except json.JSONDecodeError as exc:
@@ -79,7 +83,9 @@ class MockLLMProvider:
                 "MockLLMProvider received unscripted structured call; script a "
                 "dict output matching the requested schema."
             ) from exc
-        return schema.model_validate(data)
+        if hasattr(schema, "model_validate"):
+            return schema.model_validate(data)
+        return data
 
     # ------------------------------------------------------------------
     # Tool-call protocol (Phase 3, Task 3.1) — fully scripted, no network.

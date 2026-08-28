@@ -3,6 +3,11 @@
 # subsequent container starts skip the pull and serve immediately.
 FROM ollama/ollama:latest
 
+# Ensure curl is available for the entrypoint readiness probe.
+RUN apt-get update -qq && \
+    apt-get install -y --no-install-recommends curl && \
+    rm -rf /var/lib/apt/lists/*
+
 # Runtime wrapper: pull model once (if not already cached in volume),
 # then exec into the official serve command.
 COPY infrastructure/docker/ollama/entrypoint.sh /usr/local/bin/entrypoint.sh

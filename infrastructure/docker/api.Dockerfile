@@ -7,11 +7,15 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
+# curl for healthcheck
+RUN apt-get update -qq && apt-get install -y --no-install-recommends curl && rm -rf /var/lib/apt/lists/*
+
 # System deps kept minimal; psycopg[binary] ships prebuilt wheels.
 COPY pyproject.toml README.md ./
 COPY packages ./packages
 COPY agents ./agents
 COPY apps/api ./apps/api
+COPY integrations ./integrations
 COPY migrations ./migrations
 COPY alembic.ini ./
 

@@ -22,6 +22,10 @@ depends_on = None
 
 
 def upgrade() -> None:
+    bind = op.get_bind()
+    inspector = sa.inspect(bind)
+    if "api_keys" in inspector.get_table_names():
+        return
     op.create_table(
         "api_keys",
         sa.Column("id", sa.Uuid(as_uuid=True), primary_key=True),

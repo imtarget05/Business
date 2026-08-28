@@ -13,6 +13,7 @@ class Domain(StrEnum):
     SUPPORT = "support"
     OPERATIONS = "operations"
     REPORT = "report"
+    SUPPLY_CHAIN = "supply_chain"
 
 
 class AgentResponseStatus(StrEnum):
