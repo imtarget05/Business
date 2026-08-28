@@ -12,6 +12,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from agents.supply_chain.circuit_breaker import CircuitBreaker
 from packages.contracts.models import TaskRequest
 
 logger = logging.getLogger(__name__)
@@ -39,7 +40,8 @@ class ReportingGuardrails:
     })
 
     def __init__(self) -> None:
-        pass
+        # Circuit breaker guards the report generation (DB-backed aggregation).
+        self._breaker = CircuitBreaker("reporting_guardrails")
 
     def validate_input(self, request: TaskRequest) -> None:
         """Validate TaskRequest input cho Reporting node.

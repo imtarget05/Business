@@ -41,6 +41,7 @@ from packages.core.errors import (
 from packages.core.persistence import NoopTaskRecorder, TaskRecorder
 from packages.core.policy import AllowAllPolicy, PolicyChecker
 from packages.core.registry import InMemoryAgentRegistry
+from packages.core.router import Classification, RouterAgent
 from packages.llm.base import LLMProvider
 from packages.observability.context import get_context
 from packages.observability.logging import get_logger
@@ -55,12 +56,30 @@ class Orchestrator:
         llm: LLMProvider,
         *,
         default_timeout_ms: int = 30_000,
+        router: "RouterAgent | None" = None,
     ) -> None:
         self._registry = registry
         self._llm = llm
         self._default_timeout_ms = default_timeout_ms
         self._settings = get_settings()
         self._hop_count = 0  # Track number of agent hops in current execution
+        # Optional RouterAgent for free-text intent classification (Phase C).
+        # When provided, classify() can resolve raw text into a capability.
+        self._router = router
+
+    async def classify_text(self, text: str) -> Classification | None:
+        """Classify free-form text into a capability via the RouterAgent.
+
+        Returns None when the router escalates (no confident intent), so the
+        caller can surface an escalation rather than guess. Requires the
+        RouterAgent to be injected at construction time.
+        """
+        if self._router is None:
+            return None
+        result = await self._router.classify_text(text)
+        if result.escalate or result.capability is None:
+            return None
+        return result
 
     @staticmethod
     async def _record(

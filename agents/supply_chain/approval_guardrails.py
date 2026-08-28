@@ -13,6 +13,7 @@ import logging
 from typing import Any
 
 from agents.supply_chain.approval import ApprovalWorkflow, ApprovalState
+from agents.supply_chain.circuit_breaker import CircuitBreaker
 from packages.contracts.models import TaskRequest
 
 logger = logging.getLogger(__name__)
@@ -26,6 +27,9 @@ class ApprovalGuardrails:
 
     def __init__(self, workflow: ApprovalWorkflow | None = None) -> None:
         self._workflow = workflow
+        # Circuit breaker protects the approval evaluation against repeated
+        # downstream failures (LLM/approval-service flakiness).
+        self._breaker = CircuitBreaker(f"approval_guardrails")
 
     def validate_input(self, request: TaskRequest) -> None:
         """Validate TaskRequest input cho Approval node.

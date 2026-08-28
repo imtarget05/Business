@@ -73,6 +73,9 @@ class SupplyChainGraphState:
     dashboard: dict[str, Any] | None = None
     report: dict[str, Any] | None = None
 
+    # --- n8n export (Phase D) ---
+    n8n_result: dict[str, Any] | None = None
+
     # --- Flow control ---
     current_step: str = "start"
     error: str | None = None
@@ -422,6 +425,64 @@ async def reporting_node(state: SupplyChainGraphState) -> SupplyChainGraphState:
 
 
 # ---------------------------------------------------------------------------
+# Node: n8n export (Phase D — Task 3.5)
+# ---------------------------------------------------------------------------
+
+async def n8n_export_node(state: SupplyChainGraphState) -> SupplyChainGraphState:
+    """Export the approved PO to an n8n workflow via webhook (non-blocking).
+
+    Runs after reporting. Exports only when the PO was approved (or
+    auto-approved); rejected POs are skipped. Failures are captured on the
+    state but do NOT fail the overall workflow — the PO pipeline already
+    completed by this point.
+    """
+    try:
+        from agents.supply_chain.n8n_client import N8nClient
+
+        decision = state.approval_decision
+        if decision not in ("approved", "auto_approved"):
+            logger.info("n8n export skipped (PO not approved)")
+            state.n8n_result = {
+                "exported": False,
+                "skipped": True,
+                "reason": f"decision={decision}",
+            }
+            _record_step(state, "n8n_export", "skipped")
+            return state
+
+        client = N8nClient()
+        export_payload = {
+            "task_id": str(state.task_id),
+            "po_data": state.po_data,
+            "approval": {
+                "state": state.approval_state,
+                "decision": state.approval_decision,
+                "decided_by": state.approval_decided_by,
+            },
+            "inventory": {
+                "alerts": state.inventory_alerts,
+                "summary": state.inventory_summary,
+            },
+            "dashboard": state.dashboard,
+        }
+        result = await client.export_po(export_payload)
+        state.n8n_result = {
+            "exported": result.exported,
+            "webhook_url": result.webhook_url,
+            "status_code": result.status_code,
+            "error": result.error,
+        }
+        _record_step(
+            state, "n8n_export", "success" if result.exported else "no_op"
+        )
+    except Exception as e:
+        logger.warning(f"n8n export node error (non-fatal): {e}")
+        state.n8n_result = {"exported": False, "error": str(e)}
+        _record_step(state, "n8n_export", "error")
+    return state
+
+
+# ---------------------------------------------------------------------------
 # Node: Error (terminal)
 # ---------------------------------------------------------------------------
 
@@ -469,8 +530,8 @@ def after_inventory(state: SupplyChainGraphState) -> str:
 
 
 def after_reporting(state: SupplyChainGraphState) -> str:
-    """Reporting is terminal → END."""
-    return "end"
+    """Reporting is terminal → proceed to n8n export (non-blocking), then END."""
+    return "n8n_export"
 
 
 # ---------------------------------------------------------------------------
@@ -500,6 +561,7 @@ def _build_supply_chain_graph(settings: Settings | None = None) -> Any:
     graph.add_node("approval", approval_node)
     graph.add_node("inventory", inventory_node)
     graph.add_node("reporting", reporting_node)
+    graph.add_node("n8n_export", n8n_export_node)
     graph.add_node("error", error_node)
 
     # Add edges
@@ -533,9 +595,11 @@ def _build_supply_chain_graph(settings: Settings | None = None) -> Any:
         "reporting",
         after_reporting,
         {
+            "n8n_export": "n8n_export",
             "end": END,
         },
     )
+    graph.add_edge("n8n_export", END)
     graph.add_edge("error", END)
 
     # Compile with checkpoint
@@ -617,6 +681,7 @@ class SupplyChainGraphOrchestrator:
             },
             "dashboard": result.get("dashboard"),
             "report": result.get("report"),
+            "n8n_result": result.get("n8n_result"),
             "step_history": result.get("step_history"),
             "final_result": final,
             "_metrics": {

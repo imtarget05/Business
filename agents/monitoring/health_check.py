@@ -169,48 +169,58 @@ async def check_task_queue() -> ComponentCheck:
 async def run_health_check(
     api_base_url: str = "http://localhost:8000",
 ) -> HealthCheckResult:
-    """Run all health checks and return aggregated result."""
-    timestamp = datetime.now(timezone.utc).isoformat()
-    result = HealthCheckResult(timestamp=timestamp)
-    
-    # Run checks concurrently
-    checks = await asyncio.gather(
-        check_api(api_base_url),
-        check_database_health(),
-        check_agent_registry(),
-        check_task_queue(),
-        return_exceptions=True,
-    )
-    
-    result.checks = []
-    for item in checks:
-        if isinstance(item, Exception):
-            result.checks.append(ComponentCheck(
-                name="unknown",
-                status="error",
-                message=f"Check failed: {str(item)}",
-            ))
+    """Run all health checks and return aggregated result.
+
+    Wrapped in a tracing span (Phase E) — the tracer is a no-op unless a backend
+    is configured via TRACING_BACKEND, so this never adds overhead or failures.
+    """
+    from packages.core.tracing import get_tracer
+
+    tracer = get_tracer()
+    with tracer.span("health_check") as _sid:
+        timestamp = datetime.now(timezone.utc).isoformat()
+        result = HealthCheckResult(timestamp=timestamp)
+
+        # Run checks concurrently
+        checks = await asyncio.gather(
+            check_api(api_base_url),
+            check_database_health(),
+            check_agent_registry(),
+            check_task_queue(),
+            return_exceptions=True,
+        )
+
+        result.checks = []
+        for item in checks:
+            if isinstance(item, Exception):
+                result.checks.append(ComponentCheck(
+                    name="unknown",
+                    status="error",
+                    message=f"Check failed: {str(item)}",
+                ))
+            else:
+                result.checks.append(item)
+
+        # Determine overall status
+        statuses = [c.status for c in result.checks]
+        if "error" in statuses:
+            result.overall = "down"
+        elif "warning" in statuses:
+            result.overall = "degraded"
         else:
-            result.checks.append(item)
-    
-    # Determine overall status
-    statuses = [c.status for c in result.checks]
-    if "error" in statuses:
-        result.overall = "down"
-    elif "warning" in statuses:
-        result.overall = "degraded"
-    else:
-        result.overall = "ok"
-    
-    # Summary
-    result.summary = {
-        "total_checks": len(result.checks),
-        "ok_count": sum(1 for c in result.checks if c.status == "ok"),
-        "warning_count": sum(1 for c in result.checks if c.status == "warning"),
-        "error_count": sum(1 for c in result.checks if c.status == "error"),
-        "unavailable_count": sum(1 for c in result.checks if c.status == "unavailable"),
-    }
-    
+            result.overall = "ok"
+
+        # Summary
+        result.summary = {
+            "total_checks": len(result.checks),
+            "ok_count": sum(1 for c in result.checks if c.status == "ok"),
+            "warning_count": sum(1 for c in result.checks if c.status == "warning"),
+            "error_count": sum(1 for c in result.checks if c.status == "error"),
+            "unavailable_count": sum(1 for c in result.checks if c.status == "unavailable"),
+        }
+
+        tracer.event("health_check_completed", overall=result.overall)
+
     return result
 
 

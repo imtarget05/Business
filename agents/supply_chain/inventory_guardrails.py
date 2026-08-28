@@ -13,6 +13,7 @@ import logging
 import re
 from typing import Any
 
+from agents.supply_chain.circuit_breaker import CircuitBreaker
 from packages.contracts.models import TaskRequest
 
 logger = logging.getLogger(__name__)
@@ -32,7 +33,8 @@ class InventoryGuardrails:
     })
 
     def __init__(self) -> None:
-        pass
+        # Circuit breaker guards the (potentially DB-backed) inventory read.
+        self._breaker = CircuitBreaker("inventory_guardrails")
 
     def validate_input(self, request: TaskRequest) -> None:
         """Validate TaskRequest input cho Inventory node.

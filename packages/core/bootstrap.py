@@ -10,12 +10,20 @@ from typing import Union
 from agents.knowledge import create_knowledge_agent
 from agents.reporting import create_reporting_agent
 from agents.support import create_support_agent
+from agents.supply_chain import (
+    create_supply_chain_agents,
+    create_supply_chain_reporter,
+    create_inventory_monitor,
+)
 from packages.config.settings import Settings, get_settings
+from packages.contracts.models import AgentDescriptor
+from packages.contracts.enums import Domain
 from packages.core.orchestrator import Orchestrator
 from packages.core.graph import GraphOrchestrator
 from packages.core.persistence import NoopTaskStore, TaskStore
 from packages.core.policy import AllowAllPolicy, PolicyChecker
 from packages.core.registry import InMemoryAgentRegistry
+from packages.core.router import RouterAgent
 from packages.database.repositories.documents import KnowledgeRepository
 from packages.database.session import get_session_factory
 from packages.llm.factory import get_embedding_provider, get_llm_provider
@@ -66,10 +74,56 @@ def build_container(
     support_agent = create_support_agent(llm=llm)
     registry.register(support_agent.descriptor, support_agent)
 
+    # Supply Chain agents (Phase SC) — PurchaseOrderAgent for PO inbound parsing/classification/routing
+    supply_chain_agents = create_supply_chain_agents(llm=llm, settings=s)
+    for agent in supply_chain_agents.values():
+        registry.register(agent.descriptor, agent)
+
+    # Supply Chain Inventory Monitor (Phase SC) — inventory level monitoring and alerting
+    inventory_monitor = create_inventory_monitor(llm=llm, settings=s)
+    inventory_descriptor = AgentDescriptor(
+        name="inventory_monitor",
+        domain=Domain.SUPPLY_CHAIN,
+        version="1",
+        description="Monitor inventory levels, generate alerts for low stock, out-of-stock, and overstock conditions.",
+        capabilities=frozenset(
+            {
+                "supply_chain.check_inventory",
+                "supply_chain.get_alerts",
+                "supply_chain.get_summary",
+            }
+        ),
+        timeout_ms=15_000,
+        max_retries=1,
+    )
+    registry.register(inventory_descriptor, inventory_monitor)
+
+    # Supply Chain Reporter (Phase SC) — generate summary reports and dashboards
+    supply_chain_reporter = create_supply_chain_reporter(llm=llm, settings=s)
+    reporter_descriptor = AgentDescriptor(
+        name="supply_chain_reporter",
+        domain=Domain.SUPPLY_CHAIN,
+        version="1",
+        description="Generate daily/weekly/monthly supply chain reports and dashboards from PO processing, approval, and inventory data.",
+        capabilities=frozenset(
+            {
+                "supply_chain.generate_report",
+                "supply_chain.get_dashboard",
+                "supply_chain.get_po_report",
+                "supply_chain.get_approval_report",
+                "supply_chain.get_inventory_report",
+            }
+        ),
+        timeout_ms=30_000,
+        max_retries=1,
+    )
+    registry.register(reporter_descriptor, supply_chain_reporter)
+
     if s.langgraph_enabled:
         orchestrator = GraphOrchestrator(registry, llm)
     else:
-        orchestrator = Orchestrator(registry, llm)
+        router_agent = RouterAgent(llm=llm, registry=registry)
+        orchestrator = Orchestrator(registry, llm, router=router_agent)
 
     return AppContainer(
         settings=s,
