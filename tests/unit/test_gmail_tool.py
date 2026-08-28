@@ -129,26 +129,31 @@ class TestSendGmailReplyTool:
     @pytest.mark.asyncio
     async def test_real_send_requires_google_config(self, tool, monkeypatch):
         """Real send requires Google OAuth configuration."""
-        # Enable send but don't configure Google credentials
-        monkeypatch.setenv("GMAIL_SEND_ENABLED", "true")
-        monkeypatch.setenv("GOOGLE_REFRESH_TOKEN", "")
-        monkeypatch.setenv("GOOGLE_OAUTH_CLIENT_ID", "")
-        monkeypatch.setenv("GOOGLE_OAUTH_CLIENT_SECRET", "")
-        monkeypatch.setenv("GOOGLE_SHEET_ID", "")
-        get_settings.cache_clear()
+        from unittest.mock import patch
+        from packages.config.settings import Settings
 
-        tool = SendGmailReplyTool()  # New instance with fresh settings
+        # Create mock settings with gmail enabled but no google creds
+        mock_settings = Settings(
+            _env_file=None,
+            gmail_send_enabled=True,
+            google_refresh_token=None,
+            google_oauth_client_id=None,
+            google_oauth_client_secret=None,
+            google_sheet_id=None,
+        )
+        with patch("agents.support.tools.get_settings", return_value=mock_settings):
+            tool2 = SendGmailReplyTool()
+            tool2.bind_organization(uuid.uuid4())
+            with pytest.raises(RuntimeError, match="google_refresh_token not configured"):
+                await tool2.run(
+                    {
+                        "to_email": "customer@example.com",
+                        "subject": "Test",
+                        "body": "Test",
+                    }
+                )
 
-        with pytest.raises(RuntimeError, match="google_refresh_token not configured"):
-            await tool.run(
-                {
-                    "to_email": "customer@example.com",
-                    "subject": "Test",
-                    "body": "Test",
-                }
-            )
-
-        # Restore defaults
+        # Restore defaults (cleanup not strictly needed with mock)
         monkeypatch.delenv("GMAIL_SEND_ENABLED", raising=False)
         monkeypatch.delenv("GOOGLE_REFRESH_TOKEN", raising=False)
         monkeypatch.delenv("GOOGLE_OAUTH_CLIENT_ID", raising=False)
