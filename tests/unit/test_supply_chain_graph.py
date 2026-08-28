@@ -21,6 +21,11 @@ from agents.supply_chain.graph import (
     _build_supply_chain_graph,
     _build_checkpointer,
 )
+from agents.supply_chain.po_guardrails import POAgentGuardrails
+from agents.supply_chain.approval_guardrails import ApprovalGuardrails
+from agents.supply_chain.inventory_guardrails import InventoryGuardrails
+from agents.supply_chain.reporting_guardrails import ReportingGuardrails
+from packages.contracts.models import TaskRequest
 
 
 # ---------------------------------------------------------------------------
@@ -290,3 +295,17 @@ async def test_dashboard_structure(orchestrator, small_po_email):
     ]
     for section in required_sections:
         assert section in dashboard, f"dashboard missing section: {section}"
+
+
+@pytest.mark.asyncio
+async def test_oversized_email_guardrails(orchestrator):
+    """Email exceeding MAX_EMAIL_SIZE (50000 chars) should be rejected by guardrails."""
+    task_id = uuid4()
+    large_email = "x" * 50001  # Exceeds MAX_EMAIL_SIZE
+    result = await orchestrator.execute(
+        task_id=task_id,
+        payload={"email_content": large_email},
+        context={},
+    )
+    assert result["status"] == "failed"
+    assert "too large" in result.get("error", "")

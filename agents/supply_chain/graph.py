@@ -29,7 +29,11 @@ from agents.supply_chain.approval import ApprovalWorkflow, ApprovalState, needs_
 from agents.supply_chain.inventory import InventoryMonitor, InventoryItem
 from agents.supply_chain.reporting import SupplyChainReporter
 from agents.supply_chain.po_guardrails import POAgentGuardrails
+from agents.supply_chain.reporting_guardrails import ReportingGuardrails
+from agents.supply_chain.inventory_guardrails import InventoryGuardrails
+from agents.supply_chain.approval_guardrails import ApprovalGuardrails
 from packages.config.settings import Settings, get_settings
+from packages.contracts.models import TaskContext, TaskRequest
 
 logger = logging.getLogger(__name__)
 
@@ -172,6 +176,26 @@ async def approval_node(state: SupplyChainGraphState) -> SupplyChainGraphState:
     """
     _record_step(state, "approval", "started")
 
+    # Guardrails: validate input before processing
+    try:
+        guardrails = ApprovalGuardrails()
+        req = TaskRequest(
+            task_id=state.task_id,
+            domain="supply_chain",
+            action="supply_chain_approve_po",
+            payload={"po": state.po_data },
+            context=TaskContext(**state.context),
+        )
+        guardrails.validate_input(req)
+        guardrails.check_permission(req)
+    except (ValueError, PermissionError) as e:
+        state.error = f"Approval guardrails violation: {str(e)}"
+        state.current_step = "end"
+        state.terminal = True
+        state.final_result = {"status": "failed", "error": state.error}
+        _record_step(state, "approval", "guardrails_failed")
+        return state
+
     if not state.po_data:
         state.error = "approval_node called without po_data"
         state.current_step = "end"
@@ -231,6 +255,26 @@ async def inventory_node(state: SupplyChainGraphState) -> SupplyChainGraphState:
     """
     _record_step(state, "inventory", "started")
 
+    # Guardrails: validate input before processing
+    try:
+        guardrails = InventoryGuardrails()
+        req = TaskRequest(
+            task_id=state.task_id,
+            domain="supply_chain",
+            action="supply_chain_check_inventory",
+            payload={"items": state.po_data.get("items", [])},
+            context=TaskContext(**state.context),
+        )
+        guardrails.validate_input(req)
+        guardrails.check_permission(req)
+    except (ValueError, PermissionError) as e:
+        state.error = f"Inventory guardrails violation: {str(e)}"
+        state.current_step = "end"
+        state.terminal = True
+        state.final_result = {"status": "failed", "error": state.error}
+        _record_step(state, "inventory", "guardrails_failed")
+        return state
+
     if not state.po_data:
         state.error = "inventory_node called without po_data"
         state.current_step = "end"
@@ -289,6 +333,29 @@ async def reporting_node(state: SupplyChainGraphState) -> SupplyChainGraphState:
     Always reached (success or failure path leads here via conditional edges).
     """
     _record_step(state, "reporting", "started")
+
+    # Guardrails: validate input before processing
+    try:
+        guardrails = ReportingGuardrails()
+        req = TaskRequest(
+            task_id=state.task_id,
+            domain="supply_chain",
+            action="supply_chain_generate_report",
+            payload={
+                "report_type": "full_dashboard",
+                "organization_id": state.context.get("organization_id", ""),
+            },
+            context=TaskContext(**state.context),
+        )
+        guardrails.validate_input(req)
+        guardrails.check_permission(req)
+    except (ValueError, PermissionError) as e:
+        state.error = f"Reporting guardrails violation: {str(e)}"
+        state.current_step = "end"
+        state.terminal = True
+        state.final_result = {"status": "failed", "error": state.error}
+        _record_step(state, "reporting", "guardrails_failed")
+        return state
 
     try:
         reporter = SupplyChainReporter()
@@ -510,20 +577,57 @@ class SupplyChainGraphOrchestrator:
             context=context or {},
         )
 
+        start_time = datetime.now(timezone.utc)
+
         config = {
             "configurable": {"thread_id": str(task_id)},
             "search": {"value": "latest", "limit": 1},
         }
 
         result = await self._graph.ainvoke(initial_state, config)
+
+        end_time = datetime.now(timezone.utc)
+        duration_ms = (end_time - start_time).total_seconds() * 1000
+        step_count = len(result.get("step_history", []))
+
+        # Add evaluation metrics to final result
+        if result.get("final_result"):
+            result["final_result"]["_metrics"] = {
+                "duration_ms": round(duration_ms, 2),
+                "step_count": step_count,
+                "timestamp": end_time.isoformat(),
+            }
+
         # ainvoke returns the final state as a dict
         final = result.get("final_result")
-        if final is not None:
-            return final
-        # Fallback: check if terminal and error is set
-        if result.get("terminal") and result.get("error"):
-            return {"status": "failed", "error": result["error"]}
-        return {"status": "failed", "error": "no result"}
+        final_status = final.get("status") if isinstance(final, dict) else None
+        # Build rich result envelope for observability + downstream consumers
+        envelope = {
+            "status": "failed" if final_status == "failed" else ("success" if final is not None else "failed"),
+            "task_id": str(task_id),
+            "po_data": result.get("po_data"),
+            "approval": {
+                "state": result.get("approval_state"),
+                "decision": result.get("approval_decision"),
+                "decided_by": result.get("approval_decided_by"),
+            },
+            "inventory": {
+                "alerts": result.get("inventory_alerts"),
+                "summary": result.get("inventory_summary"),
+            },
+            "dashboard": result.get("dashboard"),
+            "report": result.get("report"),
+            "step_history": result.get("step_history"),
+            "final_result": final,
+            "_metrics": {
+                "duration_ms": round(duration_ms, 2),
+                "step_count": step_count,
+                "timestamp": end_time.isoformat(),
+            },
+        }
+        if envelope["status"] == "failed":
+            envelope["error"] = (final.get("error") if isinstance(final, dict) else None) or result.get("error") or "no result"
+        return envelope
 
 
 # ---------------------------------------------------------------------------

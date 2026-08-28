@@ -1,0 +1,62 @@
+# ==============================================================================
+# Business Ops Agent Swarm — Configuration
+# ------------------------------------------------------------------------------
+# All secrets are referenced via environment variables (12-factor).
+# Copy values from .env / secret manager; never commit real tokens.
+# See .env.example for the full list of supported env vars.
+# ==============================================================================
+
+app:
+  environment: local
+  log_level: INFO
+  api_base_url: "http://localhost:8000"
+
+llm:
+  provider: mock                # mock | cloudflare_ai | ollama | external_openai_compatible
+  embedding_provider: mock
+  ollama_model: "qwen2.5:7b"
+  timeout_seconds: 30
+
+database:
+  url: "sqlite+aiosqlite:///./business_ops.db"
+
+# ------------------------------------------------------------------------------
+# Monitoring Agent
+# ------------------------------------------------------------------------------
+monitoring:
+  enabled: true
+
+  # Telegram bot (optional — pushes health alerts + daily reports)
+  telegram:
+    enabled: false
+    bot_token: "${TELEGRAM_BOT_TOKEN}"       # never hard-code; inject via env/secret
+    chat_id: "${TELEGRAM_CHAT_ID}"           # restrict to a single chat; empty = open
+
+  # Scheduler cadence
+  scheduler:
+    health_check_interval_minutes: 30
+    daily_report_cron: "0 9 * * *"          # 09:00 daily
+    enabled: true
+
+  # Health check targets
+  health:
+    api_base_url: "http://localhost:8000"
+    db_check: true
+    agent_registry_check: true
+
+  # Research agents
+  research:
+    web_enabled: true
+    arxiv_enabled: true
+    max_results: 5
+    extract_char_limit: 5000
+
+# ------------------------------------------------------------------------------
+# Supply Chain Agentic Pipeline (LangGraph)
+# ------------------------------------------------------------------------------
+supply_chain:
+  po_approval_thresholds:
+    manager_a: 500.0
+    manager_b: 5000.0
+  langgraph_enabled: true
+  checkpoint: in_memory            # in_memory | sqlite
