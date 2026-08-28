@@ -6,9 +6,11 @@ hard-coded; see `.env.example` at the repository root.
 
 from __future__ import annotations
 
+import json
 from enum import StrEnum
 from functools import lru_cache
 
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -20,12 +22,7 @@ class Environment(StrEnum):
 
 
 class LLMProviderKind(StrEnum):
-    """Which LLM provider implementation the abstraction should activate.
-
-    `mock` requires no network access and no credentials: the application must
-    always be runnable with it (ADR-001 / ADR-005). Ollama is an OPTIONAL
-    provider only — the system never depends on a local model.
-    """
+    """Which LLM provider implementation the abstraction should activate."""
 
     MOCK = "mock"
     CLOUDFLARE_AI = "cloudflare_ai"
@@ -34,12 +31,7 @@ class LLMProviderKind(StrEnum):
 
 
 class EmbeddingProviderKind(StrEnum):
-    """Which embedding provider implementation the abstraction should activate.
-
-    `mock` requires no network access and no credentials: the application must
-    always be runnable with it (ADR-001 / ADR-005). Cloudflare is the primary
-    production provider; external OpenAI-compatible is supported for flexibility.
-    """
+    """Which embedding provider implementation the abstraction should activate."""
 
     MOCK = "mock"
     CLOUDFLARE_AI = "cloudflare_ai"
@@ -60,11 +52,8 @@ class Settings(BaseSettings):
     # API key for the minimum authn boundary (X-API-Key header). Empty = open.
     api_key: str | None = None
     # Per-tenant keys: X-API-Key value -> organization_id (UUID string).
-    # When non-empty, callers are bound to their organization server-side;
-    # client-supplied organization_id values are ignored everywhere.
     tenant_api_keys: dict[str, str] = {}
     # Rate limiting: requests per minute per API key (sliding window).
-    # Set to 0 to disable. Default 60 req/min for production pilot.
     rate_limit_per_minute: int = 60
 
     # --- Database (Neon PostgreSQL in production; pgvector-enabled locally) ---
@@ -72,9 +61,6 @@ class Settings(BaseSettings):
         "postgresql+psycopg://postgres:postgres@localhost:5432/business_ops"
     )
     db_echo: bool = False
-    # When true, POST /v1/tasks persists task progress and final results to the
-    # database and enables idempotent replay. Defaults to false so the app and
-    # CI tests run with zero external dependencies; enable in Docker/production.
     persistence_enabled: bool = False
 
     # --- LLM ----------------------------------------------------------------
@@ -82,7 +68,6 @@ class Settings(BaseSettings):
     llm_api_key: str | None = None
     llm_model: str | None = None
     llm_request_timeout_seconds: float = 30.0
-    # Retry policy for HTTP-based providers (Cloudflare / OpenAI-compatible).
     llm_max_retries: int = 2
     llm_retry_backoff_seconds: float = 0.25
 
@@ -90,76 +75,82 @@ class Settings(BaseSettings):
     embedding_provider: EmbeddingProviderKind = EmbeddingProviderKind.MOCK
     embedding_api_key: str | None = None
     embedding_model: str | None = None
-    embedding_dimensions: int = 768  # Cloudflare @cf/baai/bge-base-en-v1.5
+    embedding_dimensions: int = 768
     embedding_request_timeout_seconds: float = 30.0
     embedding_max_retries: int = 2
     embedding_retry_backoff_seconds: float = 0.25
 
-    # --- Knowledge retrieval (Phase 2) ---------------------------------------
+    # --- Knowledge retrieval -------------------------------------------------
     knowledge_similarity_threshold: float = 0.75
     knowledge_top_k: int = 4
 
-    # --- Router (Phase 4) -----------------------------------------------------
+    # --- Router --------------------------------------------------------------
     router_confidence_threshold: float = 0.6
 
-    # --- Agent tool loop (Phase 3) -------------------------------------------
+    # --- Agent tool loop -----------------------------------------------------
     agent_max_tool_rounds: int = 5
-    # Max handoff depth for multi-agent chains (Phase 4 Task 4.2)
     agent_max_handoffs: int = 2
-    # Per-task execution timeout (Phase 4 Task 4.3)
     agent_task_timeout_seconds: int = 30
-    # Per-hop timeout for handoff chains (Phase 5 FIX 1)
-    # Defaults to agent_task_timeout_seconds; total chain capped at 2x agent_task_timeout_seconds
     agent_hop_timeout_seconds: int = 30
 
-    # --- LangGraph (Phase A) --------------------------------------------------
-    # When True, Orchestrator.execute() delegates to a LangGraph StateGraph
-    # (packages/core/graph.py) instead of the classic async state machine.
-    # Default False so CI stays green until the graph path passes its own tests.
+    # --- LangGraph -----------------------------------------------------------
     langgraph_enabled: bool = False
-
-    # SQLite checkpoint database path for LangGraph durability/resume.
-    # Relative to CWD; in production this should be an absolute path or a
-    # named memory database. Defaults to a file next to the working directory.
     langgraph_checkpointer_db: str = "checkpoints.sqlite"
 
-    # --- Cloudflare Workers AI (optional provider) -----------------------------
+    # --- Supply Chain ---------------------------------------------------------
+    po_approval_thresholds: dict[str, float] = {"manager_a": 500.0, "manager_b": 5000.0}
+
+    # --- Cloudflare Workers AI -----------------------------------------------
     cloudflare_account_id: str | None = None
     cloudflare_api_token: str | None = None
 
-    # --- Ollama (optional provider only) ---------------------------------------
+    # --- Ollama --------------------------------------------------------------
     ollama_base_url: str | None = None
 
-    # --- Reporting (Phase 5) ---------------------------------------------------
-    # When true, ReportingAgent.generate appends a summary row to the configured
-    # Google Sheet (google_sheet_id must also be set). Defaults to false (no side
-    # effects in CI/dev).
+    # --- Reporting -----------------------------------------------------------
     reporting_sheet_log_enabled: bool = False
 
-    # --- Email (support agent) -------------------------------------------------
-    # SMTP settings for send_email_reply tool. DRY-RUN mode is DEFAULT (draft-only;
-    # real send behind email_send_enabled flag). YAGNI: no retries/queueing.
+    # --- Email ----------------------------------------------------------------
     email_smtp_host: str | None = None
     email_smtp_port: int = 587
     email_smtp_username: str | None = None
     email_smtp_password: str | None = None
     email_from_address: str | None = None
-    email_send_enabled: bool = False  # DRY-RUN default: False = draft-only
-    # Explicit recipient allowlist for send_email_reply when sending is enabled.
-    # Recipients must also match the conversation's customer record otherwise.
+    email_send_enabled: bool = False
     email_recipient_allowlist: list[str] = []
 
-    # --- Gmail API (support agent) ---------------------------------------------
-    # Gmail API settings for send_gmail_reply tool. DRY-RUN mode is DEFAULT (draft-only;
-    # real send behind gmail_send_enabled flag). Uses OAuth2 refresh token flow.
+    # --- Gmail API -----------------------------------------------------------
     google_refresh_token: str | None = None
     google_oauth_client_id: str | None = None
     google_oauth_client_secret: str | None = None
     google_sheet_id: str | None = None
-    gmail_send_enabled: bool = False  # DRY-RUN default: False = draft-only
-    # Explicit recipient allowlist for send_gmail_reply when sending is enabled.
-    # Recipients must also match the conversation's customer record otherwise.
+    gmail_send_enabled: bool = False
     gmail_allowed_recipients: list[str] = []
+
+    @model_validator(mode="before")
+    @classmethod
+    def _sanitize_empty_env(cls, data: dict) -> dict:
+        """Convert empty string env vars to appropriate empty containers.
+
+        Pydantic_settings json-loads string env vars; empty strings for
+        dict/list fields raise JSONDecodeError. This handles that gracefully.
+        """
+        if not isinstance(data, dict):
+            return data
+
+        # Dict fields
+        for key in ("tenant_api_keys", "po_approval_thresholds"):
+            val = data.get(key)
+            if val == "":
+                data[key] = {}
+
+        # List fields
+        for key in ("email_recipient_allowlist", "gmail_allowed_recipients"):
+            val = data.get(key)
+            if val == "":
+                data[key] = []
+
+        return data
 
 
 @lru_cache

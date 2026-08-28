@@ -104,33 +104,49 @@ class MonitoringScheduler:
     
     async def _run_health_check_job(self) -> None:
         """Execute health check job."""
+        from packages.core.tracing import get_tracer
+
+        tracer = get_tracer()
         try:
             logger.info("Running scheduled health check...")
-            health = await run_health_check()
-            health_dict = health.to_dict()
-            
-            # Push alert if degraded/down
-            if self._telegram_bot and health_dict["overall"] != "ok":
-                await self._telegram_bot.send_health_alert(health_dict)
-            
-            # Log result
-            logger.info(f"Health check: overall={health_dict['overall']}, checks={len(health_dict['checks'])}")
+            with tracer.span("scheduled_health_check"):
+                health = await run_health_check()
+                health_dict = health.to_dict()
+
+                # Push alert if degraded/down
+                if self._telegram_bot and health_dict["overall"] != "ok":
+                    await self._telegram_bot.send_health_alert(health_dict)
+
+                # Log result
+                logger.info(f"Health check: overall={health_dict['overall']}, checks={len(health_dict['checks'])}")
+                tracer.event("health_check_scheduled", overall=health_dict["overall"])
         except Exception as e:
             logger.error(f"Health check job error: {e}")
-    
+
     async def _run_daily_report_job(self) -> None:
         """Execute daily report job."""
+        from packages.core.tracing import get_tracer
+
+        tracer = get_tracer()
         try:
             logger.info("Running scheduled daily report...")
-            report = await generate_daily_report()
-            md = report.to_markdown()
-            
-            # Push to Telegram if configured
-            if self._telegram_bot:
-                await self._telegram_bot.send_daily_report(md)
-                logger.info("Daily report sent to Telegram")
-            else:
-                logger.info(f"Daily report generated: {report.summary_text}")
+            with tracer.span("scheduled_daily_report"):
+                report = await generate_daily_report()
+                md = report.to_markdown()
+
+                # Emit trace event summarizing the report (Phase E3)
+                tracer.event(
+                    "daily_report_generated",
+                    total_agents=report.summary.get("total_agents", 0),
+                    total_executions=report.summary.get("total_executions", 0),
+                )
+
+                # Push to Telegram if configured
+                if self._telegram_bot:
+                    await self._telegram_bot.send_daily_report(md)
+                    logger.info("Daily report sent to Telegram")
+                else:
+                    logger.info(f"Daily report generated: {report.summary_text}")
         except Exception as e:
             logger.error(f"Daily report job error: {e}")
 

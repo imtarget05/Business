@@ -27,7 +27,7 @@ services:
 
   api:
     build:
-      context: ..
+      context: .
       dockerfile: infrastructure/docker/api.Dockerfile
     environment:
       ENVIRONMENT: local
@@ -75,7 +75,7 @@ services:
 
   web:
     build:
-      context: ..
+      context: .
       dockerfile: infrastructure/docker/web.Dockerfile
     environment:
       NEXT_PUBLIC_API_BASE_URL: http://localhost:8000
@@ -128,7 +128,7 @@ services:
 
   ollama:
     build:
-      context: ..
+      context: .
       dockerfile: infrastructure/docker/ollama.Dockerfile
     ports:
       - "11434:11434"

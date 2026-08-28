@@ -36,12 +36,13 @@ class ApprovalState(StrEnum):
 
 
 def _now_seconds() -> float:
-    """Get current time in seconds — works inside and outside async context."""
-    try:
-        import asyncio
-        return asyncio.get_event_loop().time()
-    except RuntimeError:
-        return time.monotonic()
+    """Get current monotonic time in seconds.
+
+    Uses time.monotonic() (not asyncio.get_event_loop().time()) so behaviour is
+    consistent regardless of which event loop is active — avoids flaky timeout
+    checks under parallel test execution.
+    """
+    return time.monotonic()
 
 
 @dataclass
