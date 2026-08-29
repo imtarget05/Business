@@ -1155,7 +1155,21 @@ class MonitoringBot:
                             pass
                         if not verified:
                             try:
-                                await context.bot.send_message(chat_id=chat_id2, text=f"⚠️ Không verify được job nào có nút Apply còn mở (đã check {len(uniq)} link). Mình không bịa — đây là danh sách nguồn để bạn tự check:\n" + "\n".join(f"• {u.get('url')}" for u in uniq[:5]))
+                                from urllib.parse import urlparse
+                                src_lines = []
+                                for u in uniq[:5]:
+                                    _u = u.get("url", "")
+                                    _d = urlparse(_u).netloc.replace("www.", "")
+                                    src_lines.append(f"• {_d}")
+                                await context.bot.send_message(
+                                    chat_id=chat_id2,
+                                    text=(
+                                        "⚠️ Mình đã quét {n} nguồn nhưng chưa verify được job nào có nút Apply còn mở "
+                                        "(tránh bịa kết quả). Bạn có thể tự check các trang tuyển dụng uy tín sau:\n\n"
+                                        "{sources}\n\n"
+                                        "💡 Mẹo: tìm trực tiếp 'AI Intern' trên từng trang để xem việc làm mới nhất."
+                                    ).format(n=len(uniq), sources="\n".join(src_lines)),
+                                )
                             except Exception:
                                 pass
                             return
