@@ -38,7 +38,7 @@ class SchedulerConfig:
     enabled: bool = True
     health_check_interval_minutes: int = 30
     daily_report_time: time = field(default_factory=lambda: time(9, 0))
-    time_zone: str = "Asia/Seoul"
+    time_zone: str = "Asia/Ho_Chi_Minh"  # Vietnam (UTC+7) — Business Ops Hub runs here
 
 
 @dataclass

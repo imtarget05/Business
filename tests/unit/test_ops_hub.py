@@ -285,6 +285,19 @@ def test_scheduler_ops_hub_job_uses_vn_timezone() -> None:
 
 
 # ---------------------------------------------------------------------------
+# Scheduler timezone (IMPORTANT) — config.py SchedulerConfig must ALSO agree on
+# Asia/Ho_Chi_Minh. Both SchedulerConfig classes must use the VN tz, otherwise
+# any code path importing agents.monitoring.config.SchedulerConfig (the settings
+# model consumed by the app) would silently run on Asia/Seoul and drift by 2h.
+# ---------------------------------------------------------------------------
+def test_config_scheduler_timezone_is_vn() -> None:
+    from agents.monitoring.config import SchedulerConfig
+
+    cfg = SchedulerConfig()
+    assert cfg.time_zone == "Asia/Ho_Chi_Minh"
+
+
+# ---------------------------------------------------------------------------
 # Scheduler formatter (shared with /ops route) — pure, no network
 # ---------------------------------------------------------------------------
 def test_format_ops_digest_renders_alerts_and_items() -> None:
