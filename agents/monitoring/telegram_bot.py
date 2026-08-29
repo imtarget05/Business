@@ -535,9 +535,11 @@ class MonitoringBot:
             return
         # 2) Quick route for email intent -> use gmail agent (limit hallucination)
         low = text.lower()
-        if ("gửi mail" in low or "gui mail" in low or "gửi email" in low or "@gmail.com" in low) and ("chào" in low or "xin chào" in low or "hello" in low or "gửi" in low):
+        import re as _re_gmail
+        has_email = _re_gmail.search(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}", text)
+        is_mail_intent = has_email and ("gửi" in low or "gui" in low or "mail" in low or "email" in low)
+        if is_mail_intent:
             try:
-                import re as _re_gmail
                 m = _re_gmail.search(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}", text)
                 target = m.group(0) if m else "binhtan5734@gmail.com"
                 from integrations.google_client import gmail_send
