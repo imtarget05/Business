@@ -509,23 +509,59 @@ class MonitoringBot:
                         audit: list[dict] = []
                         now = _dt2.datetime.now(_dt2.timezone.utc).isoformat()
                         bg_keywords = ["python","docker","kubernetes","pytorch","computer vision","machine learning","mlops","llm","generative ai","agent","cloud"]
-                        for it in uniq[:15]:
+                        # helper: chi verify trang chi tiet, bo listing
+                        def _is_detail(u: str) -> bool:
+                            low = u.lower()
+                            if "topcv.vn/viec-lam/" in low and ".html" in low:
+                                return True
+                            if "itviec.com/it-jobs/" in low:
+                                path = low.split("it-jobs/")[1].split("?")[0].split("#")[0].strip("/")
+                                # detail co slug dai va nhieu dau -
+                                if path in ["machine-learning","generative-ai","python","ai","jobs"]: return False
+                                if path.count("-") >= 2 and len(path) > 12: return True
+                                return False
+                            if "linkedin.com/jobs/view/" in low: return True
+                            if "vietnamworks.com" in low and "/job" in low: return True
+                            # loai listing
+                            if "tim-viec-lam" in low: return False
+                            if "q=" in low and "indeed.com" in low: return False
+                            if low.endswith("/it-jobs") or low.endswith("/it-jobs/"): return False
+                            return False
+                        import re as _re_title
+                        for it in uniq[:25]:
                             url = it.get("url","")
-                            title = it.get("title","") or it.get("snippet","") or url.split("/")[2]
+                            # bo listing truoc khi verify
+                            is_detail = _is_detail(url)
+                            orig_title = it.get("title","") or it.get("snippet","") or url.split("/")[2]
+                            title = orig_title
                             status = "UNCERTAIN"
                             evidence = f"search {it.get('_q','')} found {url}"
                             confidence = 0.6
+                            html_title = ""
+                            # fetch de lay title that + check Apply
                             try:
                                 async with _httpx2.AsyncClient(timeout=10, follow_redirects=True, headers={"User-Agent":"Mozilla/5.0"}) as _cli:
                                     _r = await _cli.get(url)
                                     if _r.status_code == 200:
-                                        _html = _r.text.lower()
-                                        has_apply = any(k in _html for k in ["apply","ứng tuyển","nộp đơn","apply now"])
-                                        is_closed = any(k in _html for k in ["đã đóng","hết hạn","expired","closed","not found"])
-                                        if has_apply and not is_closed:
+                                        _html = _r.text
+                                        _html_low = _html.lower()
+                                        # lay <title> thuc
+                                        m_t = _re_title.search(r"<title[^>]*>(.*?)</title>", _html, flags=_re_title.IGNORECASE | _re_title.DOTALL)
+                                        if m_t:
+                                            html_title = _re_title.sub(r"<[^>]+>", "", m_t.group(1)).strip()[:120]
+                                            if html_title and len(html_title) > 10:
+                                                title = html_title
+                                        # neu khong phai detail thi khong VERIFIED du co Apply
+                                        has_apply = any(k in _html_low for k in ["apply","ứng tuyển","nộp đơn","apply now"])
+                                        is_closed = any(k in _html_low for k in ["đã đóng","hết hạn","expired","closed","not found","404"])
+                                        if not is_detail:
+                                            status = "UNCERTAIN"
+                                            confidence = 0.55
+                                            evidence = f"listing page, not detail — checked {now} — title: {title[:60]}"
+                                        elif has_apply and not is_closed:
                                             status = "VERIFIED"
                                             confidence = 0.92
-                                            evidence = f"page 200 has Apply button, not closed — checked {now}"
+                                            evidence = f"detail page 200 has Apply button, not closed — checked {now}"
                                         elif is_closed:
                                             status = "CLOSED"
                                             confidence = 0.85
@@ -533,19 +569,25 @@ class MonitoringBot:
                                         else:
                                             status = "UNCERTAIN"
                                             confidence = 0.65
-                                            evidence = "page 200 but no clear Apply button"
+                                            evidence = "detail page 200 but no clear Apply button"
                                     else:
                                         status = "UNCERTAIN"
                                         evidence = f"http {_r.status_code}"
                             except Exception as _e:
                                 evidence = f"fetch error: {_e}"
+                            # chi dua VERIFIED detail vao list chinh
                             low_title = (title + " " + url).lower()
                             skill_match = sum(1 for k in bg_keywords if k in low_title) / max(1, len(bg_keywords)) * 40 + 50
                             if "intern" in low_title: skill_match += 10
                             if "ai" in low_title: skill_match += 10
                             match = int(min(95, max(55, skill_match)))
                             loc = "Ho Chi Minh" if "hcm" in low_title or "ho chi minh" in low_title else ("Ha Noi" if "hanoi" in low_title or "ha noi" in low_title else "Vietnam")
-                            company = title.split("-")[0].strip()[:40] if "-" in title else title[:40]
+                            # tach company tu html title: thuong "Job - Company | Site"
+                            company = "Unknown"
+                            if " - " in title: company = title.split(" - ")[1].split("|")[0].split("-")[0].strip()[:40]
+                            elif " tại " in title.lower(): company = title.lower().split(" tại ")[1].split("|")[0].strip()[:40].title()
+                            else: company = orig_title.split("—")[0].strip()[:40] if "—" in orig_title else title.split("|")[0].strip()[:40]
+                            if not company or len(company) < 3: company = url.split("/")[2]
                             job = {"company": company or "Unknown","job_title": title[:80],"location": loc,"work_type": "On-site","salary": "","deadline": "","required_skills": ", ".join([k for k in bg_keywords if k in low_title][:5]),"experience": "Intern","link": url,"checked_at": now,"evidence": evidence,"confidence": confidence,"status": status,"match": match,"source": it.get("_q","")}
                             if status == "VERIFIED":
                                 verified.append(job)
