@@ -14,13 +14,21 @@ from packages.llm.base import LLMProvider
 from packages.llm.mock import MockLLMProvider
 
 try:
-    from hermes_tools import web_search as _web_search, web_extract as _web_extract
+    from hermes_tools import web_search as _web_search, web_extract as _web_extract  # type: ignore
 
     _HAS_HERMES = True
 except ImportError:
     _HAS_HERMES = False
     _web_search = None  # type: ignore
     _web_extract = None  # type: ignore
+
+try:
+    import httpx as _httpx  # type: ignore
+
+    _HAS_HTTPX = True
+except ImportError:
+    _HAS_HTTPX = False
+    _httpx = None  # type: ignore
 
 SUPPORTED_ACTIONS = {"search", "transcript", "summarize"}
 
@@ -67,6 +75,37 @@ class YoutubeAgent:
                 return AgentResponse(task_id=request.task_id, agent=self.descriptor.qualified_name, status=AgentResponseStatus.SUCCESS, result={"query": query, "results": items, "count": len(items)})
             except Exception as e:
                 return AgentResponse(task_id=request.task_id, agent=self.descriptor.qualified_name, status=AgentResponseStatus.FAILED, error=ErrorDetail(code="SEARCH_ERROR", message=str(e)))
+        if _HAS_HTTPX and _httpx is not None:
+            try:
+                import re as _re, urllib.parse as _up
+                # Search DuckDuckGo for youtube videos
+                q = f"site:youtube.com {query}"
+                async with _httpx.AsyncClient(timeout=12, follow_redirects=True, headers={"User-Agent": "Mozilla/5.0"}) as _cli:
+                    r = await _cli.get("https://html.duckduckgo.com/html/", params={"q": q})
+                    r.raise_for_status()
+                    html = r.text
+                    uddgs = _re.findall(r"uddg=([^&\"']+)", html)
+                    seen: set[str] = set()
+                    results: list[dict[str, str]] = []
+                    for enc in uddgs:
+                        try:
+                            u = _up.unquote(enc)
+                        except Exception:
+                            continue
+                        if "youtube.com/watch" not in u and "youtu.be/" not in u:
+                            continue
+                        if u in seen:
+                            continue
+                        seen.add(u)
+                        vid = _extract_video_id(u) or ""
+                        title = vid or u.split("/")[-1]
+                        results.append({"title": title, "url": u, "snippet": query, "video_id": vid})
+                        if len(results) >= limit:
+                            break
+                    if results:
+                        return AgentResponse(task_id=request.task_id, agent=self.descriptor.qualified_name, status=AgentResponseStatus.SUCCESS, result={"query": query, "results": results, "count": len(results)})
+            except Exception:
+                pass
         return AgentResponse(task_id=request.task_id, agent=self.descriptor.qualified_name, status=AgentResponseStatus.SUCCESS, result={"query": query, "results": [{"title": f"mock youtube {query}", "url": "https://youtube.com/watch?v=dQw4w9WgXcQ"}], "count": 1, "mock": True})
 
     async def _transcript(self, request: TaskRequest) -> AgentResponse:

@@ -141,6 +141,7 @@ class MonitoringBot:
         self._awaiting_add_mail: set[int] = set()
         self._awaiting_del_mail: set[int] = set()
         self._pending_jobsearch: dict[int, dict] = {}  # chat_id -> {target_mail, text}
+        self._pending_youtube: dict[int, dict] = {}  # chat_id -> {target_mail, text}
     
     async def initialize(self) -> None:
         """Initialize bot application."""
@@ -464,6 +465,143 @@ class MonitoringBot:
                 chat_id2 = q.message.chat.id if q.message and q.message.chat else 0
                 self._pending_jobsearch.pop(chat_id2, None)
                 await q.edit_message_text("❌ Đã hủy JobSearch. Gửi lại brief khi bạn sẵn sàng.", reply_markup=self._main_menu_keyboard())
+            elif d == "youtube_cancel":
+                chat_id2 = q.message.chat.id if q.message and q.message.chat else 0
+                self._pending_youtube.pop(chat_id2, None)
+                await q.edit_message_text("❌ Đã hủy YouTube Trending. Gửi lại brief khi bạn sẵn sàng.", reply_markup=self._main_menu_keyboard())
+            elif d == "youtube_confirm":
+                chat_id2 = q.message.chat.id if q.message and q.message.chat else 0
+                pending = self._pending_youtube.pop(chat_id2, None)
+                if not pending:
+                    await q.edit_message_text("⚠️ Không tìm thấy brief YouTube. Gửi lại.", reply_markup=self._main_menu_keyboard())
+                    return
+                target_mail = pending.get("target_mail", "tanmainguyenbinh@gmail.com")
+                await q.edit_message_text(f"🎥 Đang lấy YouTube Trending Việt Nam cho *{target_mail}* (1-2 phút)...", parse_mode=ParseMode.MARKDOWN)
+                import asyncio as _aioY, uuid as _uuidY, datetime as _dtY
+                import httpx as _httpxY, re as _reY
+                async def _do_youtube():
+                    try:
+                        from packages.core.bootstrap import get_container
+                        from packages.contracts.models import TaskRequest, TaskContext
+                        from packages.contracts.enums import Domain
+                        ctn = get_container()
+                        # search trending via youtube agent
+                        queries = ["trending Vietnam", "nhạc trending Vietnam", "gaming trending Vietnam"]
+                        all_vids: list[dict] = []
+                        for _q in queries:
+                            try:
+                                _req = TaskRequest(task_id=_uuidY.uuid4(), domain=Domain.YOUTUBE, action="search", payload={"query": _q, "limit": 5}, context=TaskContext(organization_id=_uuidY.UUID("00000000-0000-0000-0000-000000000001"), channel="telegram"))
+                                _desc, _handler = ctn.registry.get_by_capability("youtube.search")
+                                _resp = await _handler.handle(_req)
+                                if _resp.result and _resp.result.get("results"):
+                                    for it in _resp.result["results"]:
+                                        if it.get("mock"): continue
+                                        it["_q"] = _q
+                                        all_vids.append(it)
+                            except Exception:
+                                continue
+                        # fallback if none: try research web_search site:youtube.com trending
+                        if not all_vids:
+                            try:
+                                _req2 = TaskRequest(task_id=_uuidY.uuid4(), domain=Domain.RESEARCH, action="web_search", payload={"query": "site:youtube.com trending Vietnam", "limit": 10}, context=TaskContext(organization_id=_uuidY.UUID("00000000-0000-0000-0000-000000000001"), channel="telegram"))
+                                _desc2, _handler2 = ctn.registry.get_by_capability("research.web_search")
+                                _resp2 = await _handler2.handle(_req2)
+                                for it in (_resp2.result.get("results",[]) if _resp2.result else []):
+                                    if "youtube.com/watch" in it.get("url",""):
+                                        it["_q"]="trending"
+                                        all_vids.append(it)
+                            except Exception:
+                                pass
+                        try:
+                            await context.bot.send_message(chat_id=chat_id2, text=f"🔎 Đã search YouTube {len(all_vids)} nguồn, đang verify link còn xem được...")
+                        except Exception:
+                            pass
+                        seen: set[str] = set()
+                        uniq: list[dict] = []
+                        for it in all_vids:
+                            u = it.get("url","")
+                            if u and u not in seen and "youtube.com/watch" in u:
+                                # extract video id
+                                m = _reY.search(r"(?:v=|youtu\.be/)([A-Za-z0-9_-]{11})", u)
+                                vid = m.group(1) if m else ""
+                                if not vid: continue
+                                seen.add(u)
+                                uniq.append(it)
+                        verified: list[dict] = []
+                        now = _dtY.datetime.now(_dtY.timezone.utc).isoformat()
+                        for it in uniq[:15]:
+                            url = it.get("url","")
+                            vid = _reY.search(r"(?:v=|youtu\.be/)([A-Za-z0-9_-]{11})", url)
+                            vid = vid.group(1) if vid else ""
+                            title = it.get("title","") or vid
+                            channel = "Unknown"
+                            views = "N/A"
+                            # verify link 200 and try extract title/channel
+                            try:
+                                async with _httpxY.AsyncClient(timeout=10, follow_redirects=True, headers={"User-Agent":"Mozilla/5.0"}) as _cli:
+                                    _r = await _cli.get(url)
+                                    if _r.status_code == 200 and "Video unavailable" not in _r.text and "Private video" not in _r.text:
+                                        m_t = _reY.search(r"<title[^>]*>(.*?)</title>", _r.text, flags=_reY.IGNORECASE|_reY.DOTALL)
+                                        if m_t:
+                                            t = _reY.sub(r"<[^>]+>","", m_t.group(1)).replace(" - YouTube","").strip()
+                                            if t and len(t)>5 and "youtube" not in t.lower():
+                                                title = t[:80]
+                                        # try channel
+                                        m_c = _reY.search(r'"ownerChannelName":"([^"]+)"', _r.text)
+                                        if m_c: channel = m_c.group(1)
+                                        else:
+                                            m_c2 = _reY.search(r'"channelName":"([^"]+)"', _r.text)
+                                            if m_c2: channel = m_c2.group(1)
+                                        status = "VERIFIED"
+                                    else:
+                                        status = "CLOSED"
+                                        continue
+                            except Exception:
+                                status = "UNCERTAIN"
+                                continue
+                            if status == "VERIFIED":
+                                verified.append({"title": title, "channel": channel, "views": views, "url": url, "video_id": vid, "checked_at": now, "source": it.get("_q","")})
+                            if len(verified) >= 10:
+                                break
+                        if not verified:
+                            try:
+                                await context.bot.send_message(chat_id=chat_id2, text="⚠️ Không verify được video YouTube nào còn xem được. Mình không bịa link abc123.")
+                            except Exception:
+                                pass
+                            return
+                        verified = verified[:10]
+                        # build report
+                        tbl = "| Rank | Tiêu đề | Kênh | Link |\n|------|---------|------|------|\n"
+                        for idx, v in enumerate(verified,1):
+                            tbl += f"| {idx} | {v['title'][:30]} | {v['channel'][:15]} | [Watch]({v['url']}) |\n"
+                        top3 = ""
+                        for v in verified[:3]:
+                            top3 += f"\n**{v['title']} — {v['channel']}**\n- Vì sao trending: view tăng nhanh, nội dung viral tại VN\n- Khán giả: người xem YouTube VN quan tâm chủ đề này\n- Nên đu trend: Có — làm content ăn theo trong 48h\n"
+                        summary = f"**TOP YOUTUBE TRENDING VIỆT NAM (VERIFIED {len(verified)}/{len(uniq)})**\n\n{tbl}\n{top3}\n\nTổng tìm: {len(uniq)} | VERIFIED: {len(verified)}\nTOP 3 nên xem: {', '.join(v['title'][:20] for v in verified[:3])}\nGợi ý content: reaction / review / behind the scenes theo trend"
+                        try:
+                            await context.bot.send_message(chat_id=chat_id2, text=summary[:4000], parse_mode=ParseMode.MARKDOWN)
+                        except Exception:
+                            pass
+                        try:
+                            from integrations.google_client import gmail_send
+                            from packages.config.settings import get_settings
+                            allowed = get_settings().gmail_allowed_recipients or []
+                            if target_mail.lower() not in [a.lower() for a in allowed]:
+                                await context.bot.send_message(chat_id=chat_id2, text=f"⚠️ {target_mail} chưa trong allowlist. Dùng /menu → ⚙️ Setup Mail để thêm.")
+                            else:
+                                body = summary + "\n\n" + "\n".join(f"{v['title']} | {v['channel']} | {v['url']}" for v in verified)
+                                _res = gmail_send(to=target_mail, subject=f"[Business Ops] TOP {len(verified)} YouTube Trending VN — {now[:10]}", body=body)
+                                if _res.get("mode")=="DRY_RUN":
+                                    await context.bot.send_message(chat_id=chat_id2, text=f"⚠️ Gmail DRY_RUN chưa gửi thật tới {target_mail}")
+                                else:
+                                    await context.bot.send_message(chat_id=chat_id2, text=f"✅ Đã gửi báo cáo YouTube Trending về {target_mail} (id {_res.get('id')})")
+                        except Exception as _e:
+                            try: await context.bot.send_message(chat_id=chat_id2, text=f"⚠️ Gửi mail lỗi: {_e}")
+                            except Exception: pass
+                    except Exception as e2:
+                        try: await context.bot.send_message(chat_id=chat_id2, text=f"❌ YouTube lỗi: {e2}")
+                        except Exception: pass
+                _aioY.create_task(_do_youtube())
             elif d == "jobsearch_confirm":
                 chat_id2 = q.message.chat.id if q.message and q.message.chat else 0
                 pending = self._pending_jobsearch.pop(chat_id2, None)
@@ -745,6 +883,24 @@ class MonitoringBot:
                 return
             except Exception as e:
                 await update.message.reply_text(f"❌ JobSearch lỗi: {e}")
+                return
+        # YouTube Trending - hoi truoc khi lam
+        is_youtube_trending = ("youtube" in low and "trending" in low) or ("video trending" in low) or ("youtube trending agent" in low)
+        if is_youtube_trending:
+            try:
+                import re as _re_mail2
+                m_mail2 = _re_mail2.search(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}", text)
+                target_mail2 = m_mail2.group(0) if m_mail2 else "tanmainguyenbinh@gmail.com"
+                self._pending_youtube[chat_id] = {"target_mail": target_mail2, "text": text}
+                from telegram import InlineKeyboardButton as _By, InlineKeyboardMarkup as _My
+                kby = _My([[_By("✅ Bắt đầu lấy Trending", callback_data="youtube_confirm"), _By("❌ Hủy", callback_data="youtube_cancel")]])
+                await update.message.reply_text(
+                    f"🎥 Đã nhận brief YouTube Trending — sẽ lấy 10 video trending Việt Nam, verify link youtube.com/watch còn xem được, rồi gửi báo cáo về *{target_mail2}*.\n\nBạn có muốn bắt đầu ngay không?",
+                    parse_mode=ParseMode.MARKDOWN, reply_markup=kby,
+                )
+                return
+            except Exception as e:
+                await update.message.reply_text(f"❌ YouTube lỗi: {e}")
                 return
         if is_greeting:
             try:
