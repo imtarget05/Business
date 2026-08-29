@@ -159,12 +159,15 @@ def build_container(
     # Centralized audit layer (ADR-011): classic orchestrator gets it injected;
     # graph path keeps parity via container.audit for node-level use.
     audit_service = AuditService(session_factory=session_factory)
-    if isinstance(orchestrator, Orchestrator):
-        orchestrator.set_audit(audit_service)
 
     # Learning loop (ADR-010): learned rules feed RouterAgent before fallbacks.
     learning_engine = LearningEngine()
     reflection_engine = ReflectionEngine(llm=llm)
+
+    if isinstance(orchestrator, Orchestrator):
+        orchestrator.set_audit(audit_service)
+        orchestrator.set_reflection(reflection_engine)
+
     if isinstance(orchestrator, Orchestrator) and orchestrator._router is not None:
         orchestrator._router.set_dynamic_rules(
             [(r.keyword, r.capability) for r in learning_engine.get_rules()]

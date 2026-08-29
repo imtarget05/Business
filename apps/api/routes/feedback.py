@@ -5,9 +5,10 @@ from __future__ import annotations
 from typing import Any
 
 from fastapi import APIRouter, Request
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field
 
 from packages.core.bootstrap import get_container
+from packages.core.errors import ValidationError
 from packages.observability.logging import get_logger
 
 logger = get_logger("feedback")
@@ -22,23 +23,15 @@ class FeedbackIn(BaseModel):
     comment: str | None = Field(default=None, max_length=2000)
     source: str = "api"
 
-    @field_validator("rating")
-    @classmethod
-    def _rating(cls, v: str | None) -> str | None:
-        if v is not None and v not in {"up", "down"}:
-            raise ValueError("rating must be 'up' or 'down'")
-        return v
-
-    @field_validator("corrected_capability")
-    @classmethod
-    def _capability(cls, v: str | None) -> str | None:
-        if v is not None and not v.count("."):
-            raise ValueError("corrected_capability must be 'domain.action'")
-        return v
-
 
 @router.post("", status_code=201)
 async def submit_feedback(body: FeedbackIn, request: Request) -> dict[str, Any]:
+    # Manual validation -> consistent 422 via BusinessOpsError handler.
+    if body.rating is not None and body.rating not in {"up", "down"}:
+        raise ValidationError("rating must be 'up' or 'down'")
+    if body.corrected_capability is not None and "." not in body.corrected_capability:
+        raise ValidationError("corrected_capability must be 'domain.action'")
+
     container = get_container()
     learning = container.learning
     await learning.record_feedback(

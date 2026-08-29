@@ -41,6 +41,7 @@ from packages.core.errors import (
 from packages.core.input_filter import filter_input
 from packages.core.persistence import NoopTaskRecorder, TaskRecorder
 from packages.core.policy import AllowAllPolicy, PolicyChecker
+from packages.core.reflection import ReflectionEngine
 from packages.core.registry import InMemoryAgentRegistry
 from packages.core.router import Classification, RouterAgent
 from packages.llm.base import LLMProvider
@@ -69,10 +70,32 @@ class Orchestrator:
         self._router = router
         # Optional centralized audit layer (ADR-011). No-op when absent.
         self._audit: AuditService | None = None
+        # Optional reflection engine for post-task auto-critique (ADR-010). No-op when absent.
+        self._reflection: ReflectionEngine | None = None
 
     def set_audit(self, audit: AuditService) -> None:
         """Inject the centralized audit service (called from bootstrap)."""
         self._audit = audit
+
+    def set_reflection(self, reflection: ReflectionEngine) -> None:
+        """Inject the reflection engine for post-task auto-critique (ADR-010)."""
+        self._reflection = reflection
+
+    async def _reflection_emit(
+        self, request: TaskRequest, response_text: str, capability: str
+    ) -> None:
+        """Fire-and-forget LLM critique after a task resolves (never blocks pipeline)."""
+        if self._reflection is None:
+            return
+        try:
+            await self._reflection.critique(
+                task_id=str(request.task_id),
+                capability=capability,
+                request_text=request.payload.get("text") or request.payload.get("message") or "",
+                response_text=response_text,
+            )
+        except Exception:  # noqa: BLE001 — reflection must never break the pipeline
+            pass
 
     async def _audit_emit(
         self, event: AuditEvent, capability: str, request: TaskRequest, **extra
@@ -496,6 +519,15 @@ class Orchestrator:
                     request,
                     status=response.status.value,
                     agent=response.agent,
+                )
+                # Fire-and-forget auto-critique (ADR-010) — must not block the response.
+                response_text = getattr(response, "text", None) or getattr(
+                    response, "content", None
+                ) or str(getattr(response, "payload", ""))
+                await self._reflection_emit(
+                    request,
+                    response_text,
+                    f"{request.domain.value}.{request.action}",
                 )
                 return response
             except TimeoutError:
