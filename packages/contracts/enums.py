@@ -20,6 +20,7 @@ class Domain(StrEnum):
     RESEARCH = "research"
     YOUTUBE = "youtube"
     OPS = "ops"
+    ADVISORY = "advisory"  # AI Advisory Council (Task 3): personas as system-prompt overrides
 
 
 class AgentResponseStatus(StrEnum):

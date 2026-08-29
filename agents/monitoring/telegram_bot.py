@@ -155,6 +155,7 @@ class MonitoringBot:
         self.app.add_handler(CommandHandler("research", self._research_command))
         self.app.add_handler(CommandHandler("kb", self._kb_command))
         self.app.add_handler(CommandHandler("ops", self._ops_command))
+        self.app.add_handler(CommandHandler("advisory", self._advisory_command))
         self.app.add_handler(CommandHandler("help", self._help_command))
         
         # Callback query handler for inline menu
@@ -354,6 +355,81 @@ class MonitoringBot:
         if resp.status.value != "success" or not resp.result:
             raise RuntimeError(resp.error.message if resp.error else "ops.digest thất bại")
         return resp.result
+
+    async def _advisory_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Handle /advisory <persona> <câu hỏi> — AI Advisory Council (Task 3).
+
+        Usage:
+            /advisory hormozi <câu hỏi>   — chiến lược
+            /advisory buffett <câu hỏi>   — đầu tư
+            /advisory garyvee <câu hỏi>   — marketing/tài chính
+            /advisory <câu hỏi>           — auto-detect persona từ từ khóa
+
+        Persona is a system-prompt override on the shared LLM (no separate model).
+        """
+        from packages.core.personas import PERSONAS, PERSONA_LABELS, select_persona
+        from packages.contracts.enums import Domain
+        from packages.contracts.models import TaskContext, TaskRequest
+        import uuid as _uuid
+
+        args = context.args or []
+        if not args:
+            await update.message.reply_text(
+                "*Usage:* `/advisory <persona> <câu hỏi>`\n\n"
+                "Persona: `hormozi` (chiến lược) | `buffett` (đầu tư) | `garyvee` (marketing/tài chính)\n"
+                "Hoặc bỏ qua persona để tự động nhận diện: `/advisory nên pricing gói này thế nào?`\n"
+                "VD: `/advisory buffett có nên mua cổ phiếu chia cổ tức không?`",
+                parse_mode=ParseMode.MARKDOWN,
+            )
+            return
+
+        first = args[0].lower()
+        explicit_persona = first if first in PERSONAS else None
+        question = " ".join(args[1:] if explicit_persona else args)
+
+        if not question.strip():
+            await update.message.reply_text(
+                "❌ Thiếu câu hỏi. VD: `/advisory buffett có nên mua cổ phiếu chia cổ tức?`",
+                parse_mode=ParseMode.MARKDOWN,
+            )
+            return
+
+        # Auto-detect when no explicit persona given.
+        persona = explicit_persona or select_persona(question) or "hormozi"
+        label = PERSONA_LABELS.get(persona, persona)
+        source = "chỉ định" if explicit_persona else ("tự động nhận diện" if select_persona(question) else "mặc định (hormozi)")
+
+        await update.message.reply_text(
+            f"🎯 Đang hỏi *{label}* ({source})...\n\n❓ {question}",
+            parse_mode=ParseMode.MARKDOWN,
+        )
+        try:
+            from packages.core.bootstrap import get_container
+
+            ctn = get_container()
+            req = TaskRequest(
+                task_id=_uuid.uuid4(),
+                domain=Domain.ADVISORY,
+                action="ask",
+                payload={"question": question, "persona": persona},
+                context=TaskContext(
+                    organization_id=_uuid.UUID("00000000-0000-0000-0000-000000000001"),
+                    channel="telegram",
+                ),
+            )
+            desc, handler = ctn.registry.get_by_capability("advisory.ask")
+            resp = await handler.handle(req)
+            if resp.status.value == "success":
+                ans = resp.result.get("answer", "")
+                text = f"🎯 *{label}*\n\n{ans}"
+                if len(text) > 4000:
+                    text = text[:3900] + "\n*... (đã rút gọn) ...*"
+                await update.message.reply_text(text, parse_mode=ParseMode.MARKDOWN)
+            else:
+                msg = resp.error.message if resp.error else "unknown"
+                await update.message.reply_text(f"❌ Lỗi Advisory: {msg}")
+        except Exception as e:
+            await update.message.reply_text(f"❌ Lỗi Advisory: {e}")
 
     async def _kb_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Handle /kb <câu hỏi> — query the Second Brain knowledge base."""
@@ -1070,6 +1146,19 @@ class MonitoringBot:
                     break
             await update.message.reply_text(f"```{_lang}\n{_snippets[_lang]}\n```")
             return
+        # 2c) Advisory Council auto-detect: if the free-text question carries a
+        # persona keyword (strategy/buffett/marketing/invest/...), route to the
+        # advisory.ask capability instead of the generic chat path (Task 3).
+        try:
+            from packages.core.personas import select_persona as _sel_persona
+            if _sel_persona(text):
+                await self._advisory_command(
+                    update,
+                    type("__Ctx", (), {"args": text.split()})(),
+                )
+                return
+        except Exception:
+            pass
         try:
             await context.bot.send_chat_action(chat_id=chat_id, action="typing")
         except Exception:

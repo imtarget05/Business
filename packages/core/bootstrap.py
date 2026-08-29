@@ -6,6 +6,7 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 
+from agents.advisory import create_advisory_agent
 from agents.calendar import create_calendar_agent
 from agents.context import create_context_agent
 from agents.gmail import create_gmail_agent
@@ -73,6 +74,11 @@ def build_container(
 
     knowledge_agent = create_knowledge_agent(kb=kb, llm=llm)
     registry.register(knowledge_agent.descriptor, knowledge_agent)
+
+    # AI Advisory Council (Task 3): expert personas as system-prompt overrides
+    # over the shared LLM. Auto-detects persona from question text.
+    advisory_agent = create_advisory_agent(llm=llm)
+    registry.register(advisory_agent.descriptor, advisory_agent)
 
     # Business Ops Hub (Task 2): aggregates Gmail unread + Calendar + tasks.
     # Sources are injected; gmail/calendar default sources call the registry's
