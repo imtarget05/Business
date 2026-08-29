@@ -1163,7 +1163,13 @@ class MonitoringBot:
             else:
                 await q.edit_message_text("Chọn chức năng:", reply_markup=self._main_menu_keyboard())
         except Exception as e:
-            await q.edit_message_text(f"Lỗi: {e}", reply_markup=self._main_menu_keyboard())
+            # Telegram báo "Message is not modified" khi edit sang nội dung giống hệt -> bỏ qua, không báo lỗi
+            if "not modified" in str(e).lower():
+                return
+            try:
+                await q.edit_message_text(f"Lỗi: {e}", reply_markup=self._main_menu_keyboard())
+            except Exception:
+                pass
     
     async def _message_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         chat_id = update.effective_chat.id
