@@ -136,6 +136,7 @@ class MonitoringBot:
         self.app: Application | None = None
         self._research_awaiting: dict[int, str] = {}  # chat_id -> query
         self._seen_chats: set[int] = set()  # only greet Target is ready once per new chat
+        self._awaiting_mail: set[int] = set()  # chat_id awaiting mail input
     
     async def initialize(self) -> None:
         """Initialize bot application."""
@@ -159,13 +160,16 @@ class MonitoringBot:
         try:
             from telegram import BotCommand
             await self.app.bot.set_my_commands([
-                BotCommand("start", "Bat dau & mo menu"),
-                BotCommand("menu", "Mo menu chinh"),
-                BotCommand("health", "Kiem tra suc khoe"),
-                BotCommand("report", "Bao cao hang ngay"),
-                BotCommand("research", "Nghien cuu web"),
-                BotCommand("help", "Tro giup"),
+                BotCommand("menu", "📋 Mở menu chính"),
+                BotCommand("health", "🏥 Kiểm tra sức khỏe"),
+                BotCommand("report", "📊 Báo cáo"),
+                BotCommand("research", "🔍 Nghiên cứu"),
+                BotCommand("help", "❓ Trợ giúp"),
             ])
+            try:
+                await self.app.bot.set_chat_menu_button(menu_button=None)
+            except Exception:
+                pass
         except Exception:
             pass
     
@@ -329,8 +333,8 @@ class MonitoringBot:
             [InlineKeyboardButton("🏥 Health", callback_data="health"), InlineKeyboardButton("📊 Báo cáo", callback_data="report")],
             [InlineKeyboardButton("🔍 Nghiên cứu", callback_data="research"), InlineKeyboardButton("📧 Gmail", callback_data="gmail")],
             [InlineKeyboardButton("📅 Calendar", callback_data="calendar"), InlineKeyboardButton("🎥 YouTube", callback_data="youtube")],
-            [InlineKeyboardButton("🧠 Context", callback_data="context"), InlineKeyboardButton("📦 Supply Chain", callback_data="supply")],
-            [InlineKeyboardButton("❓ Trợ giúp", callback_data="help")],
+            [InlineKeyboardButton("🧠 Context", callback_data="context"), InlineKeyboardButton("📦 Supply", callback_data="supply")],
+            [InlineKeyboardButton("⚙️ Setup Mail", callback_data="setup_mail"), InlineKeyboardButton("❓ Trợ giúp", callback_data="help")],
         ])
 
     async def _start_command(self, update, context):
@@ -339,10 +343,10 @@ class MonitoringBot:
         if chat_id:
             self._seen_chats.add(chat_id)
         if is_new:
-            txt = "🎯 *Target is ready!*\n\nXin chào Mai Nguyễn Bình Tân! Mình là Business Ops Assistant (11 agents). Chọn chức năng bên dưới để bắt đầu:"
+            txt = "🎯 *Target is ready!*\nXin chào Mai Nguyễn Bình Tân — Bot đã sẵn sàng. Gõ /menu để mở menu hoặc dùng nút menu góc dưới."
         else:
-            txt = "Chào lại Mai! Chọn chức năng bên dưới:"
-        await update.message.reply_text(txt, parse_mode=ParseMode.MARKDOWN, reply_markup=self._main_menu_keyboard())
+            txt = "Chào lại Mai! Gõ /menu để mở menu."
+        await update.message.reply_text(txt, parse_mode=ParseMode.MARKDOWN)
 
     async def _menu_command(self, update, context):
         await update.message.reply_text("Menu chinh — chon chuc nang:", parse_mode=ParseMode.MARKDOWN, reply_markup=self._main_menu_keyboard())
@@ -380,8 +384,9 @@ class MonitoringBot:
                     from packages.core.bootstrap import get_container
                     from packages.contracts.models import TaskRequest, TaskContext
                     import uuid as _uuid
+                    from packages.contracts.enums import Domain
                     ctn = get_container()
-                    req = TaskRequest(task_id=_uuid.uuid4(), action="calendar.list_events", payload={"max_results": 5}, context=TaskContext(organization_id=_uuid.UUID("00000000-0000-0000-0000-000000000001"), channel="telegram"))
+                    req = TaskRequest(task_id=_uuid.uuid4(), domain=Domain.CALENDAR, action="list_events", payload={"max_results": 5}, context=TaskContext(organization_id=_uuid.UUID("00000000-0000-0000-0000-000000000001"), channel="telegram"))
                     desc, handler = ctn.registry.get_by_capability("calendar.list_events")
                     resp = await handler.handle(req)
                     out = str(resp.result)[:800] if resp.result else "Không có sự kiện"
@@ -394,6 +399,9 @@ class MonitoringBot:
                 await q.edit_message_text("🧠 *Context*\nBộ nhớ hội thoại per-org. Hỏi 'tóm tắt context' hoặc 'xóa context'", parse_mode=ParseMode.MARKDOWN, reply_markup=self._main_menu_keyboard())
             elif d == "supply":
                 await q.edit_message_text("📦 *Supply Chain*\nPO → approval → inventory → reporting → n8n\nHỏi: 'check inventory' hoặc 'báo cáo supply chain'", parse_mode=ParseMode.MARKDOWN, reply_markup=self._main_menu_keyboard())
+            elif d == "setup_mail":
+                self._awaiting_mail.add(q.message.chat.id if q.message and q.message.chat else 0)
+                await q.edit_message_text("⚙️ *Setup Mail*\nNhập email muốn thêm (VD: binhtan5734@gmail.com):\nGửi tin nhắn chứa email, bot sẽ thêm vào allowlist.", parse_mode=ParseMode.MARKDOWN, reply_markup=self._main_menu_keyboard())
             elif d == "help":
                 await self._help_command(q, context)
                 return
@@ -404,6 +412,38 @@ class MonitoringBot:
     
     async def _message_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         chat_id = update.effective_chat.id
+        # 1) Awaiting mail setup
+        if chat_id in self._awaiting_mail:
+            self._awaiting_mail.discard(chat_id)
+            email_in = (update.message.text or "").strip()
+            import re as _re
+            m = _re.search(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}", email_in)
+            if not m:
+                await update.message.reply_text("❌ Email không hợp lệ. Thử lại: gửi email đúng định dạng.")
+                return
+            new_mail = m.group(0).lower()
+            # Update allowlist runtime + .env persist
+            try:
+                from packages.config.settings import get_settings
+                s = get_settings()
+                allowed = list(s.gmail_allowed_recipients or [])
+                if new_mail not in allowed:
+                    allowed.append(new_mail)
+                    # persist to .env
+                    p = pathlib.Path("D:/Business Ops Agent Swarm/.env")
+                    txt = p.read_text(encoding="utf-8")
+                    import json as _json
+                    new_val = _json.dumps(allowed)
+                    if "GMAIL_ALLOWED_RECIPIENTS" in txt:
+                        txt = re.sub(r"GMAIL_ALLOWED_RECIPIENTS=.*", f"GMAIL_ALLOWED_RECIPIENTS={new_val}", txt)
+                    else:
+                        txt += f"\nGMAIL_ALLOWED_RECIPIENTS={new_val}\n"
+                    p.write_text(txt, encoding="utf-8")
+                    get_settings.cache_clear()
+                await update.message.reply_text(f"✅ Đã thêm {new_mail} vào allowlist. Hiện tại: {', '.join(allowed)}", reply_markup=self._main_menu_keyboard())
+            except Exception as e:
+                await update.message.reply_text(f"❌ Lỗi thêm mail: {e}")
+            return
         if chat_id in self._research_awaiting:
             self._research_awaiting.pop(chat_id)
             await self._research_command(update, context)
@@ -411,6 +451,23 @@ class MonitoringBot:
         text = (update.message.text or "").strip()
         if not text:
             return
+        # 2) Quick route for email intent -> use gmail agent (limit hallucination)
+        low = text.lower()
+        if ("gửi mail" in low or "gui mail" in low or "gửi email" in low or "@gmail.com" in low) and ("chào" in low or "xin chào" in low or "hello" in low or "gửi" in low):
+            try:
+                m = re.search(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}", text)
+                target = m.group(0) if m else "binhtan5734@gmail.com"
+                from integrations.google_client import gmail_send
+                body = f"Chào bạn,\n\nMình là Mai Nguyễn Bình Tân — rất vui được kết nối!\nChúc bạn một ngày tốt lành.\n\nThân mến,\nMai Nguyễn Bình Tân\n0397134170 | tanmainguyenbinh@gmail.com"
+                res = gmail_send(to=target, subject="Chào từ Mai Nguyễn Bình Tân", body=body)
+                if res.get("mode") == "DRY_RUN":
+                    await update.message.reply_text(f"⚠️ Gmail đang DRY_RUN, chưa gửi thật tới {target}. Đã thêm vào allowlist rồi thử lại.")
+                else:
+                    await update.message.reply_text(f"✅ Đã gửi lời chào từ Mai Nguyễn Bình Tân tới {target} (id {res.get('id')})")
+                return
+            except Exception as e:
+                await update.message.reply_text(f"❌ Gửi mail thất bại: {e} — báo rõ không bịa.")
+                return
         try:
             await context.bot.send_chat_action(chat_id=chat_id, action="typing")
         except Exception:
@@ -447,7 +504,7 @@ class MonitoringBot:
             from packages.config.settings import get_settings
             from packages.llm.factory import get_llm_provider
             llm = get_llm_provider(get_settings())
-            answer = await llm.generate(prompt=text, system="Ban la tro ly Business Ops. Luon tra loi bang tieng Viet, ngan gon, than thien.")
+            answer = await llm.generate(prompt=text, system="Bạn là trợ lý Business Ops của Mai Nguyễn Bình Tân. QUY TẮC: Không tự bịa dữ liệu. Nếu cần dữ liệu thật (mail, calendar, research, inventory) phải nói rõ chưa có tool hoặc gọi tool. Trước khi gửi email/tạo contact phải kiểm tra lại dữ liệu và xác nhận. Trả lời tiếng Việt ngắn gọn.")
             reply = answer if isinstance(answer, str) else str(answer)
             if typing_task: typing_task.cancel()
             await update.message.reply_text(reply[:4000])
