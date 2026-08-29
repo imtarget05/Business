@@ -32,3 +32,15 @@ Thumbs.db
 dist/
 build/
 secrets/
+
+# --- Agent tooling artifacts (plans/ledgers) ---
+.hermes/
+.superpowers/
+
+# --- Runtime output files (root) ---
+pytest_out.txt
+job_audit_log.json
+job_search_results.json
+verified_jobs.json
+contacts_backup.json
+business_ops.db

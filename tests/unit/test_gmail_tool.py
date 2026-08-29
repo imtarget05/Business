@@ -74,13 +74,17 @@ class TestSendGmailReplyTool:
     """Tests for send_gmail_reply tool."""
 
     @pytest.fixture()
-    def tool(self, test_session_factory) -> SendGmailReplyTool:
-        return SendGmailReplyTool(session_factory=test_session_factory)
+    def tool(self, test_session_factory, org_id) -> SendGmailReplyTool:
+        t = SendGmailReplyTool(session_factory=test_session_factory)
+        t.bind_organization(org_id)
+        return t
 
     @pytest.mark.asyncio
-    async def test_dry_run_mode_default(self, tool):
+    async def test_dry_run_mode_default(self, tool, db, org_id, test_customer, monkeypatch):
         """DRY-RUN mode is default (gmail_send_enabled=False)."""
-        # Ensure settings have gmail_send_enabled=False (default)
+        # Isolate settings from .env (which may set GMAIL_SEND_ENABLED=true)
+        monkeypatch.setenv("GMAIL_SEND_ENABLED", "false")
+        get_settings.cache_clear()
         settings = get_settings()
         assert settings.gmail_send_enabled is False
 
@@ -109,9 +113,10 @@ class TestSendGmailReplyTool:
         assert logged_row[2] == "customer@example.com"  # customer email
 
     @pytest.mark.asyncio
-    async def test_dry_run_explicit_flag(self, tool):
+    async def test_dry_run_explicit_flag(self, tool, db, org_id, test_customer, monkeypatch):
         """Explicit dry_run=True forces draft mode regardless of settings."""
-        # Mock the sheet logging
+        monkeypatch.setenv("GMAIL_SEND_ENABLED", "false")
+        get_settings.cache_clear()
         with patch.object(tool, "_log_to_sheet", new_callable=AsyncMock) as mock_log:
             result = await tool.run(
                 {
@@ -253,8 +258,10 @@ class TestSendGmailReplyTool:
             get_settings.cache_clear()
 
     @pytest.mark.asyncio
-    async def test_dry_run_still_logs_to_sheet(self, tool):
+    async def test_dry_run_still_logs_to_sheet(self, tool, db, org_id, test_customer, monkeypatch):
         """Even in DRY-RUN mode, the attempt is logged to Sheets."""
+        monkeypatch.setenv("GMAIL_SEND_ENABLED", "false")
+        get_settings.cache_clear()
         with patch.object(tool, "_log_to_sheet", new_callable=AsyncMock) as mock_log:
             await tool.run(
                 {
@@ -271,8 +278,10 @@ class TestSendGmailReplyTool:
         assert logged_row[3] == "Test body for logging"  # body truncated to 500 chars
 
     @pytest.mark.asyncio
-    async def test_body_truncated_to_500_chars_in_sheet(self, tool):
+    async def test_body_truncated_to_500_chars_in_sheet(self, tool, db, org_id, test_customer, monkeypatch):
         """Body is truncated to 500 characters in sheet log."""
+        monkeypatch.setenv("GMAIL_SEND_ENABLED", "false")
+        get_settings.cache_clear()
         long_body = "x" * 1000
 
         with patch.object(tool, "_log_to_sheet", new_callable=AsyncMock) as mock_log:
