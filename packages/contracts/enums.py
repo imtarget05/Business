@@ -19,6 +19,7 @@ class Domain(StrEnum):
     GMAIL = "gmail"
     RESEARCH = "research"
     YOUTUBE = "youtube"
+    OPS = "ops"
 
 
 class AgentResponseStatus(StrEnum):

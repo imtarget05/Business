@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import hmac
 import time
 from collections import defaultdict
 from contextlib import asynccontextmanager
@@ -10,6 +9,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
 from apps.api.routes.conversations import router as conversations_router
+from apps.api.routes.feedback import router as feedback_router
 from apps.api.routes.health import router as health_router
 from apps.api.routes.knowledge import router as knowledge_router
 from apps.api.routes.router import router as dispatch_router
@@ -18,7 +18,6 @@ from packages.config.settings import Environment, get_settings
 from packages.core.bootstrap import get_container
 from packages.core.errors import (
     AuthenticationError,
-    AuthorizationError,
     BusinessOpsError,
     RateLimitError,
     ValidationError,
@@ -134,6 +133,7 @@ def create_app() -> FastAPI:
     app.include_router(knowledge_router)
     app.include_router(dispatch_router)
     app.include_router(conversations_router)
+    app.include_router(feedback_router)
 
     @app.middleware("http")
     async def request_context_middleware(request: Request, call_next):

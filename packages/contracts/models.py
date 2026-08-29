@@ -8,6 +8,7 @@ for the contract envelopes themselves.
 from __future__ import annotations
 
 import re
+from datetime import datetime
 from typing import Any
 from uuid import UUID, uuid4
 
@@ -130,11 +131,25 @@ class AgentDescriptor(BaseModel):
         return f"{self.name}-v{self.version}"
 
 
+class TaskFeedback(BaseModel):
+    """Human or automatic feedback on a completed task (learning loop, ADR-010)."""
+
+    task_id: UUID
+    organization_id: UUID | None = None
+    rating: str | None = None  # "up" | "down" | None (auto-critique only)
+    corrected_capability: str | None = None
+    comment: str | None = None
+    source: str = "api"  # telegram | dashboard | api
+    auto_critique: dict[str, Any] | None = None
+    created_at: datetime | None = None
+
+
 __all__ = [
     "AgentDescriptor",
     "AgentResponse",
     "Citation",
     "ErrorDetail",
     "TaskContext",
+    "TaskFeedback",
     "TaskRequest",
 ]

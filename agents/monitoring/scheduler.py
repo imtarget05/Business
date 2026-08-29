@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Scheduler for monitoring agent — runs health checks and daily reports.
 
 Schedule:
@@ -12,8 +11,8 @@ from __future__ import annotations
 import asyncio
 import logging
 from dataclasses import dataclass
-from datetime import datetime, time, timezone
-from typing import Any, Callable
+from datetime import time
+from typing import Any
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
@@ -80,9 +79,25 @@ class MonitoringScheduler:
             replace_existing=True,
         )
         
+        # Learning loop cycle (ADR-010) — daily at configured UTC hour
+        try:
+            from packages.config.settings import get_settings
+
+            learning_hour = get_settings().learning_cron_hour
+        except Exception:  # noqa: BLE001
+            learning_hour = 3
+        self.scheduler.add_job(
+            self._run_learning_job,
+            CronTrigger(hour=learning_hour, minute=0),
+            id="learning_cycle",
+            name="Daily learning cycle",
+            replace_existing=True,
+        )
+
         logger.info(
             f"Scheduler initialized: health every {self.config.health_check_interval_minutes}m, "
-            f"daily report at {self.config.daily_report_time.strftime('%H:%M')}"
+            f"daily report at {self.config.daily_report_time.strftime('%H:%M')}, "
+            f"learning at {learning_hour:02d}:00"
         )
     
     async def start(self) -> None:
@@ -118,10 +133,40 @@ class MonitoringScheduler:
                     await self._telegram_bot.send_health_alert(health_dict)
 
                 # Log result
-                logger.info(f"Health check: overall={health_dict['overall']}, checks={len(health_dict['checks'])}")
+                    logger.info(
+        "Health check: overall=%s, checks=%d",
+        health_dict["overall"],
+        len(health_dict["checks"]),
+    )
                 tracer.event("health_check_scheduled", overall=health_dict["overall"])
         except Exception as e:
             logger.error(f"Health check job error: {e}")
+
+    async def _run_learning_job(self) -> None:
+        """Run the daily learning cycle (ADR-010)."""
+        try:
+            from packages.core.bootstrap import get_container
+
+            container = get_container()
+            learning = getattr(container, "learning", None)
+            if learning is None:
+                return
+            report = await learning.run_cycle()
+            logger.info(
+                f"Learning cycle done: {report['feedback_count']} feedback, "
+                f"{report['rules_total']} rules"
+            )
+            if self._telegram_bot and hasattr(self._telegram_bot, "send_message"):
+                summary = (
+                    f"Learning cycle: {report['feedback_count']} feedback, "
+                    f"{report['rules_total']} routing rules"
+                )
+                try:
+                    await self._telegram_bot.send_message(summary)
+                except Exception:  # noqa: BLE001
+                    pass
+        except Exception as e:
+            logger.error(f"Learning job error: {e}")
 
     async def _run_daily_report_job(self) -> None:
         """Execute daily report job."""
@@ -172,14 +217,16 @@ async def main() -> None:
     # Telegram config (token/chat from config loader, which prefers env)
     bot = None
     if cfg.telegram.enabled and cfg.telegram.bot_token:
-        from agents.monitoring.telegram_bot import MonitoringBot, TelegramConfig as TC
+        from agents.monitoring.telegram_bot import MonitoringBot
+        from agents.monitoring.telegram_bot import TelegramConfig as TC
         telegram_config = TC(bot_token=cfg.telegram.bot_token, chat_id=cfg.telegram.chat_id)
         bot = MonitoringBot(telegram_config)
         await bot.initialize()
         logger.info("Telegram configured for push notifications")
     elif cfg.telegram.bot_token:
         # token present but section disabled — still wire for alerts
-        from agents.monitoring.telegram_bot import MonitoringBot, TelegramConfig as TC
+        from agents.monitoring.telegram_bot import MonitoringBot
+        from agents.monitoring.telegram_bot import TelegramConfig as TC
         telegram_config = TC(bot_token=cfg.telegram.bot_token, chat_id=cfg.telegram.chat_id)
         bot = MonitoringBot(telegram_config)
         await bot.initialize()

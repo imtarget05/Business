@@ -10,13 +10,12 @@ Public API: GraphOrchestrator.execute() matches Orchestrator.execute() exactly.
 from __future__ import annotations
 
 import asyncio
-from typing import TypedDict, Optional
-from uuid import UUID
+from typing import TypedDict
 
-from langgraph.graph import StateGraph
-from langgraph.constants import END, START
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.config import RunnableConfig
+from langgraph.constants import END, START
+from langgraph.graph import StateGraph
 
 from packages.config.settings import Settings, get_settings
 from packages.contracts.enums import AgentResponseStatus, TaskStatus
@@ -27,7 +26,6 @@ from packages.contracts.models import (
     TaskContext,
     TaskRequest,
 )
-from packages.core.agent_base import DomainAgent
 from packages.core.errors import (
     AgentTimeoutError,
     AgentUnavailableError,
@@ -43,7 +41,6 @@ from packages.core.persistence import NoopTaskRecorder, TaskRecorder
 from packages.core.policy import AllowAllPolicy, PolicyChecker
 from packages.core.registry import InMemoryAgentRegistry
 from packages.llm.base import LLMProvider
-from langchain_core.documents.base import Document  # type: ignore
 
 # ---------------------------------------------------------------------------
 # Graph state (internal — not part of the public contract)
@@ -107,7 +104,19 @@ async def classify_node(
     Duplicates the Orchestrator.classify() body (10 lines). For Phase A this is
     acceptable; if both paths need a shared classifier later extract to a module.
     """
+    from packages.core.input_filter import filter_input
+
     request = state["request"]
+    text = request.payload.get("text") or request.payload.get("message")
+    if isinstance(text, str) and text:
+        filtered = filter_input(text)
+        request.payload["text"] = filtered.clean_text
+        if filtered.blocked:
+            raise BusinessOpsError(
+                f"Input rejected by filter: {filtered.block_reason}",
+                task_id=request.task_id,
+            )
+
     capability = f"{request.domain.value}.{request.action}"
 
     state["capability"] = capability

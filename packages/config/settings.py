@@ -6,7 +6,6 @@ hard-coded; see `.env.example` at the repository root.
 
 from __future__ import annotations
 
-import json
 from enum import StrEnum
 from functools import lru_cache
 
@@ -87,6 +86,15 @@ class Settings(BaseSettings):
 
     # --- Router --------------------------------------------------------------
     router_confidence_threshold: float = 0.6
+
+    # --- Input Filter Layer (Phase 2, ADR-009) --------------------------------
+    input_filter_enabled: bool = True
+    input_max_chars: int = 8000
+    pii_masking_enabled: bool = True
+
+    # --- Learning Loop (Phase 2, ADR-010) --------------------------------------
+    learning_enabled: bool = True
+    learning_cron_hour: int = 3  # UTC hour for the daily learning cycle
 
     # --- Agent tool loop -----------------------------------------------------
     agent_max_tool_rounds: int = 5
