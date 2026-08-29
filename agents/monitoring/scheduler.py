@@ -13,6 +13,7 @@ import logging
 from dataclasses import dataclass
 from datetime import time
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
@@ -35,7 +36,7 @@ class SchedulerConfig:
     """Scheduler configuration."""
     health_check_interval_minutes: int = 30
     daily_report_time: time = time(9, 0)  # 09:00 AM
-    time_zone: str = "Asia/Seoul"  # SE Asia Standard Time
+    time_zone: str = "Asia/Ho_Chi_Minh"  # Vietnam (UTC+7) — Business Ops Hub runs here
 
 
 # ---------------------------------------------------------------------------
@@ -96,12 +97,12 @@ class MonitoringScheduler:
             replace_existing=True,
         )
 
-        # Business Ops Hub daily digest (Task 2) — 08:00 local time.
+        # Business Ops Hub daily digest (Task 2) — 08:00 Asia/Ho_Chi_Minh (VN, UTC+7).
         self.scheduler.add_job(
             self._run_ops_hub_job,
-            CronTrigger(hour=8, minute=0),
+            CronTrigger(hour=8, minute=0, timezone=ZoneInfo("Asia/Ho_Chi_Minh")),
             id="ops_hub_daily",
-            name="Business Ops Hub daily digest",
+            name="Business Ops Hub daily digest (Asia/Ho_Chi_Minh 08:00)",
             replace_existing=True,
         )
 

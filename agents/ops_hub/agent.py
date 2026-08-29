@@ -387,7 +387,12 @@ def _event_start(ev: dict[str, Any]) -> datetime | None:
     if not raw:
         return None
     try:
-        return datetime.fromisoformat(str(raw))
+        dt = datetime.fromisoformat(str(raw))
+        # Calendar records may be naive locals; normalize to aware UTC so they
+        # compare cleanly against _now() (UTC-aware) without a TypeError.
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt
     except ValueError:
         return None
 

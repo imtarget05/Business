@@ -218,6 +218,73 @@ def test_build_task_provider_default_empty() -> None:
 
 
 # ---------------------------------------------------------------------------
+# Regression: naive 'due' from shipped config.yaml must NOT crash build_digest()
+# (CRITICAL — 'can't subtract offset-naive and offset-aware').
+# ---------------------------------------------------------------------------
+async def test_build_digest_with_shipped_config_tasks_naive_due() -> None:
+    """Reproduce the SHIPPED config.yaml: task due is a naive ISO string.
+
+    build_digest() must normalize it to aware UTC and return a Digest without
+    raising TypeError (naive/aware subtraction).
+    """
+    # Mirror config.yaml ops.tasks exactly: one naive-ISO 'due', one no-due high.
+    provider = InMemoryTaskProvider(
+        tasks=[
+            {"title": "Gửi báo cáo tuần cho khách hàng", "due": "2026-08-30T17:00:00", "priority": "normal"},
+            {"title": "Duyệt báo giá nhà cung cấp A", "priority": "high"},
+        ]
+    )
+    agent = OpsHubAgent(
+        gmail_source=_mock_gmail([]),
+        calendar_source=_mock_calendar([]),
+        task_provider=provider,
+        llm=MockLLMProvider(),
+    )
+    digest = await agent.build_digest()
+    assert isinstance(digest, __import__("agents.ops_hub.agent", fromlist=["Digest"]).Digest)
+    assert digest.counts["tasks_open"] == 2
+    # High-priority task (no due) -> alert; naive-due task normalized to aware UTC.
+    high = [a for a in digest.alerts if a.kind == "task" and a.priority == "high"]
+    assert high, "high-priority task should still alert"
+    due_task = next(i for i in digest.items if i.title.startswith("Gửi báo cáo"))
+    assert due_task.due is not None and due_task.due.tzinfo is not None
+    # Subtraction must work (no TypeError): aware UTC minus aware UTC.
+    from agents.ops_hub.agent import _now
+
+    assert (due_task.due - _now()).total_seconds() >= 0
+
+
+# ---------------------------------------------------------------------------
+# Scheduler timezone (IMPORTANT) — ops_hub_daily fires 08:00 Asia/Ho_Chi_Minh
+# (UTC+7) == 01:00 UTC, not Asia/Seoul.
+# ---------------------------------------------------------------------------
+def test_scheduler_ops_hub_job_uses_vn_timezone() -> None:
+    from agents.monitoring.scheduler import SchedulerConfig
+
+    cfg = SchedulerConfig()
+    assert cfg.time_zone == "Asia/Ho_Chi_Minh"
+
+    # Build the trigger exactly as the scheduler does and confirm its next fire
+    # time lands at 01:00 UTC (08:00 VN) rather than 00:00 UTC (08:00 Seoul).
+    from zoneinfo import ZoneInfo
+    from apscheduler.triggers.cron import CronTrigger
+
+    trigger = CronTrigger(hour=8, minute=0, timezone=ZoneInfo("Asia/Ho_Chi_Minh"))
+    # Pick a reference instant and compute the next run.
+    ref = datetime(2026, 9, 1, 1, 30, tzinfo=timezone.utc)  # already past 08:00 VN that day
+    nxt = trigger.get_next_fire_time(None, ref)
+    assert nxt is not None
+    # Fire time is expressed in the trigger's own tz (Asia/Ho_Chi_Minh, UTC+7);
+    # verify the wall-clock is 08:00 local and the UTC instant is 01:00 (not 00:00 Seoul).
+    assert nxt.utcoffset() == timedelta(seconds=25200)
+    assert nxt.hour == 8 and nxt.minute == 0
+    nxt_utc = nxt.astimezone(timezone.utc)
+    # ~23h30m after ref (ref is 01:30 UTC, next fire at 01:00 UTC next day).
+    assert 0 < (nxt_utc - ref).total_seconds() < 24 * 3600
+    assert nxt_utc.hour == 1 and nxt_utc.minute == 0
+
+
+# ---------------------------------------------------------------------------
 # Scheduler formatter (shared with /ops route) — pure, no network
 # ---------------------------------------------------------------------------
 def test_format_ops_digest_renders_alerts_and_items() -> None:

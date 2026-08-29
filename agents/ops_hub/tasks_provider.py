@@ -23,7 +23,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -102,6 +102,10 @@ class InMemoryTaskProvider(TaskProvider):
         if due_raw:
             try:
                 due = datetime.fromisoformat(str(due_raw))
+                # config.yaml task times are naive locals (e.g. "2026-08-30T17:00:00").
+                # Normalize to aware UTC so they compare cleanly against _now() (UTC-aware).
+                if due.tzinfo is None:
+                    due = due.replace(tzinfo=timezone.utc)
             except ValueError:
                 logger.warning("ops.tasks[%s] due không hợp lệ: %r", index, due_raw)
         return Task(
