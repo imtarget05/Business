@@ -436,7 +436,7 @@ class MonitoringBot:
                     import json as _json
                     new_val = _json.dumps(allowed)
                     if "GMAIL_ALLOWED_RECIPIENTS" in txt:
-                        txt = re.sub(r"GMAIL_ALLOWED_RECIPIENTS=.*", f"GMAIL_ALLOWED_RECIPIENTS={new_val}", txt)
+                        txt = _re.sub(r"GMAIL_ALLOWED_RECIPIENTS=.*", f"GMAIL_ALLOWED_RECIPIENTS={new_val}", txt)
                     else:
                         txt += f"\nGMAIL_ALLOWED_RECIPIENTS={new_val}\n"
                     p.write_text(txt, encoding="utf-8")
