@@ -344,10 +344,12 @@ class MonitoringBot:
         if chat_id:
             self._seen_chats.add(chat_id)
         if is_new:
-            txt = "🎯 *Target is ready!*\nXin chào Mai Nguyễn Bình Tân — Bot đã sẵn sàng. Gõ /menu để mở menu hoặc dùng nút menu góc dưới."
+            txt = "🎯 *Target is ready!*\\nXin chào Mai Nguyễn Bình Tân — Bot đã sẵn sàng."
         else:
-            txt = "Chào lại Mai! Gõ /menu để mở menu."
-        await update.message.reply_text(txt, parse_mode=ParseMode.MARKDOWN)
+            txt = "Chào lại Mai!"
+        from telegram import InlineKeyboardButton as _B, InlineKeyboardMarkup as _M
+        kb = _M([[ _B("📋 Mở menu", callback_data="open_menu") ]])
+        await update.message.reply_text(txt, parse_mode=ParseMode.MARKDOWN, reply_markup=kb)
 
     async def _menu_command(self, update, context):
         await update.message.reply_text("Menu chinh — chon chuc nang:", parse_mode=ParseMode.MARKDOWN, reply_markup=self._main_menu_keyboard())
@@ -427,6 +429,8 @@ class MonitoringBot:
                 await q.edit_message_text(f"📋 *Allowlist hiện tại*\n{lst2}", parse_mode=ParseMode.MARKDOWN, reply_markup=kb2)
             elif d == "back_menu":
                 await q.edit_message_text("Chọn chức năng:", reply_markup=self._main_menu_keyboard())
+            elif d == "open_menu":
+                await q.edit_message_text("📋 *Menu chính* — chọn chức năng:", parse_mode=ParseMode.MARKDOWN, reply_markup=self._main_menu_keyboard())
             elif d == "help":
                 await self._help_command(q, context)
                 return
