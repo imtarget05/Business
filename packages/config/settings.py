@@ -106,7 +106,7 @@ class Settings(BaseSettings):
     cloudflare_api_token: str | None = None
 
     # --- Ollama --------------------------------------------------------------
-    ollama_base_url: str | None = None
+    ollama_base_url: str | None = "http://localhost:11434"
 
     # --- Reporting -----------------------------------------------------------
     reporting_sheet_log_enabled: bool = False
@@ -150,6 +150,9 @@ class Settings(BaseSettings):
             val = data.get(key)
             if val == "":
                 data[key] = []
+            elif isinstance(val, str) and val and not val.strip().startswith("["):
+                # Allow plain comma-separated email string: "a@b.com" or "a@b.com,b@c.com"
+                data[key] = [s.strip() for s in val.split(",") if s.strip()]
 
         return data
 
