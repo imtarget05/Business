@@ -512,7 +512,8 @@ class MonitoringBot:
         low = text.lower()
         if ("gửi mail" in low or "gui mail" in low or "gửi email" in low or "@gmail.com" in low) and ("chào" in low or "xin chào" in low or "hello" in low or "gửi" in low):
             try:
-                m = re.search(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}", text)
+                import re as _re_gmail
+                m = _re_gmail.search(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}", text)
                 target = m.group(0) if m else "binhtan5734@gmail.com"
                 from integrations.google_client import gmail_send
                 body = f"Chào bạn,\n\nMình là Mai Nguyễn Bình Tân — rất vui được kết nối!\nChúc bạn một ngày tốt lành.\n\nThân mến,\nMai Nguyễn Bình Tân\n0397134170 | tanmainguyenbinh@gmail.com"
