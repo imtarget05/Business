@@ -317,9 +317,10 @@ async def test_resolve_timeout(po_data_needs_approval):
         timeout_seconds=0.001,  # Very short timeout
     )
     workflow._context.state = ApprovalState.PENDING_HUMAN_APPROVAL
+    # Force elapsed > timeout deterministically (no sleep race)
+    import time as _t
 
-    # Sleep briefly to trigger timeout
-    await asyncio.sleep(0.01)
+    workflow._context.requested_at = _t.monotonic() - 10.0
 
     response = await workflow.resolve(decision="approved", decided_by="manager_test")
 

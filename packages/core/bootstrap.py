@@ -7,9 +7,14 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from typing import Union
 
+from agents.calendar import create_calendar_agent
+from agents.context import create_context_agent
+from agents.gmail import create_gmail_agent
 from agents.knowledge import create_knowledge_agent
 from agents.reporting import create_reporting_agent
+from agents.research import create_research_agent
 from agents.support import create_support_agent
+from agents.youtube import create_youtube_agent
 from agents.supply_chain import (
     create_supply_chain_agents,
     create_supply_chain_reporter,
@@ -118,6 +123,16 @@ def build_container(
         max_retries=1,
     )
     registry.register(reporter_descriptor, supply_chain_reporter)
+
+    # Additional agents: context, calendar, gmail, research, youtube
+    for _agent in (
+        create_context_agent(llm=llm),
+        create_calendar_agent(llm=llm),
+        create_gmail_agent(llm=llm),
+        create_research_agent(llm=llm),
+        create_youtube_agent(llm=llm),
+    ):
+        registry.register(_agent.descriptor, _agent)
 
     if s.langgraph_enabled:
         orchestrator = GraphOrchestrator(registry, llm)

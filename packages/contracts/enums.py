@@ -14,6 +14,11 @@ class Domain(StrEnum):
     OPERATIONS = "operations"
     REPORT = "report"
     SUPPLY_CHAIN = "supply_chain"
+    CONTEXT = "context"
+    CALENDAR = "calendar"
+    GMAIL = "gmail"
+    RESEARCH = "research"
+    YOUTUBE = "youtube"
 
 
 class AgentResponseStatus(StrEnum):
