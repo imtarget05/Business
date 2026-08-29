@@ -3,7 +3,9 @@ FROM python:3.12-slim AS base
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    PIP_NO_CACHE_DIR=1
+    PIP_NO_CACHE_DIR=1 \
+    PIP_INDEX_URL=https://mirrors.aliyun.com/pypi/simple/ \
+    PIP_TIMEOUT=600
 
 WORKDIR /app
 
@@ -19,7 +21,7 @@ COPY integrations ./integrations
 COPY migrations ./migrations
 COPY alembic.ini ./
 
-RUN pip install --no-cache-dir .[google]
+RUN pip install --no-cache-dir --retries 10 --timeout 120 .[google]
 
 EXPOSE 8000
 

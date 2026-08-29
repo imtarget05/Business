@@ -609,7 +609,7 @@ class MonitoringBot:
                     await q.edit_message_text("⚠️ Không tìm thấy brief. Gửi lại brief AI Intern.", reply_markup=self._main_menu_keyboard())
                     return
                 target_mail = pending.get("target_mail", "binhtan5734@gmail.com")
-                await q.edit_message_text(f"🔍 Đang search 10 job VERIFIED cho *{target_mail}* (2-3 phút)...", parse_mode=ParseMode.MARKDOWN)
+                await q.edit_message_text(f"🔍 Đang search 8 job VERIFIED cho *{target_mail}* (2-3 phút)...", parse_mode=ParseMode.MARKDOWN)
                 import asyncio as _aio2, uuid as _uuid2, datetime as _dt2, json as _json2, pathlib as _pl2
                 import httpx as _httpx2
                 async def _do_jobsearch_confirm():
@@ -730,13 +730,13 @@ class MonitoringBot:
                             if status == "VERIFIED":
                                 verified.append(job)
                             audit.append({"url": url, "title": title, "search_timestamp": now, "verification_timestamp": now, "status": status, "evidence": evidence, "confidence": confidence})
-                        verified = sorted(verified, key=lambda x: x["match"], reverse=True)[:10]
+                        verified = sorted(verified, key=lambda x: x["match"], reverse=True)[:8]
                         dedup: dict[str, dict] = {}
                         for j in verified:
                             key = f"{j['company'].lower()}|{j['job_title'].lower()}|{j['location'].lower()}"
                             if key not in dedup or j["match"] > dedup[key]["match"]:
                                 dedup[key] = j
-                        verified = list(dedup.values())[:10]
+                        verified = list(dedup.values())[:8]
                         try:
                             _base = _pl2.Path("D:/Business Ops Agent Swarm") if _pl2.Path("D:/Business Ops Agent Swarm/job_search_results.json").parent.exists() else _pl2.Path(".")
                             (_base / "job_search_results.json").write_text(_json2.dumps(uniq, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -750,13 +750,18 @@ class MonitoringBot:
                             except Exception:
                                 pass
                             return
-                        tbl = "| Rank | Company | Position | Location | Match | Status | Apply |\n|------|---------|----------|----------|-------|--------|-------|\n"
-                        for idx, j in enumerate(verified[:5], 1):
-                            tbl += f"| {idx} | {j['company']} | {j['job_title'][:30]} | {j['location']} | {j['match']} | {j['status']} | [Apply]({j['link']}) |\n"
-                        top3_txt = ""
-                        for j in verified[:3]:
-                            top3_txt += f"\n**{j['company']} — {j['job_title']} ({j['match']}/100)**\n- Vì sao phù hợp: {j['required_skills'] or 'AI Intern, khớp background ML/Cloud'}\n- Skill thiếu: Kubernetes/MLOps chuyên sâu\n- CV hướng: nhấn Python + PyTorch + Docker + portfolio CV/LLM demo\n- Nên apply ngay: Có (VERIFIED còn mở)\n"
-                        summary = f"**TOP AI INTERN JOBS (VERIFIED {len(verified)}/{len(uniq)})**\n\n{tbl}\n{top3_txt}\n\nTổng đã tìm: {len(uniq)} | VERIFIED: {len(verified)} | UNCERTAIN: {len([a for a in audit if a['status']=='UNCERTAIN'])} | CLOSED: {len([a for a in audit if a['status']=='CLOSED'])}\nTOP 3 nên apply: {', '.join(v['company'] for v in verified[:3])}\nSkill bổ sung: Kubernetes, MLOps (MLflow), LLM/RAG, Docker K8s"
+                        job_lines = []
+                        for idx, j in enumerate(verified, 1):
+                            why = j.get("required_skills") or "Đúng ngành AI Intern, khớp nền tảng ML/Cloud"
+                            job_lines.append(
+                                f"**{idx}. {j['job_title']} — {j['company']}**\n"
+                                f"- 📍 Địa điểm: {j.get('location') or '—'}\n"
+                                f"- ✅ Đã kiểm tra: Còn tuyển\n"
+                                f"- 🔗 Xem chi tiết: {j.get('link') or j.get('url') or '—'}\n"
+                                f"- 💡 Phù hợp vì: {why}\n"
+                                f"- 👉 Nên nộp hồ sơ: Có"
+                            )
+                        summary = "**TUYỂN DỤNG AI INTERN — ĐÃ KIỂM TRA**\n\n" + "\n\n".join(job_lines)
                         try:
                             await context.bot.send_message(chat_id=chat_id2, text=summary[:4000], parse_mode=ParseMode.MARKDOWN)
                         except Exception:
@@ -874,10 +879,10 @@ class MonitoringBot:
                 self._pending_jobsearch[chat_id] = {"target_mail": target_mail, "text": text}
                 from telegram import InlineKeyboardButton as _B2, InlineKeyboardMarkup as _M2
                 kb2 = _M2([
-                    [_B2("✅ Bắt đầu search 10 job", callback_data="jobsearch_confirm"), _B2("❌ Hủy", callback_data="jobsearch_cancel")],
+                    [_B2("✅ Bắt đầu search 8 job", callback_data="jobsearch_confirm"), _B2("❌ Hủy", callback_data="jobsearch_cancel")],
                 ])
                 await update.message.reply_text(
-                    f"🔍 Đã nhận brief AI/ML Intern — sẽ search 10 job VERIFIED (ưu tiên TopCV/VietnamWorks/ITviec/LinkedIn), verify link Apply + chấm 0-100, rồi gửi báo cáo về *{target_mail}*.\n\nBạn có muốn bắt đầu ngay không?",
+                    f"🔍 Đã nhận brief AI/ML Intern — sẽ search 8 job VERIFIED (ưu tiên TopCV/VietnamWorks/ITviec/LinkedIn), verify link Apply + chấm 0-100, rồi gửi báo cáo về *{target_mail}*.\n\nBạn có muốn bắt đầu ngay không?",
                     parse_mode=ParseMode.MARKDOWN, reply_markup=kb2,
                 )
                 return
@@ -917,6 +922,45 @@ class MonitoringBot:
             except Exception as e:
                 await update.message.reply_text(f"❌ Gửi mail thất bại: {e} — báo rõ không bịa.")
                 return
+        # 2a) Fast greeting (no LLM) — giảm latency cho tin nhắn đơn giản
+        _simple_greet = ("xin chào", "chào", "hi", "hello", "hey", "cảm ơn", "thanks", "good morning", "good evening", "chào bạn")
+        if len(text) <= 40 and (text.lower().strip() in _simple_greet or any(g in text.lower() for g in _simple_greet)):
+            await update.message.reply_text(
+                "Xin chào! Mình là My AI Agent Bot của Mai Nguyễn Bình Tân. "
+                "Bạn cần mình tìm job AI intern, viết code, hay việc gì khác?"
+            )
+            return
+        # 2b) Quick deterministic code snippet (no LLM) — tránh local model degenerate liệt kê rác
+        low2 = text.lower()
+        is_code_req = ("hello world" in low2) or ("viết code" in low2) or ("code đơn giản" in low2) or ("viết cho tôi đoạn code" in low2) or ("đoạn code" in low2)
+        if is_code_req:
+            _snippets = {
+                "python": 'print("Hello, World!")',
+                "java": 'public class Main {\n    public static void main(String[] args) {\n        System.out.println("Hello, World!");\n    }\n}',
+                "javascript": 'console.log("Hello, World!");',
+                "js": 'console.log("Hello, World!");',
+                "c++": '#include <iostream>\nint main() {\n    std::cout << "Hello, World!";\n    return 0;\n}',
+                "cpp": '#include <iostream>\nint main() {\n    std::cout << "Hello, World!";\n    return 0;\n}',
+                "c": '#include <stdio.h>\nint main() {\n    printf("Hello, World!");\n    return 0;\n}',
+                "go": 'package main\nimport "fmt"\nfunc main() { fmt.Println("Hello, World!") }',
+                "golang": 'package main\nimport "fmt"\nfunc main() { fmt.Println("Hello, World!") }',
+                "rust": 'fn main() {\n    println!("Hello, World!");\n}',
+                "php": '<?php\necho "Hello, World!";\n?>',
+                "ruby": 'puts "Hello, World!"',
+                "swift": 'import Foundation\nprint("Hello, World!")',
+                "kotlin": 'fun main() {\n    println("Hello, World!")\n}',
+                "typescript": 'console.log("Hello, World!");',
+                "ts": 'console.log("Hello, World!");',
+                "bash": '#!/bin/bash\necho "Hello, World!"',
+                "shell": '#!/bin/bash\necho "Hello, World!"',
+            }
+            _lang = "python"
+            for _k in _snippets:
+                if _k in low2:
+                    _lang = _k
+                    break
+            await update.message.reply_text(f"```{_lang}\n{_snippets[_lang]}\n```")
+            return
         try:
             await context.bot.send_chat_action(chat_id=chat_id, action="typing")
         except Exception:
@@ -953,7 +997,22 @@ class MonitoringBot:
             from packages.config.settings import get_settings
             from packages.llm.factory import get_llm_provider
             llm = get_llm_provider(get_settings())
-            answer = await llm.generate(prompt=text, system="Bạn là trợ lý Business Ops của Mai Nguyễn Bình Tân. QUY TẮC: Không tự bịa dữ liệu. Nếu cần dữ liệu thật (mail, calendar, research, inventory) phải nói rõ chưa có tool hoặc gọi tool. Trước khi gửi email/tạo contact phải kiểm tra lại dữ liệu và xác nhận. Trả lời tiếng Việt ngắn gọn.")
+            answer = await llm.generate(
+                prompt=text,
+                system=(
+                    "Bạn là trợ lý Business Ops của Mai Nguyễn Bình Tân (trả lời tiếng Việt).\n"
+                    "QUY TẮC BẮT BUỘC:\n"
+                    "1. Không bao giờ bịa dữ liệu.\n"
+                    "2. Khi được yêu cầu 'viết code', chỉ trả ĐÚNG 1 đoạn code đơn giản nhất "
+                    "(mặc định Python) trừ khi người dùng chỉ rõ ngôn ngữ khác.\n"
+                    "3. KHÔNG liệt kê nhiều ngôn ngữ, KHÔNG lặp lại nội dung, KHÔNG giải thích dài dòng.\n"
+                    "4. TÓM TẮT TRỌNG TÂM: trả lời ngắn gọn, đúng ý hỏi, tối đa 5 dòng. "
+                    "Nếu hỏi 'nghề nào layoff nhiều' thì chỉ liệt kê tên nghề + 1 câu nguyên nhân, không bài luận.\n"
+                    "5. Cần dữ liệu thật (mail, calendar, research) thì nói rõ chưa có tool, không tự tạo."
+                ),
+                max_tokens=400,
+                temperature=0.3,
+            )
             reply = answer if isinstance(answer, str) else str(answer)
             if typing_task: typing_task.cancel()
             await update.message.reply_text(reply[:4000])
