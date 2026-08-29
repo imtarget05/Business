@@ -430,7 +430,8 @@ class MonitoringBot:
                 if new_mail not in allowed:
                     allowed.append(new_mail)
                     # persist to .env
-                    p = pathlib.Path("D:/Business Ops Agent Swarm/.env")
+                    import pathlib as _pl
+                    p = _pl.Path("D:/Business Ops Agent Swarm/.env")
                     txt = p.read_text(encoding="utf-8")
                     import json as _json
                     new_val = _json.dumps(allowed)
