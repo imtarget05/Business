@@ -1167,6 +1167,11 @@ class MonitoringBot:
     
     async def _message_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         chat_id = update.effective_chat.id
+        # 0) Hiện "đang nhập..." ngay khi nhận tin nhắn để user thấy trạng thái xử lý
+        try:
+            await context.bot.send_chat_action(chat_id=chat_id, action="typing")
+        except Exception:
+            pass
         # 1) Awaiting add/del mail (không tự thêm)
         if chat_id in self._awaiting_add_mail:
             self._awaiting_add_mail.discard(chat_id)
@@ -1186,7 +1191,7 @@ class MonitoringBot:
                 else:
                     allowed.append(new_mail)
                     import pathlib as _pl, json as _json
-                    p = _pl.Path("D:/Business Ops Agent Swarm/.env")
+                    p = _pl.Path(__file__).resolve().parents[2] / ".env"
                     txt = p.read_text(encoding="utf-8")
                     new_val = _json.dumps(allowed)
                     if "GMAIL_ALLOWED_RECIPIENTS" in txt:
@@ -1217,7 +1222,7 @@ class MonitoringBot:
                 else:
                     allowed3.remove(del_mail)
                     import pathlib as _pl3, json as _json3
-                    p3 = _pl3.Path("D:/Business Ops Agent Swarm/.env")
+                    p3 = _pl3.Path(__file__).resolve().parents[2] / ".env"
                     txt3 = p3.read_text(encoding="utf-8")
                     new_val3 = _json3.dumps(allowed3)
                     txt3 = _re2.sub(r"GMAIL_ALLOWED_RECIPIENTS=.*", f"GMAIL_ALLOWED_RECIPIENTS={new_val3}", txt3)
@@ -1247,7 +1252,10 @@ class MonitoringBot:
         import re as _re_gmail
         has_email = _re_gmail.search(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}", text)
         is_greeting = has_email and ("gửi lời chào" in low or "gui loi chao" in low or ("gửi" in low and "chào" in low) or ("gui" in low and "chao" in low))
-        is_jobsearch = ("ai intern" in low or "ai/ml intern" in low or "job search agent" in low or "machine learning intern" in low) and ("tìm" in low or "tim" in low)
+        is_jobsearch = (
+            ("tìm" in low or "tim" in low or "search" in low)
+            and ("job" in low or "việc" in low or "viec" in low or "tuyển" in low or "tuyen" in low or "intern" in low or "thực tập" in low or "thuc tap" in low)
+        ) or ("ai intern" in low) or ("job search agent" in low) or ("machine learning intern" in low)
         # Job Search - hỏi trước khi làm (không tự chạy)
         if is_jobsearch:
             try:
