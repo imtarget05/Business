@@ -1,34 +1,17 @@
-# -*- coding: utf-8 -*-
 """Youtube Agent — search, transcript, summarize.
 
 Capabilities: youtube.search, youtube.transcript, youtube.summarize
+Web access via ``packages.tools`` (ADR-008): hermes optional, httpx fallback.
 """
 from __future__ import annotations
 
 import re
-from typing import Any
 
 from packages.contracts.enums import AgentResponseStatus, Domain
 from packages.contracts.models import AgentDescriptor, AgentResponse, ErrorDetail, TaskRequest
 from packages.llm.base import LLMProvider
 from packages.llm.mock import MockLLMProvider
-
-try:
-    from hermes_tools import web_search as _web_search, web_extract as _web_extract  # type: ignore
-
-    _HAS_HERMES = True
-except ImportError:
-    _HAS_HERMES = False
-    _web_search = None  # type: ignore
-    _web_extract = None  # type: ignore
-
-try:
-    import httpx as _httpx  # type: ignore
-
-    _HAS_HTTPX = True
-except ImportError:
-    _HAS_HTTPX = False
-    _httpx = None  # type: ignore
+from packages.tools.web import WebToolsProvider, create_web_tools
 
 SUPPORTED_ACTIONS = {"search", "transcript", "summarize"}
 
@@ -42,7 +25,7 @@ def _extract_video_id(url_or_id: str) -> str | None:
 
 
 class YoutubeAgent:
-    def __init__(self, descriptor: AgentDescriptor | None = None, llm: LLMProvider | None = None) -> None:
+    def __init__(self, descriptor: AgentDescriptor | None = None, llm: LLMProvider | None = None, web_tools: WebToolsProvider | None = None) -> None:
         self.descriptor = descriptor or AgentDescriptor(
             name="youtube",
             domain=Domain.YOUTUBE,
@@ -51,6 +34,7 @@ class YoutubeAgent:
             capabilities=frozenset({"youtube.search", "youtube.transcript", "youtube.summarize"}),
         )
         self._llm = llm or MockLLMProvider()
+        self._web = web_tools or create_web_tools("auto")
 
     async def handle(self, request: TaskRequest) -> AgentResponse:
         if request.action not in SUPPORTED_ACTIONS:
@@ -68,44 +52,13 @@ class YoutubeAgent:
         if not query:
             return AgentResponse(task_id=request.task_id, agent=self.descriptor.qualified_name, status=AgentResponseStatus.REJECTED, error=ErrorDetail(code="VALIDATION_ERROR", message="payload.query required"))
         limit = int(request.payload.get("limit", 5) or 5)
-        if _HAS_HERMES and _web_search is not None:
-            try:
-                res = await _web_search(query=f"site:youtube.com {query}", limit=limit)  # type: ignore
-                items = res.get("data", {}).get("web", []) if isinstance(res, dict) else []
-                return AgentResponse(task_id=request.task_id, agent=self.descriptor.qualified_name, status=AgentResponseStatus.SUCCESS, result={"query": query, "results": items, "count": len(items)})
-            except Exception as e:
-                return AgentResponse(task_id=request.task_id, agent=self.descriptor.qualified_name, status=AgentResponseStatus.FAILED, error=ErrorDetail(code="SEARCH_ERROR", message=str(e)))
-        if _HAS_HTTPX and _httpx is not None:
-            try:
-                import re as _re, urllib.parse as _up
-                # Search DuckDuckGo for youtube videos
-                q = f"site:youtube.com {query}"
-                async with _httpx.AsyncClient(timeout=12, follow_redirects=True, headers={"User-Agent": "Mozilla/5.0"}) as _cli:
-                    r = await _cli.get("https://html.duckduckgo.com/html/", params={"q": q})
-                    r.raise_for_status()
-                    html = r.text
-                    uddgs = _re.findall(r"uddg=([^&\"']+)", html)
-                    seen: set[str] = set()
-                    results: list[dict[str, str]] = []
-                    for enc in uddgs:
-                        try:
-                            u = _up.unquote(enc)
-                        except Exception:
-                            continue
-                        if "youtube.com/watch" not in u and "youtu.be/" not in u:
-                            continue
-                        if u in seen:
-                            continue
-                        seen.add(u)
-                        vid = _extract_video_id(u) or ""
-                        title = vid or u.split("/")[-1]
-                        results.append({"title": title, "url": u, "snippet": query, "video_id": vid})
-                        if len(results) >= limit:
-                            break
-                    if results:
-                        return AgentResponse(task_id=request.task_id, agent=self.descriptor.qualified_name, status=AgentResponseStatus.SUCCESS, result={"query": query, "results": results, "count": len(results)})
-            except Exception:
-                pass
+        try:
+            res = await self._web.web_search(query=f"site:youtube.com {query}", limit=limit)
+            items = res.get("data", {}).get("web", []) if isinstance(res, dict) else []
+            return AgentResponse(task_id=request.task_id, agent=self.descriptor.qualified_name, status=AgentResponseStatus.SUCCESS, result={"query": query, "results": items, "count": len(items)})
+        except Exception as e:
+            return AgentResponse(task_id=request.task_id, agent=self.descriptor.qualified_name, status=AgentResponseStatus.FAILED, error=ErrorDetail(code="SEARCH_ERROR", message=str(e)))
+        # Fallback mock
         return AgentResponse(task_id=request.task_id, agent=self.descriptor.qualified_name, status=AgentResponseStatus.SUCCESS, result={"query": query, "results": [{"title": f"mock youtube {query}", "url": "https://youtube.com/watch?v=dQw4w9WgXcQ"}], "count": 1, "mock": True})
 
     async def _transcript(self, request: TaskRequest) -> AgentResponse:
@@ -114,18 +67,17 @@ class YoutubeAgent:
             return AgentResponse(task_id=request.task_id, agent=self.descriptor.qualified_name, status=AgentResponseStatus.REJECTED, error=ErrorDetail(code="VALIDATION_ERROR", message="payload.url or payload.video_id required"))
         vid = _extract_video_id(url) or url
         # Try web_extract on youtube page
-        if _HAS_HERMES and _web_extract is not None:
-            try:
-                yurl = f"https://www.youtube.com/watch?v={vid}" if len(vid) == 11 else url
-                ex = await _web_extract(urls=[yurl])  # type: ignore
-                content = ""
-                if isinstance(ex, dict):
-                    for r in ex.get("results", []):
-                        content += r.get("content", "")[:5000]
-                if content.strip():
-                    return AgentResponse(task_id=request.task_id, agent=self.descriptor.qualified_name, status=AgentResponseStatus.SUCCESS, result={"video_id": vid, "transcript": content[:8000]})
-            except Exception as e:
-                return AgentResponse(task_id=request.task_id, agent=self.descriptor.qualified_name, status=AgentResponseStatus.FAILED, error=ErrorDetail(code="EXTRACT_ERROR", message=str(e)))
+        try:
+            yurl = f"https://www.youtube.com/watch?v={vid}" if len(vid) == 11 else url
+            ex = await self._web.web_extract(urls=[yurl])
+            content = ""
+            if isinstance(ex, dict):
+                for r in ex.get("results", []):
+                    content += r.get("content", "")[:5000]
+            if content.strip() and "mock content" not in content:
+                return AgentResponse(task_id=request.task_id, agent=self.descriptor.qualified_name, status=AgentResponseStatus.SUCCESS, result={"video_id": vid, "transcript": content[:8000]})
+        except Exception as e:
+            return AgentResponse(task_id=request.task_id, agent=self.descriptor.qualified_name, status=AgentResponseStatus.FAILED, error=ErrorDetail(code="EXTRACT_ERROR", message=str(e)))
         # Mock fallback
         return AgentResponse(task_id=request.task_id, agent=self.descriptor.qualified_name, status=AgentResponseStatus.SUCCESS, result={"video_id": vid, "transcript": f"[mock transcript for {vid}]", "mock": True})
 
@@ -149,5 +101,5 @@ class YoutubeAgent:
             return AgentResponse(task_id=request.task_id, agent=self.descriptor.qualified_name, status=AgentResponseStatus.FAILED, error=ErrorDetail(code="LLM_ERROR", message=str(e)))
 
 
-def create_youtube_agent(llm: LLMProvider | None = None) -> YoutubeAgent:
-    return YoutubeAgent(llm=llm)
+def create_youtube_agent(llm: LLMProvider | None = None, web_tools: WebToolsProvider | None = None) -> YoutubeAgent:
+    return YoutubeAgent(llm=llm, web_tools=web_tools)

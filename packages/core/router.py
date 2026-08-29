@@ -63,7 +63,64 @@ RULE_FALLBACKS: tuple[tuple[tuple[str, ...], tuple[str, str]], ...] = (
     ),
 )
 
+# Keyword -> capability tokens (capability-based matching, ADR-012).
+# Each entry: (keywords, required-capability-fragments). A fragment is matched
+# against "domain.action" strings of registered agents; agents covering more
+# fragments score higher. This lets the router pick among *candidates* rather
+# than only accepting/rejecting one exact intent.
+CAPABILITY_KEYWORDS: tuple[tuple[tuple[str, ...], tuple[str, ...]], ...] = (
+    (("pod", "kubernetes", "kubectl", "deploy", "rollback"), ("ops", "kubernetes")),
+    (("log", "logs", "logging"), ("ops", "logs")),
+    (("metric", "monitor", "alert", "uptime"), ("ops", "monitoring")),
+    (("root cause", "why", "crash", "incident", "outage"), ("ops", "root_cause")),
+    (("tồn kho", "inventory", "stock", "nhập hàng"), ("supply_chain",)),
+    (("đơn hàng", "purchase order", "po ", "po#", "nhà cung cấp"), ("supply_chain",)),
+    (("email", "hộp thư", "inbox", "gmail"), ("gmail",)),
+    (("lịch", "calendar", "meeting", "cuộc họp"), ("calendar",)),
+    (("video", "youtube", "kênh"), ("youtube",)),
+    (("nghiên cứu", "research", "arxiv", "tin tức", "search"), ("research",)),
+    (("chính sách", "policy", "faq", "câu hỏi thường gặp"), ("knowledge",)),
+    (("khiếu nại", "refund", "hoàn tiền", "trả hàng"), ("support",)),
+    (("báo cáo", "report", "dashboard", "thống kê"), ("report",)),
+)
+
+
+def score_candidates(
+    text: str,
+    registry: _AgentRegistryProtocol | None,
+) -> list[tuple[str, float]]:
+    """Score registered agents by capability fit for free text.
+
+    Returns [(qualified_name, score)] sorted desc; only agents with score > 0.
+    Deterministic (keyword overlap), zero LLM cost — used as the candidate
+    stage before LLM classification / rule fallback / escalation.
+    """
+    if registry is None:
+        return []
+    lowered = text.lower()
+    wanted: list[tuple[str, ...]] = []
+    for keywords, fragments in CAPABILITY_KEYWORDS:
+        if any(k in lowered for k in keywords):
+            wanted.extend(fragments)
+
+    scored: list[tuple[str, float]] = []
+    for descriptor in registry.list_agents():
+        score = 0.0
+        for cap in descriptor.capabilities:
+            for fragment in wanted:
+                if fragment in cap:
+                    score += 1.0
+        # domain mention bonus
+        if descriptor.domain.value and descriptor.domain.value in lowered:
+            score += 0.5
+        if score > 0:
+            scored.append((descriptor.qualified_name, score))
+    scored.sort(key=lambda item: item[1], reverse=True)
+    return scored
+
+
 DEFAULT_CONFIDENCE_THRESHOLD = 0.6
+
 
 
 class _LLMClassification(BaseModel):
@@ -98,6 +155,24 @@ class RouterAgent:
         self._llm = llm
         self._threshold = confidence_threshold
         self._routing_table = _build_routing_table(registry)
+        self._registry = registry
+
+    def candidates(self, text: str) -> list[tuple[str, float]]:
+        """Capability-scored candidate agents for free text (ADR-012)."""
+        return score_candidates(text, self._registry)
+
+    def set_dynamic_rules(self, rules: list) -> None:
+        """Inject learned routing rules [(keyword, capability), ...] (ADR-010)."""
+        self._dynamic_rules = list(rules or [])
+
+    def _dynamic_rule_match(self, text: str) -> tuple[str, str] | None:
+        for rule in getattr(self, "_dynamic_rules", []):
+            keyword, capability = rule[0], rule[1]
+            if keyword.lower() in text.lower():
+                return tuple(capability.split(".", 1))  # type: ignore[return-value]
+        return None
+
+
 
     def _get_allowed_intents(self) -> frozenset[tuple[str, str]]:
         """Return the current routing table (intents the router can classify to)."""
@@ -132,8 +207,8 @@ class RouterAgent:
         except Exception:
             pass  # fall through to deterministic rules
 
-        # 2. Rule-based fallback.
-        rule = self._rule_match(text)
+        # 2. Learned dynamic rules (ADR-010) then rule-based fallback.
+        rule = self._dynamic_rule_match(text) or self._rule_match(text)
         if rule is not None:
             return Classification(*rule, 0.5, False, "rules")
 
@@ -181,6 +256,8 @@ __all__ = [
     "Classification",
     "ROUTER_INTENTS",
     "RULE_FALLBACKS",
+    "CAPABILITY_KEYWORDS",
+    "score_candidates",
     "DEFAULT_CONFIDENCE_THRESHOLD",
     "_build_routing_table",
 ]

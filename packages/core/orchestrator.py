@@ -12,7 +12,6 @@ Phase 4 Task 4.2: Multi-agent handoff chains with depth limit and audit.
 from __future__ import annotations
 
 import asyncio
-from uuid import UUID
 
 from packages.config.settings import get_settings
 from packages.contracts.enums import AgentResponseStatus, TaskStatus
@@ -26,6 +25,7 @@ from packages.contracts.models import (
 )
 from packages.contracts.state_machine import TaskStateMachine
 from packages.core.agent_base import DomainAgent
+from packages.core.audit import AuditEvent, AuditService, classify_risk
 from packages.core.errors import (
     AgentTimeoutError,
     AgentUnavailableError,
@@ -38,6 +38,7 @@ from packages.core.errors import (
     TaskTimeoutError,
     ToolExecutionError,
 )
+from packages.core.input_filter import filter_input
 from packages.core.persistence import NoopTaskRecorder, TaskRecorder
 from packages.core.policy import AllowAllPolicy, PolicyChecker
 from packages.core.registry import InMemoryAgentRegistry
@@ -56,7 +57,7 @@ class Orchestrator:
         llm: LLMProvider,
         *,
         default_timeout_ms: int = 30_000,
-        router: "RouterAgent | None" = None,
+        router: RouterAgent | None = None,
     ) -> None:
         self._registry = registry
         self._llm = llm
@@ -66,6 +67,27 @@ class Orchestrator:
         # Optional RouterAgent for free-text intent classification (Phase C).
         # When provided, classify() can resolve raw text into a capability.
         self._router = router
+        # Optional centralized audit layer (ADR-011). No-op when absent.
+        self._audit: AuditService | None = None
+
+    def set_audit(self, audit: AuditService) -> None:
+        """Inject the centralized audit service (called from bootstrap)."""
+        self._audit = audit
+
+    async def _audit_emit(
+        self, event: AuditEvent, capability: str, request: TaskRequest, **extra
+    ) -> None:
+        if self._audit is None:
+            return
+        await self._audit.emit(
+            event,
+            resource_type="task",
+            resource_id=str(request.task_id),
+            risk_level=classify_risk(capability),
+            task_id=request.task_id,
+            trace_id=request.context.trace_id,
+            payload={"capability": capability, **extra},
+        )
 
     async def classify_text(self, text: str) -> Classification | None:
         """Classify free-form text into a capability via the RouterAgent.
@@ -430,22 +452,59 @@ class Orchestrator:
         total_timeout_s = self._settings.agent_task_timeout_seconds * 2
 
         last_exc: BaseException | None = None
+
+        # Input Filter Layer (ADR-009): sanitize BEFORE any LLM call.
+        text = request.payload.get("text") or request.payload.get("message")
+        if isinstance(text, str) and text:
+            filtered = filter_input(text)
+            request.payload["text"] = filtered.clean_text
+            if filtered.blocked:
+                logger.warning(
+                    "input_blocked",
+                    extra={"task_id": str(request.task_id), "reason": filtered.block_reason},
+                )
+                return AgentResponse(
+                    task_id=request.task_id,
+                    agent="orchestrator",
+                    status=AgentResponseStatus.REJECTED,
+                    error=ErrorDetail(
+                        code=ErrorCode.VALIDATION_ERROR.value,
+                        message=f"Input rejected by filter: {filtered.block_reason}",
+                    ),
+                )
+
+        await self._audit_emit(
+            AuditEvent.TASK_CREATED,
+            f"{request.domain.value}.{request.action}",
+            request,
+            channel=request.context.channel,
+        )
         for attempt in range(1, max_attempts + 1):
             # Reset hop count for each attempt
             self._hop_count = 0
             try:
                 # Wrap core execution in total chain timeout
-                return await asyncio.wait_for(
+                response = await asyncio.wait_for(
                     self._execute_core(request, recorder=recorder, policy=policy),
                     timeout=total_timeout_s,
                 )
-            except asyncio.TimeoutError as exc:
+                await self._audit_emit(
+                    AuditEvent.TASK_COMPLETED
+                    if response.status == AgentResponseStatus.SUCCESS
+                    else AuditEvent.TASK_FAILED,
+                    f"{request.domain.value}.{request.action}",
+                    request,
+                    status=response.status.value,
+                    agent=response.agent,
+                )
+                return response
+            except TimeoutError:
                 # Convert asyncio.TimeoutError to TaskTimeoutError
                 last_exc = TaskTimeoutError(
                     f"Task {request.task_id} timed out after {total_timeout_s}s (total chain cap)",
                     task_id=request.task_id,
                 )
-            except (HandoffDepthExceededError, HandoffCycleDetectedError) as exc:
+            except (HandoffDepthExceededError, HandoffCycleDetectedError):
                 # Handoff-specific errors: never retry, always propagate immediately
                 # so API layer receives the typed error (same as original behavior)
                 raise
@@ -453,6 +512,13 @@ class Orchestrator:
                 # Check if this is a transient error we should retry
                 if self._is_transient_error(exc) and attempt < max_attempts:
                     last_exc = exc
+                    await self._audit_emit(
+                        AuditEvent.RETRY,
+                        f"{request.domain.value}.{request.action}",
+                        request,
+                        attempt=attempt,
+                        error_code=exc.code.value,
+                    )
                     logger.warning(
                         "task_retry",
                         extra={

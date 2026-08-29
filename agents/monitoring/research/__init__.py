@@ -21,25 +21,21 @@ from uuid import UUID
 from langgraph.graph import END, START, StateGraph
 from langgraph.checkpoint.memory import InMemorySaver
 
-# Optional Hermes tooling — falls back to None if not available in this environment
-try:
-    from hermes_tools import web_search, web_extract
-except ImportError:  # pragma: no cover - hermes_tools only present in Hermes runtime
-    web_search = None  # type: ignore[assignment]
-    web_extract = None  # type: ignore[assignment]
+from packages.tools.web import create_web_tools
+
+# Module-level provider, resolved once (hermes -> httpx -> mock via ADR-008).
+# Tests monkeypatch _call_web_search / _call_web_extract directly.
+_tools = create_web_tools("auto")
 
 
-# Wrappers (monkeypatchable in tests)
+# Wrappers (monkeypatchable in tests) — never raise for missing hermes;
+# the factory already degraded to httpx or mock.
 async def _call_web_search(query: str, limit: int = 5) -> dict[str, Any]:
-    if web_search is None:
-        raise RuntimeError("web_search tool unavailable (hermes_tools not installed)")
-    return await web_search(query=query, limit=limit)
+    return await _tools.web_search(query=query, limit=limit)
 
 
 async def _call_web_extract(urls: list[str], char_limit: int = 5000) -> dict[str, Any]:
-    if web_extract is None:
-        raise RuntimeError("web_extract tool unavailable (hermes_tools not installed)")
-    return await web_extract(urls=urls[:3], char_limit=char_limit)
+    return await _tools.web_extract(urls=urls[:3], char_limit=char_limit)
 
 
 # ---------------------------------------------------------------------------

@@ -5,7 +5,6 @@ from __future__ import annotations
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
-from typing import Union
 
 from agents.calendar import create_calendar_agent
 from agents.context import create_context_agent
@@ -13,20 +12,24 @@ from agents.gmail import create_gmail_agent
 from agents.knowledge import create_knowledge_agent
 from agents.reporting import create_reporting_agent
 from agents.research import create_research_agent
-from agents.support import create_support_agent
-from agents.youtube import create_youtube_agent
+from agents.root_cause import create_root_cause_agent
 from agents.supply_chain import (
+    create_inventory_monitor,
     create_supply_chain_agents,
     create_supply_chain_reporter,
-    create_inventory_monitor,
 )
+from agents.support import create_support_agent
+from agents.youtube import create_youtube_agent
 from packages.config.settings import Settings, get_settings
-from packages.contracts.models import AgentDescriptor
 from packages.contracts.enums import Domain
-from packages.core.orchestrator import Orchestrator
+from packages.contracts.models import AgentDescriptor
+from packages.core.audit import AuditService
 from packages.core.graph import GraphOrchestrator
+from packages.core.learning import LearningEngine
+from packages.core.orchestrator import Orchestrator
 from packages.core.persistence import NoopTaskStore, TaskStore
 from packages.core.policy import AllowAllPolicy, PolicyChecker
+from packages.core.reflection import ReflectionEngine
 from packages.core.registry import InMemoryAgentRegistry
 from packages.core.router import RouterAgent
 from packages.database.repositories.documents import KnowledgeRepository
@@ -38,9 +41,12 @@ from packages.llm.factory import get_embedding_provider, get_llm_provider
 class AppContainer:
     settings: Settings
     registry: InMemoryAgentRegistry
-    orchestrator: Union[Orchestrator, GraphOrchestrator]  # type: ignore[annotation]  # classic or graph path
+    orchestrator: Orchestrator | GraphOrchestrator  # type: ignore[annotation]  # classic or graph path
     task_store: TaskStore = None
     policy: PolicyChecker = None
+    audit: AuditService = None
+    learning: LearningEngine = None
+    reflection: ReflectionEngine = None
 
     def __post_init__(self) -> None:
         if self.task_store is None:
@@ -79,18 +85,21 @@ def build_container(
     support_agent = create_support_agent(llm=llm)
     registry.register(support_agent.descriptor, support_agent)
 
-    # Supply Chain agents (Phase SC) — PurchaseOrderAgent for PO inbound parsing/classification/routing
+        # Supply Chain agents (Phase SC): PO inbound parsing, classification, routing
     supply_chain_agents = create_supply_chain_agents(llm=llm, settings=s)
     for agent in supply_chain_agents.values():
         registry.register(agent.descriptor, agent)
 
-    # Supply Chain Inventory Monitor (Phase SC) — inventory level monitoring and alerting
+        # Supply Chain Inventory Monitor (Phase SC): low/out/over stock alerts
     inventory_monitor = create_inventory_monitor(llm=llm, settings=s)
     inventory_descriptor = AgentDescriptor(
         name="inventory_monitor",
         domain=Domain.SUPPLY_CHAIN,
         version="1",
-        description="Monitor inventory levels, generate alerts for low stock, out-of-stock, and overstock conditions.",
+                description=(
+            "Monitor inventory levels, generate alerts for low stock, "
+            "out-of-stock, and overstock conditions."
+        ),
         capabilities=frozenset(
             {
                 "supply_chain.check_inventory",
@@ -109,7 +118,10 @@ def build_container(
         name="supply_chain_reporter",
         domain=Domain.SUPPLY_CHAIN,
         version="1",
-        description="Generate daily/weekly/monthly supply chain reports and dashboards from PO processing, approval, and inventory data.",
+                description=(
+            "Generate supply chain reports and dashboards from PO "
+            "processing, approval, and inventory data."
+        ),
         capabilities=frozenset(
             {
                 "supply_chain.generate_report",
@@ -134,11 +146,29 @@ def build_container(
     ):
         registry.register(_agent.descriptor, _agent)
 
+    # Root Cause Agent (Phase 3) — evidence-first analysis over audit+metrics
+    root_cause_agent = create_root_cause_agent(llm=llm)
+    registry.register(root_cause_agent.descriptor, root_cause_agent)
+
     if s.langgraph_enabled:
         orchestrator = GraphOrchestrator(registry, llm)
     else:
         router_agent = RouterAgent(llm=llm, registry=registry)
         orchestrator = Orchestrator(registry, llm, router=router_agent)
+
+    # Centralized audit layer (ADR-011): classic orchestrator gets it injected;
+    # graph path keeps parity via container.audit for node-level use.
+    audit_service = AuditService(session_factory=session_factory)
+    if isinstance(orchestrator, Orchestrator):
+        orchestrator.set_audit(audit_service)
+
+    # Learning loop (ADR-010): learned rules feed RouterAgent before fallbacks.
+    learning_engine = LearningEngine()
+    reflection_engine = ReflectionEngine(llm=llm)
+    if isinstance(orchestrator, Orchestrator) and orchestrator._router is not None:
+        orchestrator._router.set_dynamic_rules(
+            [(r.keyword, r.capability) for r in learning_engine.get_rules()]
+        )
 
     return AppContainer(
         settings=s,
@@ -146,6 +176,9 @@ def build_container(
         orchestrator=orchestrator,
         task_store=task_store,
         policy=policy,
+        audit=audit_service,
+        learning=learning_engine,
+        reflection=reflection_engine,
     )
 
 

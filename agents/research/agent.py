@@ -1,40 +1,21 @@
-# -*- coding: utf-8 -*-
 """Research Agent — web search & arxiv.
 
 Capabilities: research.web_search, research.summarize, research.arxiv_search
+Web access via ``packages.tools`` (ADR-008): hermes optional, httpx fallback.
 """
 from __future__ import annotations
-
-from typing import Any
 
 from packages.contracts.enums import AgentResponseStatus, Domain
 from packages.contracts.models import AgentDescriptor, AgentResponse, ErrorDetail, TaskRequest
 from packages.llm.base import LLMProvider
 from packages.llm.mock import MockLLMProvider
-
-try:
-    from hermes_tools import web_search as _web_search, web_extract as _web_extract  # type: ignore
-
-    _HAS_HERMES = True
-except ImportError:
-    _HAS_HERMES = False
-    _web_search = None  # type: ignore
-    _web_extract = None  # type: ignore
-
-# Fallback httpx search when hermes_tools not available (project runs standalone)
-try:
-    import httpx as _httpx  # type: ignore
-
-    _HAS_HTTPX = True
-except ImportError:
-    _HAS_HTTPX = False
-    _httpx = None  # type: ignore
+from packages.tools.web import WebToolsProvider, create_web_tools
 
 SUPPORTED_ACTIONS = {"web_search", "summarize", "arxiv_search"}
 
 
 class ResearchAgent:
-    def __init__(self, descriptor: AgentDescriptor | None = None, llm: LLMProvider | None = None) -> None:
+    def __init__(self, descriptor: AgentDescriptor | None = None, llm: LLMProvider | None = None, web_tools: WebToolsProvider | None = None) -> None:
         self.descriptor = descriptor or AgentDescriptor(
             name="research",
             domain=Domain.RESEARCH,
@@ -43,6 +24,7 @@ class ResearchAgent:
             capabilities=frozenset({"research.web_search", "research.summarize", "research.arxiv_search"}),
         )
         self._llm = llm or MockLLMProvider()
+        self._web = web_tools or create_web_tools("auto")
 
     async def handle(self, request: TaskRequest) -> AgentResponse:
         if request.action not in SUPPORTED_ACTIONS:
@@ -60,82 +42,38 @@ class ResearchAgent:
         if not query:
             return AgentResponse(task_id=request.task_id, agent=self.descriptor.qualified_name, status=AgentResponseStatus.REJECTED, error=ErrorDetail(code="VALIDATION_ERROR", message="payload.query required"))
         limit = int(request.payload.get("limit", 5) or 5)
-        if _HAS_HERMES and _web_search is not None:
-            try:
-                res = await _web_search(query=query, limit=limit)  # type: ignore
-                items = res.get("data", {}).get("web", []) if isinstance(res, dict) else []
-                return AgentResponse(task_id=request.task_id, agent=self.descriptor.qualified_name, status=AgentResponseStatus.SUCCESS, result={"query": query, "results": items, "count": len(items)})
-            except Exception as e:
-                return AgentResponse(task_id=request.task_id, agent=self.descriptor.qualified_name, status=AgentResponseStatus.FAILED, error=ErrorDetail(code="SEARCH_ERROR", message=str(e)))
-        # Fallback httpx DuckDuckGo HTML search (standalone, no hermes)
-        if _HAS_HTTPX and _httpx is not None:
-            try:
-                import re as _re, urllib.parse as _up
-                async with _httpx.AsyncClient(timeout=12, follow_redirects=True, headers={"User-Agent": "Mozilla/5.0"}) as _cli:
-                    r = await _cli.get("https://html.duckduckgo.com/html/", params={"q": query})
-                    r.raise_for_status()
-                    html = r.text
-                    # DuckDuckGo encodes real urls as //duckduckgo.com/l/?uddg=https%3A%2F%2F...
-                    uddgs = _re.findall(r"uddg=([^&\"']+)", html)
-                    seen: set[str] = set()
-                    results: list[dict[str, str]] = []
-                    for enc in uddgs:
-                        try:
-                            u = _up.unquote(enc)
-                        except Exception:
-                            continue
-                        if not u.startswith("http") or "duckduckgo.com" in u or u in seen:
-                            continue
-                        seen.add(u)
-                        results.append({"title": u.split("/")[2] + " — " + query[:30], "url": u, "snippet": query})
-                        if len(results) >= limit:
-                            break
-                    # fallback if no uddg: try direct hrefs
-                    if not results:
-                        urls = _re.findall(r'href="(https?://[^"]+)"', html)
-                        for u in urls:
-                            if "duckduckgo.com" in u or u in seen:
-                                continue
-                            seen.add(u)
-                            results.append({"title": u.split("/")[2], "url": u, "snippet": query})
-                            if len(results) >= limit:
-                                break
-                if results:
-                    return AgentResponse(task_id=request.task_id, agent=self.descriptor.qualified_name, status=AgentResponseStatus.SUCCESS, result={"query": query, "results": results, "count": len(results)})
-            except Exception as e:
-                # fall through to mock
-                pass
-        # Fallback mock
-        mock_results = [{"title": f"Mock result for {query}", "url": "https://example.com", "snippet": "mock"}]
-        return AgentResponse(task_id=request.task_id, agent=self.descriptor.qualified_name, status=AgentResponseStatus.SUCCESS, result={"query": query, "results": mock_results, "count": 1, "mock": True})
+        try:
+            res = await self._web.web_search(query=query, limit=limit)
+            items = res.get("data", {}).get("web", []) if isinstance(res, dict) else []
+            return AgentResponse(task_id=request.task_id, agent=self.descriptor.qualified_name, status=AgentResponseStatus.SUCCESS, result={"query": query, "results": items, "count": len(items)})
+        except Exception as e:
+            return AgentResponse(task_id=request.task_id, agent=self.descriptor.qualified_name, status=AgentResponseStatus.FAILED, error=ErrorDetail(code="SEARCH_ERROR", message=str(e)))
 
     async def _arxiv_search(self, request: TaskRequest) -> AgentResponse:
         query = str(request.payload.get("query") or request.payload.get("q") or "").strip()
         if not query:
             return AgentResponse(task_id=request.task_id, agent=self.descriptor.qualified_name, status=AgentResponseStatus.REJECTED, error=ErrorDetail(code="VALIDATION_ERROR", message="payload.query required"))
         # Use web_search with arxiv site filter
-        if _HAS_HERMES and _web_search is not None:
-            try:
-                res = await _web_search(query=f"site:arxiv.org {query}", limit=5)  # type: ignore
-                items = res.get("data", {}).get("web", []) if isinstance(res, dict) else []
-                return AgentResponse(task_id=request.task_id, agent=self.descriptor.qualified_name, status=AgentResponseStatus.SUCCESS, result={"query": query, "results": items, "count": len(items)})
-            except Exception as e:
-                return AgentResponse(task_id=request.task_id, agent=self.descriptor.qualified_name, status=AgentResponseStatus.FAILED, error=ErrorDetail(code="SEARCH_ERROR", message=str(e)))
-        return AgentResponse(task_id=request.task_id, agent=self.descriptor.qualified_name, status=AgentResponseStatus.SUCCESS, result={"query": query, "results": [{"title": f"arxiv mock {query}", "url": "https://arxiv.org/abs/0000"}], "count": 1, "mock": True})
+        try:
+            res = await self._web.web_search(query=f"site:arxiv.org {query}", limit=5)
+            items = res.get("data", {}).get("web", []) if isinstance(res, dict) else []
+            return AgentResponse(task_id=request.task_id, agent=self.descriptor.qualified_name, status=AgentResponseStatus.SUCCESS, result={"query": query, "results": items, "count": len(items)})
+        except Exception as e:
+            return AgentResponse(task_id=request.task_id, agent=self.descriptor.qualified_name, status=AgentResponseStatus.FAILED, error=ErrorDetail(code="SEARCH_ERROR", message=str(e)))
 
     async def _summarize(self, request: TaskRequest) -> AgentResponse:
         text = str(request.payload.get("text") or request.payload.get("content") or "").strip()
         urls = request.payload.get("urls") or []
         if not text and not urls:
             return AgentResponse(task_id=request.task_id, agent=self.descriptor.qualified_name, status=AgentResponseStatus.REJECTED, error=ErrorDetail(code="VALIDATION_ERROR", message="payload.text or payload.urls required"))
-        # If urls provided and hermes available, extract first
-        if urls and _HAS_HERMES and _web_extract is not None:
+        # If urls provided, extract content first (best effort)
+        if urls:
             try:
-                ex = await _web_extract(urls=list(urls)[:3])  # type: ignore
+                ex = await self._web.web_extract(urls=list(urls)[:3])
                 # ex is dict with results
                 if isinstance(ex, dict):
                     extracted = " ".join(r.get("content", "")[:2000] for r in ex.get("results", []))
-                    if extracted:
+                    if extracted and "mock content" not in extracted:
                         text = extracted
             except Exception:
                 pass
@@ -149,5 +87,5 @@ class ResearchAgent:
             return AgentResponse(task_id=request.task_id, agent=self.descriptor.qualified_name, status=AgentResponseStatus.FAILED, error=ErrorDetail(code="LLM_ERROR", message=str(e)))
 
 
-def create_research_agent(llm: LLMProvider | None = None) -> ResearchAgent:
-    return ResearchAgent(llm=llm)
+def create_research_agent(llm: LLMProvider | None = None, web_tools: WebToolsProvider | None = None) -> ResearchAgent:
+    return ResearchAgent(llm=llm, web_tools=web_tools)
