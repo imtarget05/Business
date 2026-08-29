@@ -262,6 +262,11 @@ class MonitoringBot:
             "Vui lòng thử lại sau ít phút hoặc gõ /help để xem hướng dẫn."
         )
 
+    def _update_allowlist_env(self, allowed: list[str]) -> None:
+        """Ghi đè GMAIL_ALLOWED_RECIPIENTS vào os.environ (docker-safe, không động file .env)."""
+        import os as _os, json as _json
+        _os.environ["GMAIL_ALLOWED_RECIPIENTS"] = _json.dumps(allowed)
+
     # ------------------------------------------------------------------
     # Command handlers
     # ------------------------------------------------------------------
@@ -1018,7 +1023,12 @@ class MonitoringBot:
                     await q.edit_message_text("⚠️ Không tìm thấy brief. Gửi lại brief AI Intern.", reply_markup=self._main_menu_keyboard())
                     return
                 target_mail = pending.get("target_mail", "binhtan5734@gmail.com")
-                await q.edit_message_text(f"🔍 Đang search 8 job VERIFIED cho *{target_mail}* (2-3 phút)...", parse_mode=ParseMode.MARKDOWN)
+                _n_job = "8"
+                import re as _re_n
+                _m_n = _re_n.findall(r"\b(\d+)\b", pending.get("text", ""))
+                if _m_n:
+                    _n_job = _m_n[0]
+                await q.edit_message_text(f"🔍 Đang tìm kiếm {_n_job} vị trí VERIFIED cho *{target_mail}* (dự kiến 2-3 phút)...", parse_mode=ParseMode.MARKDOWN)
                 import asyncio as _aio2, uuid as _uuid2, datetime as _dt2, json as _json2, pathlib as _pl2
                 import httpx as _httpx2
                 async def _do_jobsearch_confirm():
@@ -1027,7 +1037,19 @@ class MonitoringBot:
                         from packages.contracts.models import TaskRequest, TaskContext
                         from packages.contracts.enums import Domain
                         ctn = get_container()
-                        queries = ["AI Intern Ho Chi Minh Vietnam","Machine Learning Intern Hanoi ITviec","Generative AI Intern Vietnam TopCV","MLOps Intern Vietnam"]
+                        # Tạo queries từ brief user (không tự thêm "AI" nếu user không nói)
+                        _brief = (pending.get("text", "") or "").lower()
+                        _kw = _brief
+                        for _w in ["tìm", "job", "việc", "tuyển", "gửi", "về", "mail", "trên", "mọi", "nền", "tảng", "đang", "nhiều", "ai intern", "intern", "ai/ml"]:
+                            _kw = _kw.replace(_w, " ")
+                        _kw = " ".join(_kw.split()).strip() or "thực tập sinh"
+                        _kw_cap = _kw[:40].title()
+                        queries = [
+                            f"{_kw_cap} Ho Chi Minh Vietnam",
+                            f"{_kw_cap} Hanoi Vietnam",
+                            f"{_kw_cap} Vietnam TopCV",
+                            f"{_kw_cap} Vietnam ITviec",
+                        ]
                         all_items: list[dict] = []
                         for _q in queries:
                             try:
@@ -1042,7 +1064,7 @@ class MonitoringBot:
                                 continue
                         # inform searching
                         try:
-                            await context.bot.send_message(chat_id=chat_id2, text=f"🔎 Đã search {len(all_items)} nguồn, đang verify link Apply + chấm 0-100...")
+                            await context.bot.send_message(chat_id=chat_id2, text=f"🔎 Đã thu thập {len(all_items)} kết quả từ các nền tảng, đang xác thực liên kết ứng tuyển và chấm điểm...")
                         except Exception:
                             pass
                         seen_url: set[str] = set()
@@ -1249,15 +1271,7 @@ class MonitoringBot:
                     await update.message.reply_text(f"⚠️ {new_mail} đã có trong allowlist: {', '.join(allowed)}", reply_markup=self._main_menu_keyboard())
                 else:
                     allowed.append(new_mail)
-                    import pathlib as _pl, json as _json
-                    p = _pl.Path(__file__).resolve().parents[2] / ".env"
-                    txt = p.read_text(encoding="utf-8")
-                    new_val = _json.dumps(allowed)
-                    if "GMAIL_ALLOWED_RECIPIENTS" in txt:
-                        txt = _re.sub(r"GMAIL_ALLOWED_RECIPIENTS=.*", f"GMAIL_ALLOWED_RECIPIENTS={new_val}", txt)
-                    else:
-                        txt += f"\nGMAIL_ALLOWED_RECIPIENTS={new_val}\n"
-                    p.write_text(txt, encoding="utf-8")
+                    self._update_allowlist_env(allowed)
                     get_settings.cache_clear()
                     await update.message.reply_text(f"✅ Đã THÊM {new_mail}\nAllowlist: {', '.join(allowed)}", reply_markup=self._main_menu_keyboard())
             except Exception as e:
@@ -1280,12 +1294,7 @@ class MonitoringBot:
                     await update.message.reply_text(f"⚠️ {del_mail} không có trong allowlist: {', '.join(allowed3) if allowed3 else '(trống)'}", reply_markup=self._main_menu_keyboard())
                 else:
                     allowed3.remove(del_mail)
-                    import pathlib as _pl3, json as _json3
-                    p3 = _pl3.Path(__file__).resolve().parents[2] / ".env"
-                    txt3 = p3.read_text(encoding="utf-8")
-                    new_val3 = _json3.dumps(allowed3)
-                    txt3 = _re2.sub(r"GMAIL_ALLOWED_RECIPIENTS=.*", f"GMAIL_ALLOWED_RECIPIENTS={new_val3}", txt3)
-                    p3.write_text(txt3, encoding="utf-8")
+                    self._update_allowlist_env(allowed3)
                     _gs3.cache_clear()
                     await update.message.reply_text(f"🗑️ Đã XÓA {del_mail}\nCòn lại: {', '.join(allowed3) if allowed3 else '(trống)'}", reply_markup=self._main_menu_keyboard())
             except Exception as e:
@@ -1321,13 +1330,23 @@ class MonitoringBot:
                 import re as _re_mail
                 m_mail = _re_mail.search(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}", text)
                 target_mail = m_mail.group(0) if m_mail else "tanmainguyenbinh@gmail.com"
+                # Trích số lượng job từ brief (vd "tìm 5 job") — mặc định 8
+                _n_job = "8"
+                _m_n = _re_mail.findall(r"\b(\d+)\b", text)
+                if _m_n:
+                    _n_job = _m_n[0]
                 self._pending_jobsearch[chat_id] = {"target_mail": target_mail, "text": text}
                 from telegram import InlineKeyboardButton as _B2, InlineKeyboardMarkup as _M2
                 kb2 = _M2([
-                    [_B2("✅ Bắt đầu search 8 job", callback_data="jobsearch_confirm"), _B2("❌ Hủy", callback_data="jobsearch_cancel")],
+                    [_B2(f"✅ Xác nhận tìm {_n_job} vị trí", callback_data="jobsearch_confirm"), _B2("❌ Hủy", callback_data="jobsearch_cancel")],
                 ])
                 await update.message.reply_text(
-                    f"🔍 Đã nhận brief AI/ML Intern — sẽ search 8 job VERIFIED (ưu tiên TopCV/VietnamWorks/ITviec/LinkedIn), verify link Apply + chấm 0-100, rồi gửi báo cáo về *{target_mail}*.\n\nBạn có muốn bắt đầu ngay không?",
+                    f"📋 *Yêu cầu tìm kiếm vị trí tuyển dụng*\n\n"
+                    f"• Số lượng: {_n_job} vị trí VERIFIED\n"
+                    f"• Ưu tiên nguồn: TopCV · VietnamWorks · ITviec · LinkedIn\n"
+                    f"• Kiểm tra: link ứng tuyển còn mở + chấm điểm 0–100\n"
+                    f"• Nhận báo cáo tại: {target_mail}\n\n"
+                    f"Vui lòng xác nhận để hệ thống bắt đầu tìm kiếm.",
                     parse_mode=ParseMode.MARKDOWN, reply_markup=kb2,
                 )
                 return

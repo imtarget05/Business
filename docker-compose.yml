@@ -155,6 +155,8 @@ services:
       GOOGLE_OAUTH_CLIENT_ID: ${GOOGLE_OAUTH_CLIENT_ID:-}
       GOOGLE_OAUTH_CLIENT_SECRET: ${GOOGLE_OAUTH_CLIENT_SECRET:-}
       GOOGLE_SHEET_ID: ${GOOGLE_SHEET_ID:-}
+    volumes:
+      - ./.env:/app/.env:rw
     depends_on:
       db:
         condition: service_healthy
