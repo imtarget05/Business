@@ -337,6 +337,7 @@ class MonitoringBot:
             [InlineKeyboardButton("🔍 Nghiên cứu", callback_data="research"), InlineKeyboardButton("📧 Gmail", callback_data="gmail")],
             [InlineKeyboardButton("📅 Calendar", callback_data="calendar"), InlineKeyboardButton("🎥 YouTube", callback_data="youtube")],
             [InlineKeyboardButton("🧠 Context", callback_data="context"), InlineKeyboardButton("📦 Supply", callback_data="supply")],
+            [InlineKeyboardButton("📤 Xuất", callback_data="export"), InlineKeyboardButton("🔄 Session mới", callback_data="new_session")],
             [InlineKeyboardButton("⚙️ Setup Mail", callback_data="setup_mail"), InlineKeyboardButton("❓ Trợ giúp", callback_data="help")],
         ])
 
@@ -429,6 +430,28 @@ class MonitoringBot:
                 from telegram import InlineKeyboardButton as _B2, InlineKeyboardMarkup as _M2
                 kb2 = _M2([[_B2("➕ Thêm", callback_data="add_mail"), _B2("➖ Xóa", callback_data="del_mail")], [_B2("⬅️ Quay lại", callback_data="setup_mail")]])
                 await q.edit_message_text(f"📋 *Allowlist hiện tại*\n{lst2}", parse_mode=ParseMode.MARKDOWN, reply_markup=kb2)
+            elif d == "export":
+                try:
+                    from agents.monitoring.progress_report import generate_daily_report as _gdr2
+                    r2 = await _gdr2()
+                    md2 = r2.to_markdown()
+                    # Gửi file export
+                    import tempfile, pathlib as _pl2
+                    tf = pathlib.Path(tempfile.gettempdir()) / "export_report.md"
+                    tf.write_text(md2, encoding="utf-8")
+                    await q.message.reply_document(document=open(tf, "rb"), filename="bao_cao.md", caption="📤 Xuất báo cáo")
+                    await q.edit_message_text("✅ Đã xuất báo cáo (file đính kèm)", reply_markup=self._main_menu_keyboard())
+                except Exception as e:
+                    await q.edit_message_text(f"❌ Xuất thất bại: {e}", reply_markup=self._main_menu_keyboard())
+            elif d == "new_session":
+                try:
+                    self._seen_chats.discard(q.message.chat.id if q.message and q.message.chat else 0)
+                    self._awaiting_add_mail.discard(q.message.chat.id if q.message and q.message.chat else 0)
+                    self._awaiting_del_mail.discard(q.message.chat.id if q.message and q.message.chat else 0)
+                    self._research_awaiting.pop(q.message.chat.id if q.message and q.message.chat else 0, None)
+                    await q.edit_message_text("🔄 *Session mới*\\nĐã xóa context, bắt đầu lại. Gõ /start để chào lại.", parse_mode=ParseMode.MARKDOWN, reply_markup=self._main_menu_keyboard())
+                except Exception as e:
+                    await q.edit_message_text(f"❌ Lỗi: {e}", reply_markup=self._main_menu_keyboard())
             elif d == "back_menu":
                 await q.edit_message_text("Chọn chức năng:", reply_markup=self._main_menu_keyboard())
             elif d == "open_menu":
