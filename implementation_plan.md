@@ -100,3 +100,15 @@ Thêm trong `packages/contracts/models.py`:
 7. `learning.py` + scheduler job + tests.
 8. Production infra: compose override, run script, .env.example, ADR-009/010, README.
 9. Full gate: pytest + ruff + compileall + smoke E2E.
+
+## Status (delivered)
+- Phase 1 (Foundation): DONE — AuditService/InMemoryAuditService (packages/core/audit.py),
+  metrics (packages/observability/metrics.py), capability-based RouterAgent.candidates() +
+  dynamic rules injection, audit hooks in Orchestrator.execute, bootstrap wiring.
+  AuditLog DB model was already present (reuse confirmed).
+- Phase 2 (Production plan): DONE — input_filter.py, learning.py, reflection.py, feedback API,
+  migration 0008, prod compose, run script, .env.example, ADR-009/010, scheduler learning job.
+- Phase 3 (selective agents): DONE — Root Cause Agent (agents/root_cause), Domain.OPS enum.
+- 25 SWE/testing/cloud roles deliberately NOT created as LLM agents (deferred /
+  deterministic services) per docs/audit/ARCHITECTURE_AUDIT.md.
+

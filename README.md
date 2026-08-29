@@ -135,3 +135,44 @@ cd apps/web && npm run build   # type-checks + builds the shell
 4. **Registry-driven routing** — no `if domain == "support"` in core code.
 5. **All LLM calls via `LLMProvider`** — business logic never touches SDKs.
 6. **Dashboard is a control plane** — it calls the API; it never routes tasks.
+
+## Production (24/7)
+
+```bash
+# production stack (no internal Ollama; uses cloud LLM per .env)
+docker compose -f docker-compose.prod.yml up -d --build
+# entrypoint auto-runs alembic migrations then serves uvicorn x2 workers
+```
+
+### Observability & safety (Phase 1)
+- **Input Filter Layer** (`packages/core/input_filter.py`): sanitizes every raw text
+  payload *before* any LLM call — length cap, spam/empty detection,
+  prompt-injection detection, PII masking (email/VN phone/CCCD). Spam or injection
+  inputs short-circuit as `REJECTED`, never hitting the LLM.
+- **Audit layer** (`packages/core/audit.py`): append-only events into the existing
+  `audit_logs` table. Risk classification `READ/WRITE/DESTRUCTIVE` on capabilities.
+  Audit failures never break the task pipeline; secret payloads are redacted.
+- **Metrics** (`packages/observability/metrics.py`): in-process counters/timers
+  exported via `/health`; Prometheus-swap sink later with no call-site changes.
+- **Capability-based routing** (`RouterAgent.candidates`): ranks registered agents
+  by keyword/capability overlap — the Planner picks a *minimal* agent chain,
+  never broadcasts to all agents.
+
+### Learning loop (Phase 2)
+```bash
+POST /v1/feedback      # rating up/down + corrected_capability + comment
+GET  /v1/feedback/stats
+```
+- `LearningEngine` turns corrections into `dynamic_rules` consumed by `RouterAgent`
+  *before* static keyword fallbacks — routing improves from user feedback.
+- `ReflectionEngine` auto-critiques agent output (fire-and-forget) to seed ratings.
+- Daily `Run learning cycle` scheduler job reports totals to Telegram.
+
+### New agents (Phase 3)
+- **Root Cause Agent** (`agents/root_cause`, `ops.root_cause` / `ops.get_metrics`):
+  LLM analysis over Audit events + Metrics — evidence-first, refuses to guess without
+  data. Registered only after audit+metrics layers exist.
+
+> 25 of the original 60 target roles (SWE/testing/cloud) are intentionally **not**
+> implemented as LLM agents — see `docs/audit/ARCHITECTURE_AUDIT.md`. In a
+> business-ops platform they remain deterministic services or deferred (pure debt).

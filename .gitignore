@@ -44,3 +44,7 @@ job_search_results.json
 verified_jobs.json
 contacts_backup.json
 business_ops.db
+
+# --- Learning loop runtime state ---
+data/
+learned_routing_rules.json

@@ -221,9 +221,15 @@ def create_app() -> FastAPI:
 
     @app.exception_handler(RequestValidationError)
     async def validation_error_handler(request: Request, exc: RequestValidationError):
+        # Sanitize errors: ctx may hold non-serializable objects (e.g. ValueError)
+        safe_errors = [
+            {k: (str(v) if k == "ctx" and isinstance(v, dict) else v) for k, v in e.items() if k != "ctx"}
+            | ({"ctx": {ck: str(cv) for ck, cv in e["ctx"].items()}} if isinstance(e.get("ctx"), dict) else {})
+            for e in exc.errors()[:10]
+        ]
         err = ValidationError(
             "Request validation failed",
-            details={"errors": exc.errors()[:10]},
+            details={"errors": safe_errors},
         )
         return JSONResponse(status_code=err.http_status, content={"error": err.to_payload()})
 
