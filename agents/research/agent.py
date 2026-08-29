@@ -13,13 +13,22 @@ from packages.llm.base import LLMProvider
 from packages.llm.mock import MockLLMProvider
 
 try:
-    from hermes_tools import web_search as _web_search, web_extract as _web_extract
+    from hermes_tools import web_search as _web_search, web_extract as _web_extract  # type: ignore
 
     _HAS_HERMES = True
 except ImportError:
     _HAS_HERMES = False
     _web_search = None  # type: ignore
     _web_extract = None  # type: ignore
+
+# Fallback httpx search when hermes_tools not available (project runs standalone)
+try:
+    import httpx as _httpx  # type: ignore
+
+    _HAS_HTTPX = True
+except ImportError:
+    _HAS_HTTPX = False
+    _httpx = None  # type: ignore
 
 SUPPORTED_ACTIONS = {"web_search", "summarize", "arxiv_search"}
 
@@ -58,6 +67,41 @@ class ResearchAgent:
                 return AgentResponse(task_id=request.task_id, agent=self.descriptor.qualified_name, status=AgentResponseStatus.SUCCESS, result={"query": query, "results": items, "count": len(items)})
             except Exception as e:
                 return AgentResponse(task_id=request.task_id, agent=self.descriptor.qualified_name, status=AgentResponseStatus.FAILED, error=ErrorDetail(code="SEARCH_ERROR", message=str(e)))
+        # Fallback httpx DuckDuckGo HTML search (standalone, no hermes)
+        if _HAS_HTTPX and _httpx is not None:
+            try:
+                import re as _re
+                async with _httpx.AsyncClient(timeout=12, follow_redirects=True, headers={"User-Agent": "Mozilla/5.0"}) as _cli:
+                    r = await _cli.get("https://html.duckduckgo.com/html/", params={"q": query})
+                    r.raise_for_status()
+                    html = r.text
+                    # parse result links: <a class="result__url" href="..."> or <a rel="nofollow" class="result__a" href="...">
+                    urls = _re.findall(r'href="(https?://[^"]+)"', html)
+                    # deduplicate preserving order, filter duckduckgo itself
+                    seen: set[str] = set()
+                    results: list[dict[str, str]] = []
+                    for u in urls:
+                        if "duckduckgo.com" in u or u in seen:
+                            continue
+                        seen.add(u)
+                        # try extract title near url
+                        results.append({"title": u.split("/")[2], "url": u, "snippet": query})
+                        if len(results) >= limit:
+                            break
+                    # also try alternative pattern for titles
+                    if not results:
+                        # fallback: any https link
+                        for u in urls[: limit * 2]:
+                            if "duckduckgo" not in u and u not in seen:
+                                results.append({"title": u.split("/")[2], "url": u, "snippet": ""})
+                                seen.add(u)
+                            if len(results) >= limit:
+                                break
+                if results:
+                    return AgentResponse(task_id=request.task_id, agent=self.descriptor.qualified_name, status=AgentResponseStatus.SUCCESS, result={"query": query, "results": results, "count": len(results)})
+            except Exception as e:
+                # fall through to mock
+                pass
         # Fallback mock
         mock_results = [{"title": f"Mock result for {query}", "url": "https://example.com", "snippet": "mock"}]
         return AgentResponse(task_id=request.task_id, agent=self.descriptor.qualified_name, status=AgentResponseStatus.SUCCESS, result={"query": query, "results": mock_results, "count": 1, "mock": True})
