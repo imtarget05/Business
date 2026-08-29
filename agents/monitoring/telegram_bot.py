@@ -46,6 +46,8 @@ except ImportError:
     
         class _StubBot:
             token: str = ""
+            def __init__(self, token: str = "") -> None:
+                self.token = token
             async def send_message(self, chat_id: int, text: str, parse_mode: str = "Markdown") -> dict:
                 return {"chat_id": chat_id, "text": text}
     
