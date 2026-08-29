@@ -235,7 +235,33 @@ class MonitoringBot:
             alert_text += f"- {icon} *{name}*: {message}\n"
         
         await self.send_message(alert_text)
-    
+
+    # ------------------------------------------------------------------
+    # Friendly I/O helpers (Task 6: thân thiện hóa đầu vào/đầu ra)
+    # ------------------------------------------------------------------
+
+    async def _friendly_unknown(self, update: Update) -> None:
+        """Khi không hiểu ý user -> gợi ý thân thiện thay vì fallback LLM vô nghĩa."""
+        text = (
+            "🤔 Mình chưa rõ ý bạn muốn làm gì.\n\n"
+            "Bạn có thể thử:\n"
+            "• 🔍 Tìm job AI intern — nhắn \"tìm 8 job AI intern\"\n"
+            "• 💡 Hỏi tư vấn — nhắn \"hỏi Hormozi về chiến lược\"\n"
+            "• 📄 Tạo proposal — nhắn \"viết proposal báo giá cho khách\"\n"
+            "• 📊 Đối thủ — nhắn \"/compete\" để xem báo cáo tuần\n"
+            "• 📥 Tổng hợp — nhắn \"/ops\" để xem Gmail/Calendar hôm nay\n"
+            "• 📚 Tra cứu — nhắn \"/kb <câu hỏi>\"\n\n"
+            "Gõ /help để xem đầy đủ lệnh."
+        )
+        await update.message.reply_text(text)
+
+    async def _friendly_error(self, update: Update, err: Exception) -> None:
+        """Lỗi hệ thống -> thông báo nhẹ nhàng, không dump traceback thô."""
+        await update.message.reply_text(
+            f"😔 Xin lỗi, mình gặp lỗi nhỏ: {err}\n"
+            "Vui lòng thử lại sau ít phút hoặc gõ /help để xem hướng dẫn."
+        )
+
     # ------------------------------------------------------------------
     # Command handlers
     # ------------------------------------------------------------------
@@ -1208,6 +1234,14 @@ class MonitoringBot:
         text = (update.message.text or "").strip()
         if not text:
             return
+        # 0) Normalize: collapse repeated whitespace for robust keyword matching
+        import re as _re_norm
+        text = _re_norm.sub(r"\s+", " ", text).strip()
+        # 0a) Help/menu intent -> show quick menu instead of LLM fallback
+        _help_kw = ("help", "trợ giúp", "tro giup", "menu", "làm được gì", "lam duoc gi", "hướng dẫn", "huong dan", "?", "commands")
+        if len(text) <= 30 and any(k == text.lower() or k in text.lower() for k in _help_kw):
+            await self._friendly_unknown(update)
+            return
         # 2) Quick route for email intent -> use gmail agent (limit hallucination) - CHAT: gui loi chao moi gui
         low = text.lower()
         import re as _re_gmail
@@ -1356,7 +1390,9 @@ class MonitoringBot:
                     if hasattr(resp, "result") and resp.result:
                         reply = str(resp.result.get("summary") or resp.result.get("answer") or resp.result)
                     if not reply or reply == "{}":
-                        raise ValueError("empty")
+                        if typing_task: typing_task.cancel()
+                        await self._friendly_unknown(update)
+                        return
                     if typing_task: typing_task.cancel()
                     await update.message.reply_text(reply[:4000])
                     return
@@ -1392,7 +1428,7 @@ class MonitoringBot:
                 except Exception: pass
             import logging
             logging.getLogger(__name__).exception("telegram error: %s", e)
-            try: await update.message.reply_text(f"Xin loi: {e}")
+            try: await self._friendly_error(update, e)
             except Exception: pass
 
 
