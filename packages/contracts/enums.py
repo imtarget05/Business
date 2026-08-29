@@ -22,6 +22,7 @@ class Domain(StrEnum):
     OPS = "ops"
     ADVISORY = "advisory"  # AI Advisory Council (Task 3): personas as system-prompt overrides
     SALES = "sales"  # Email-to-Proposal Automation (Task 4): email -> proposal + PDF + follow-up
+    COMPETITOR = "competitor"  # Competitive Intelligence (Task 5): COLLECT -> ANALYZE -> WEEKLY BRIEF
 
 
 class AgentResponseStatus(StrEnum):

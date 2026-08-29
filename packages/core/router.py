@@ -84,6 +84,7 @@ CAPABILITY_KEYWORDS: tuple[tuple[tuple[str, ...], tuple[str, ...]], ...] = (
     (("báo cáo", "report", "dashboard", "thống kê"), ("report",)),
     (("tổng hợp", "ops", "vận hành", "cần làm", "digest", "công việc"), ("ops",)),
     (("báo giá", "quote", "proposal", "đề xuất", "chào giá", "email khách", "báo gia"), ("sales",)),
+    (("đối thủ", "competitor", "cạnh tranh", "competitive", "giá đối thủ", "doi thu", "doi thu"), ("competitor",)),
 )
 
 

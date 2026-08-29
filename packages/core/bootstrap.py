@@ -2,12 +2,11 @@
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager
 from dataclasses import dataclass
 
 from agents.advisory import create_advisory_agent
 from agents.calendar import create_calendar_agent
+from agents.competitor import create_competitor_agent
 from agents.context import create_context_agent
 from agents.gmail import create_gmail_agent
 from agents.knowledge import create_knowledge_agent
@@ -28,12 +27,12 @@ from packages.contracts.enums import Domain
 from packages.contracts.models import AgentDescriptor
 from packages.core.audit import AuditService
 from packages.core.graph import GraphOrchestrator
+from packages.core.knowledge_base import KnowledgeBase
 from packages.core.learning import LearningEngine
 from packages.core.orchestrator import Orchestrator
 from packages.core.persistence import NoopTaskStore, TaskStore
 from packages.core.policy import AllowAllPolicy, PolicyChecker
 from packages.core.reflection import ReflectionEngine
-from packages.core.knowledge_base import KnowledgeBase
 from packages.core.registry import InMemoryAgentRegistry
 from packages.core.router import RouterAgent
 from packages.database.session import get_session_factory
@@ -85,6 +84,12 @@ def build_container(
     # Deterministic offline pipeline (reportlab); LLM optional, not required.
     sales_agent = create_sales_agent(llm=llm)
     registry.register(sales_agent.descriptor, sales_agent)
+
+    # Competitive Intelligence (Task 5): COLLECT -> ANALYZE -> WEEKLY BRIEF.
+    # Deterministic collection via web_search (no LLM crawl); analyze uses the
+    # shared LLM for a light VN summary with heuristic fallback when unavailable.
+    competitor_agent = create_competitor_agent(llm=llm)
+    registry.register(competitor_agent.descriptor, competitor_agent)
 
     # Business Ops Hub (Task 2): aggregates Gmail unread + Calendar + tasks.
     # Sources are injected; gmail/calendar default sources call the registry's

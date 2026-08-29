@@ -21,7 +21,6 @@ from apscheduler.triggers.interval import IntervalTrigger
 
 from agents.monitoring.health_check import run_health_check
 from agents.monitoring.progress_report import generate_daily_report
-from agents.ops_hub import build_task_provider, create_ops_hub_agent
 from packages.contracts.enums import AgentResponseStatus, Domain
 
 logger = logging.getLogger(__name__)
@@ -103,6 +102,21 @@ class MonitoringScheduler:
             CronTrigger(hour=8, minute=0, timezone=ZoneInfo("Asia/Ho_Chi_Minh")),
             id="ops_hub_daily",
             name="Business Ops Hub daily digest (Asia/Ho_Chi_Minh 08:00)",
+            replace_existing=True,
+        )
+
+        # Competitive Intelligence weekly brief (Task 5) — Monday 09:00
+        # Asia/Ho_Chi_Minh (VN, UTC+7). Pushes the Weekly Brief to Telegram.
+        self.scheduler.add_job(
+            self._run_competitor_job,
+            CronTrigger(
+                day_of_week=0,  # Monday
+                hour=9,
+                minute=0,
+                timezone=ZoneInfo("Asia/Ho_Chi_Minh"),
+            ),
+            id="competitor_weekly",
+            name="Weekly Competitive Intelligence brief (Asia/Ho_Chi_Minh Mon 09:00)",
             replace_existing=True,
         )
 
@@ -220,6 +234,7 @@ class MonitoringScheduler:
             ctn = get_container()
             desc, handler = ctn.registry.get_by_capability("ops.digest")
             import uuid as _uuid
+
             from packages.contracts.models import TaskContext, TaskRequest
 
             resp = await handler.handle(
@@ -249,6 +264,48 @@ class MonitoringScheduler:
                 logger.info("Ops Hub digest (no Telegram): %s", text[:200])
         except Exception as e:
             logger.error(f"Ops Hub job error: {e}")
+
+
+    async def _run_competitor_job(self) -> None:
+        """Execute the weekly Competitive Intelligence brief job (Task 5).
+
+        Builds the brief via the registry's ``competitor.brief`` capability and
+        pushes it to Telegram (if configured). Degrades gracefully on error.
+        """
+        try:
+            from packages.core.bootstrap import get_container
+
+            ctn = get_container()
+            import uuid as _uuid
+
+            from packages.contracts.models import TaskContext, TaskRequest
+
+            resp = await ctn.registry.get_by_capability("competitor.brief")[1].handle(
+                TaskRequest(
+                    task_id=_uuid.uuid4(),
+                    domain=Domain.COMPETITOR,
+                    action="brief",
+                    payload={},
+                    context=TaskContext(
+                        organization_id=_uuid.UUID("00000000-0000-0000-0000-000000000001"),
+                        channel="scheduler",
+                    ),
+                )
+            )
+            if resp.status != AgentResponseStatus.SUCCESS or not resp.result:
+                logger.warning("competitor.brief returned %s — skip push", resp.status)
+                return
+            brief = resp.result.get("brief", "")
+            if self._telegram_bot and hasattr(self._telegram_bot, "send_message"):
+                try:
+                    await self._telegram_bot.send_message(brief)
+                    logger.info("Competitive Intelligence weekly brief sent to Telegram")
+                except Exception:  # noqa: BLE001
+                    pass
+            else:
+                logger.info("Competitor brief (no Telegram): %s", brief[:200])
+        except Exception as e:
+            logger.error(f"Competitor job error: {e}")
 
 
 def _format_ops_digest(digest: dict[str, Any]) -> str:

@@ -1,0 +1,22 @@
+{
+  "competitors": [
+    {
+      "name": "DoiThuA",
+      "aliases": ["doithua", "doi thu a"],
+      "keywords": ["DoiThuA", "doi thu A"],
+      "homepage": "https://example.com/doithua"
+    },
+    {
+      "name": "DoiThuB",
+      "aliases": ["doithub", "doi thu b"],
+      "keywords": ["DoiThuB", "doi thu B"],
+      "homepage": "https://example.com/doithub"
+    }
+  ],
+  "queries": [
+    "DoiThuA giá dịch vụ",
+    "DoiThuB chiến lược ra mắt",
+    "đối thủ cạnh tranh giảm giá khuyến mãi"
+  ],
+  "_note": "PLACEHOLDER CONFIG — điền tên/alias/keyword của đối thủ thật vào 'competitors' và các câu tìm kiếm vào 'queries'. Bot sẽ quét web_search theo queries này mỗi tuần."
+}

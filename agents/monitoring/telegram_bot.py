@@ -158,6 +158,7 @@ class MonitoringBot:
         self.app.add_handler(CommandHandler("ops", self._ops_command))
         self.app.add_handler(CommandHandler("advisory", self._advisory_command))
         self.app.add_handler(CommandHandler("sales", self._sales_command))
+        self.app.add_handler(CommandHandler("compete", self._compete_command))
         self.app.add_handler(CommandHandler("help", self._help_command))
         
         # Callback query handler for inline menu
@@ -540,6 +541,53 @@ class MonitoringBot:
         except Exception as e:
             await update.message.reply_text(f"❌ Lỗi Sales: {e}")
 
+    async def _compete_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Handle /compete [tên đối thủ] — Competitive Intelligence (Task 5).
+
+        Usage:
+            /compete                — gửi Weekly Competitive Brief tổng hợp
+            /compete DoiThuA        — brief chỉ cho đối thủ đó
+
+        Collects competitor posts/pricing via web_search (no LLM crawl),
+        analyzes pricing shifts + patterns, returns a short VN Markdown brief.
+        """
+        from packages.contracts.enums import Domain
+        from packages.contracts.models import TaskContext, TaskRequest
+        import uuid as _uuid
+
+        competitor = " ".join(context.args).strip() if context.args else ""
+        await update.message.reply_text(
+            "📊 Đang thu thập tín hiệu đối thủ → phân tích → soạn Weekly Brief...",
+            parse_mode=ParseMode.MARKDOWN,
+        )
+        try:
+            from packages.core.bootstrap import get_container
+
+            ctn = get_container()
+            req = TaskRequest(
+                task_id=_uuid.uuid4(),
+                domain=Domain.COMPETITOR,
+                action="brief",
+                payload={"competitor": competitor or None},
+                context=TaskContext(
+                    organization_id=_uuid.UUID("00000000-0000-0000-0000-000000000001"),
+                    channel="telegram",
+                ),
+            )
+            desc, handler = ctn.registry.get_by_capability("competitor.brief")
+            resp = await handler.handle(req)
+            if resp.status.value != "success" or not resp.result:
+                msg = resp.error.message if resp.error else "competitor.brief thất bại"
+                await update.message.reply_text(f"❌ Lỗi Competitive: {msg}")
+                return
+
+            brief = resp.result.get("brief", "")
+            if len(brief) > 4000:
+                brief = brief[:3900] + "\n*... (đã rút gọn) ...*"
+            await update.message.reply_text(brief, parse_mode=ParseMode.MARKDOWN)
+        except Exception as e:
+            await update.message.reply_text(f"❌ Lỗi Competitive: {e}")
+
     async def _kb_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Handle /kb <câu hỏi> — query the Second Brain knowledge base."""
         from agents.knowledge.agent import NO_INFO_ANSWER
@@ -608,6 +656,7 @@ class MonitoringBot:
             "📦 *Supply Chain* — 'check inventory'\n"
             "🧠 *Knowledge* — '/kb <câu hỏi>' (Second Brain)\n"
             "📨 *Sales* — '/sales <email khách>' (soạn đề xuất + PDF)\n"
+            "📊 *Compete* — '/compete [tên đối thủ]' (tình báo cạnh tranh)\n"
             "📥 *Ops Hub* — '/ops' (tổng hợp Gmail+Calendar+tasks)\n"
             "📋 *`/menu`* — Mở menu chính\n"
             "⏰ *Scheduled:* Health 30p | Report 09:00 | 🚨 Alert khi DOWN"
