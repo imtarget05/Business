@@ -31,7 +31,8 @@ def get_engine(settings: Settings | None = None) -> AsyncEngine:
         if "postgresql" in s.database_url:
             # Bound connection attempts so an unreachable DB fails fast instead
             # of stalling requests for the OS-level TCP timeout.
-            connect_args["timeout"] = 5
+            # psycopg async uses connect_timeout, not timeout
+            connect_args["connect_timeout"] = 5
         _engine = create_async_engine(
             s.database_url, echo=s.db_echo, future=True, connect_args=connect_args
         )
