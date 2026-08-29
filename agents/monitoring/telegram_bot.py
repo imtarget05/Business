@@ -136,7 +136,8 @@ class MonitoringBot:
         self.app: Application | None = None
         self._research_awaiting: dict[int, str] = {}  # chat_id -> query
         self._seen_chats: set[int] = set()  # only greet Target is ready once per new chat
-        self._awaiting_mail: set[int] = set()  # chat_id awaiting mail input
+        self._awaiting_add_mail: set[int] = set()
+        self._awaiting_del_mail: set[int] = set()
     
     async def initialize(self) -> None:
         """Initialize bot application."""
@@ -400,8 +401,32 @@ class MonitoringBot:
             elif d == "supply":
                 await q.edit_message_text("📦 *Supply Chain*\nPO → approval → inventory → reporting → n8n\nHỏi: 'check inventory' hoặc 'báo cáo supply chain'", parse_mode=ParseMode.MARKDOWN, reply_markup=self._main_menu_keyboard())
             elif d == "setup_mail":
-                self._awaiting_mail.add(q.message.chat.id if q.message and q.message.chat else 0)
-                await q.edit_message_text("⚙️ *Setup Mail*\nNhập email muốn thêm (VD: binhtan5734@gmail.com):\nGửi tin nhắn chứa email, bot sẽ thêm vào allowlist.", parse_mode=ParseMode.MARKDOWN, reply_markup=self._main_menu_keyboard())
+                from telegram import InlineKeyboardButton as _B, InlineKeyboardMarkup as _M
+                kb = _M([
+                    [_B("➕ Thêm mail", callback_data="add_mail"), _B("➖ Xóa mail", callback_data="del_mail")],
+                    [_B("📋 Xem danh sách", callback_data="list_mails"), _B("⬅️ Menu chính", callback_data="back_menu")],
+                ])
+                await q.edit_message_text("⚙️ *Setup Mail*\nChọn thao tác:", parse_mode=ParseMode.MARKDOWN, reply_markup=kb)
+            elif d == "add_mail":
+                self._awaiting_add_mail.add(q.message.chat.id if q.message and q.message.chat else 0)
+                self._awaiting_del_mail.discard(q.message.chat.id if q.message and q.message.chat else 0)
+                await q.edit_message_text("➕ *Thêm mail*\nGửi email muốn THÊM (VD: new@gmail.com):", parse_mode=ParseMode.MARKDOWN)
+            elif d == "del_mail":
+                self._awaiting_del_mail.add(q.message.chat.id if q.message and q.message.chat else 0)
+                self._awaiting_add_mail.discard(q.message.chat.id if q.message and q.message.chat else 0)
+                from packages.config.settings import get_settings as _gs
+                cur = _gs().gmail_allowed_recipients or []
+                lst = "\n".join(f"• {x}" for x in cur) if cur else "(trống)"
+                await q.edit_message_text(f"➖ *Xóa mail*\nDanh sách hiện tại:\n{lst}\n\nGửi email muốn XÓA:", parse_mode=ParseMode.MARKDOWN)
+            elif d == "list_mails":
+                from packages.config.settings import get_settings as _gs2
+                cur2 = _gs2().gmail_allowed_recipients or []
+                lst2 = "\n".join(f"• {x}" for x in cur2) if cur2 else "(trống)"
+                from telegram import InlineKeyboardButton as _B2, InlineKeyboardMarkup as _M2
+                kb2 = _M2([[_B2("➕ Thêm", callback_data="add_mail"), _B2("➖ Xóa", callback_data="del_mail")], [_B2("⬅️ Quay lại", callback_data="setup_mail")]])
+                await q.edit_message_text(f"📋 *Allowlist hiện tại*\n{lst2}", parse_mode=ParseMode.MARKDOWN, reply_markup=kb2)
+            elif d == "back_menu":
+                await q.edit_message_text("Chọn chức năng:", reply_markup=self._main_menu_keyboard())
             elif d == "help":
                 await self._help_command(q, context)
                 return
@@ -412,28 +437,27 @@ class MonitoringBot:
     
     async def _message_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         chat_id = update.effective_chat.id
-        # 1) Awaiting mail setup
-        if chat_id in self._awaiting_mail:
-            self._awaiting_mail.discard(chat_id)
+        # 1) Awaiting add/del mail (không tự thêm)
+        if chat_id in self._awaiting_add_mail:
+            self._awaiting_add_mail.discard(chat_id)
             email_in = (update.message.text or "").strip()
             import re as _re
             m = _re.search(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}", email_in)
             if not m:
-                await update.message.reply_text("❌ Email không hợp lệ. Thử lại: gửi email đúng định dạng.")
+                await update.message.reply_text("❌ Email không hợp lệ. Thử lại.")
                 return
             new_mail = m.group(0).lower()
-            # Update allowlist runtime + .env persist
             try:
                 from packages.config.settings import get_settings
                 s = get_settings()
                 allowed = list(s.gmail_allowed_recipients or [])
-                if new_mail not in allowed:
+                if new_mail in allowed:
+                    await update.message.reply_text(f"⚠️ {new_mail} đã có trong allowlist: {', '.join(allowed)}", reply_markup=self._main_menu_keyboard())
+                else:
                     allowed.append(new_mail)
-                    # persist to .env
-                    import pathlib as _pl
+                    import pathlib as _pl, json as _json
                     p = _pl.Path("D:/Business Ops Agent Swarm/.env")
                     txt = p.read_text(encoding="utf-8")
-                    import json as _json
                     new_val = _json.dumps(allowed)
                     if "GMAIL_ALLOWED_RECIPIENTS" in txt:
                         txt = _re.sub(r"GMAIL_ALLOWED_RECIPIENTS=.*", f"GMAIL_ALLOWED_RECIPIENTS={new_val}", txt)
@@ -441,9 +465,37 @@ class MonitoringBot:
                         txt += f"\nGMAIL_ALLOWED_RECIPIENTS={new_val}\n"
                     p.write_text(txt, encoding="utf-8")
                     get_settings.cache_clear()
-                await update.message.reply_text(f"✅ Đã thêm {new_mail} vào allowlist. Hiện tại: {', '.join(allowed)}", reply_markup=self._main_menu_keyboard())
+                    await update.message.reply_text(f"✅ Đã THÊM {new_mail}\nAllowlist: {', '.join(allowed)}", reply_markup=self._main_menu_keyboard())
             except Exception as e:
                 await update.message.reply_text(f"❌ Lỗi thêm mail: {e}")
+            return
+        if chat_id in self._awaiting_del_mail:
+            self._awaiting_del_mail.discard(chat_id)
+            email_in = (update.message.text or "").strip()
+            import re as _re2
+            m2 = _re2.search(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}", email_in)
+            if not m2:
+                await update.message.reply_text("❌ Email không hợp lệ.")
+                return
+            del_mail = m2.group(0).lower()
+            try:
+                from packages.config.settings import get_settings as _gs3
+                s3 = _gs3()
+                allowed3 = list(s3.gmail_allowed_recipients or [])
+                if del_mail not in allowed3:
+                    await update.message.reply_text(f"⚠️ {del_mail} không có trong allowlist: {', '.join(allowed3) if allowed3 else '(trống)'}", reply_markup=self._main_menu_keyboard())
+                else:
+                    allowed3.remove(del_mail)
+                    import pathlib as _pl3, json as _json3
+                    p3 = _pl3.Path("D:/Business Ops Agent Swarm/.env")
+                    txt3 = p3.read_text(encoding="utf-8")
+                    new_val3 = _json3.dumps(allowed3)
+                    txt3 = _re2.sub(r"GMAIL_ALLOWED_RECIPIENTS=.*", f"GMAIL_ALLOWED_RECIPIENTS={new_val3}", txt3)
+                    p3.write_text(txt3, encoding="utf-8")
+                    _gs3.cache_clear()
+                    await update.message.reply_text(f"🗑️ Đã XÓA {del_mail}\nCòn lại: {', '.join(allowed3) if allowed3 else '(trống)'}", reply_markup=self._main_menu_keyboard())
+            except Exception as e:
+                await update.message.reply_text(f"❌ Lỗi xóa mail: {e}")
             return
         if chat_id in self._research_awaiting:
             self._research_awaiting.pop(chat_id)
