@@ -136,6 +136,34 @@ services:
       - ollama_models:/root/.ollama
     restart: unless-stopped
 
+  telegram_bot:
+    build:
+      context: .
+      dockerfile: infrastructure/docker/api.Dockerfile
+    command: ["python", "-m", "agents.monitoring.telegram_bot"]
+    environment:
+      DATABASE_URL: postgresql+psycopg://postgres:postgres@db:5432/business_ops
+      LLM_PROVIDER: ${LLM_PROVIDER:-ollama}
+      LLM_MODEL: ${LLM_MODEL:-qwen2.5:3b}
+      OLLAMA_BASE_URL: http://ollama:11434
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:-}
+      TELEGRAM_ALLOWED_USERS: ${TELEGRAM_ALLOWED_USERS:-}
+      GMAIL_SEND_ENABLED: ${GMAIL_SEND_ENABLED:-false}
+      GMAIL_ALLOWED_RECIPIENTS: ${GMAIL_ALLOWED_RECIPIENTS:-}
+      GOOGLE_REFRESH_TOKEN: ${GOOGLE_REFRESH_TOKEN:-}
+      GOOGLE_OAUTH_CLIENT_ID: ${GOOGLE_OAUTH_CLIENT_ID:-}
+      GOOGLE_OAUTH_CLIENT_SECRET: ${GOOGLE_OAUTH_CLIENT_SECRET:-}
+      GOOGLE_SHEET_ID: ${GOOGLE_SHEET_ID:-}
+    depends_on:
+      db:
+        condition: service_healthy
+      api:
+        condition: service_healthy
+      ollama:
+        condition: service_started
+    restart: unless-stopped
+
 volumes:
   pgdata:
   n8n_data:

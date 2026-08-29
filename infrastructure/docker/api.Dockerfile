@@ -19,7 +19,7 @@ COPY integrations ./integrations
 COPY migrations ./migrations
 COPY alembic.ini ./
 
-RUN pip install --no-cache-dir .
+RUN pip install --no-cache-dir .[google]
 
 EXPOSE 8000
 
