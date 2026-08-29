@@ -1028,6 +1028,24 @@ class MonitoringBot:
                 _m_n = _re_n.findall(r"\b(\d+)\b", pending.get("text", ""))
                 if _m_n:
                     _n_job = _m_n[0]
+                # Hỏi clarifying nếu brief chưa rõ vị trí cụ thể
+                _brief_l = (pending.get("text", "") or "").lower()
+                _stop = ["tìm","job","việc","tuyển","gửi","về","mail","trên","mọi","nền","tảng","đang","nhiều","ai intern","intern","ai/ml","5","5 job","cho","tôi","help","trợ giúp"]
+                _kw_check = _brief_l
+                for _w in _stop:
+                    _kw_check = _kw_check.replace(_w, " ")
+                _kw_check = " ".join(_kw_check.split()).strip()
+                if not _kw_check:
+                    self._pending_jobsearch[chat_id2] = pending
+                    await q.edit_message_text(
+                        "📋 Để tìm kiếm chính xác, bạn vui lòng cho biết:\n"
+                        "• Vị trí mong muốn (vd: AI Intern, Data Analyst, Backend Developer...)\n"
+                        "• Địa điểm (vd: HCMC, Hà Nội, Remote)\n"
+                        "• Kinh nghiệm (Intern / Junior / Senior)\n\n"
+                        "Ví dụ: \"AI Intern tại HCMC, Intern\" — hoặc trả lời trực tiếp bên dưới.",
+                        reply_markup=self._main_menu_keyboard(),
+                    )
+                    return
                 await q.edit_message_text(f"🔍 Đang tìm kiếm {_n_job} vị trí VERIFIED cho *{target_mail}* (dự kiến 2-3 phút)...", parse_mode=ParseMode.MARKDOWN)
                 import asyncio as _aio2, uuid as _uuid2, datetime as _dt2, json as _json2, pathlib as _pl2
                 import httpx as _httpx2
@@ -1037,6 +1055,11 @@ class MonitoringBot:
                         from packages.contracts.models import TaskRequest, TaskContext
                         from packages.contracts.enums import Domain
                         ctn = get_container()
+                        # Chỉ giữ URL thuộc trang tuyển dụng uy tín (loại google/mail/accounts spam)
+                        _JOB_DOMAINS = ("topcv.vn","itviec.com","vietnamworks.com","linkedin.com","careerbuilder.vn","careerviet.vn","indeed.com","careerjet.vn","glassdoor.com","tuyen dụng","vnw.vn","timviecnhanh.com")
+                        def _is_job_url(u: str) -> bool:
+                            _d = (u.split("//")[1].split("/")[0] if "//" in u else u.split("/")[0]).lower().replace("www.","")
+                            return any(_d == dom or _d.endswith("." + dom) or dom in _d for dom in _JOB_DOMAINS)
                         # Tạo queries từ brief user (không tự thêm "AI" nếu user không nói)
                         _brief = (pending.get("text", "") or "").lower()
                         _kw = _brief
@@ -1058,8 +1081,10 @@ class MonitoringBot:
                                 _resp = await _handler.handle(_req)
                                 if _resp.result and _resp.result.get("results"):
                                     for it in _resp.result["results"]:
-                                        it["_q"] = _q
-                                        all_items.append(it)
+                                        _u = it.get("url", "")
+                                        if _u and _is_job_url(_u):
+                                            it["_q"] = _q
+                                            all_items.append(it)
                             except Exception:
                                 continue
                         # inform searching
@@ -1179,18 +1204,25 @@ class MonitoringBot:
                             try:
                                 from urllib.parse import urlparse
                                 src_lines = []
-                                for u in uniq[:5]:
+                                _seen_dom = set()
+                                for u in uniq:
                                     _u = u.get("url", "")
                                     _d = urlparse(_u).netloc.replace("www.", "")
-                                    src_lines.append(f"• {_d}")
+                                    if _is_job_url(_u) and _d not in _seen_dom:
+                                        _seen_dom.add(_d)
+                                        src_lines.append(f"• {_d}")
+                                if not src_lines:
+                                    src_lines = [f"• {d}" for d in _JOB_DOMAINS[:6]]
+                                _tip_kw = (_kw_cap or "thực tập sinh")
                                 await context.bot.send_message(
                                     chat_id=chat_id2,
                                     text=(
-                                        "⚠️ Mình đã quét {n} nguồn nhưng chưa verify được job nào có nút Apply còn mở "
-                                        "(tránh bịa kết quả). Bạn có thể tự check các trang tuyển dụng uy tín sau:\n\n"
+                                        "⚠️ Mình đã rà soát {n} kết quả từ các nền tảng nhưng chưa xác thực được vị trí nào "
+                                        "có nút ứng tuyển còn mở (để tránh đưa kết quả không chính xác). "
+                                        "Bạn có thể trực tiếp kiểm tra các trang tuyển dụng uy tín sau:\n\n"
                                         "{sources}\n\n"
-                                        "💡 Mẹo: tìm trực tiếp 'AI Intern' trên từng trang để xem việc làm mới nhất."
-                                    ).format(n=len(uniq), sources="\n".join(src_lines)),
+                                        "💡 Gợi ý: tìm trực tiếp '{kw}' trên từng trang để xem các vị trí mới nhất."
+                                    ).format(n=len(uniq), sources="\n".join(src_lines), kw=_tip_kw),
                                 )
                             except Exception:
                                 pass
@@ -1317,6 +1349,31 @@ class MonitoringBot:
             return
         # 2) Quick route for email intent -> use gmail agent (limit hallucination) - CHAT: gui loi chao moi gui
         low = text.lower()
+        # Nếu đang ở bước clarifying JobSearch mà user gửi text -> cập nhật brief + hỏi xác nhận lại
+        if chat_id in self._pending_jobsearch and not text.startswith("/"):
+            try:
+                import re as _re_clar
+                _prev = self._pending_jobsearch[chat_id]
+                _prev["text"] = (text)
+                target_mail = _prev.get("target_mail") or "tanmainguyenbinh@gmail.com"
+                _n_job = "8"
+                _m_n = _re_clar.findall(r"\b(\d+)\b", text)
+                if _m_n:
+                    _n_job = _m_n[0]
+                from telegram import InlineKeyboardButton as _Bc, InlineKeyboardMarkup as _Mc
+                kb = _Mc([[_Bc(f"✅ Xác nhận tìm {_n_job} vị trí", callback_data="jobsearch_confirm"), _Bc("❌ Hủy", callback_data="jobsearch_cancel")]])
+                await update.message.reply_text(
+                    f"📋 *Yêu cầu tìm kiếm vị trí tuyển dụng*\n\n"
+                    f"• Brief: {text[:200]}\n"
+                    f"• Số lượng: {_n_job} vị trí VERIFIED\n"
+                    f"• Ưu tiên nguồn: TopCV · VietnamWorks · ITviec · LinkedIn\n"
+                    f"• Nhận báo cáo tại: {target_mail}\n\n"
+                    f"Vui lòng xác nhận để hệ thống bắt đầu tìm kiếm.",
+                    parse_mode=ParseMode.MARKDOWN, reply_markup=kb,
+                )
+                return
+            except Exception:
+                pass
         import re as _re_gmail
         has_email = _re_gmail.search(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}", text)
         is_greeting = has_email and ("gửi lời chào" in low or "gui loi chao" in low or ("gửi" in low and "chào" in low) or ("gui" in low and "chao" in low))
