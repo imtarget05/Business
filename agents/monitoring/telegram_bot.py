@@ -699,6 +699,9 @@ class MonitoringBot:
             [InlineKeyboardButton("📚 Knowledge", callback_data="kb"), InlineKeyboardButton("📥 Ops Hub", callback_data="ops")],
             [InlineKeyboardButton("💡 Advisory", callback_data="advisory"), InlineKeyboardButton("📄 Proposal", callback_data="sales")],
             [InlineKeyboardButton("📊 Competitor", callback_data="compete"), InlineKeyboardButton("🏥 Health", callback_data="health")],
+            [InlineKeyboardButton("🔍 Research", callback_data="research"), InlineKeyboardButton("📊 Báo cáo", callback_data="report")],
+            [InlineKeyboardButton("📧 Gmail", callback_data="gmail"), InlineKeyboardButton("📅 Calendar", callback_data="calendar")],
+            [InlineKeyboardButton("🎥 YouTube", callback_data="youtube"), InlineKeyboardButton("🛠 Công cụ", callback_data="tools")],
             [InlineKeyboardButton("❓ Trợ giúp", callback_data="help")],
         ])
 
@@ -858,6 +861,12 @@ class MonitoringBot:
                     parse_mode=ParseMode.MARKDOWN,
                     reply_markup=self._main_menu_keyboard(),
                 )
+            elif d == "tools":
+                from telegram import InlineKeyboardButton as _B, InlineKeyboardMarkup as _M
+                kb = _M([
+                    [_B("⚙️ Setup Mail", callback_data="setup_mail"), _B("⬅️ Quay lại", callback_data="back_menu")],
+                ])
+                await q.edit_message_text("🛠 *Công cụ* — chọn thao tác:", parse_mode=ParseMode.MARKDOWN, reply_markup=kb)
             elif d == "help":
                 await self._help_command(q, context)
                 return
