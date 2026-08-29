@@ -696,12 +696,9 @@ class MonitoringBot:
     def _main_menu_keyboard(self):
         from telegram import InlineKeyboardButton, InlineKeyboardMarkup
         return InlineKeyboardMarkup([
-            [InlineKeyboardButton("🏥 Health", callback_data="health"), InlineKeyboardButton("📊 Báo cáo", callback_data="report")],
-            [InlineKeyboardButton("🔍 Nghiên cứu", callback_data="research"), InlineKeyboardButton("📧 Gmail", callback_data="gmail")],
-            [InlineKeyboardButton("📅 Calendar", callback_data="calendar"), InlineKeyboardButton("🎥 YouTube", callback_data="youtube")],
-            [InlineKeyboardButton("🧠 Context", callback_data="context"), InlineKeyboardButton("📦 Supply", callback_data="supply")],
-            [InlineKeyboardButton("🧠 Knowledge", callback_data="kb"), InlineKeyboardButton("📤 Xuất", callback_data="export")],
-            [InlineKeyboardButton("📥 Ops Hub", callback_data="ops"), InlineKeyboardButton("❓ Trợ giúp", callback_data="help")],
+            [InlineKeyboardButton("📚 Knowledge", callback_data="kb"), InlineKeyboardButton("📥 Ops Hub", callback_data="ops")],
+            [InlineKeyboardButton("💡 Advisory", callback_data="advisory"), InlineKeyboardButton("📄 Proposal", callback_data="sales")],
+            [InlineKeyboardButton("📊 Competitor", callback_data="compete"), InlineKeyboardButton("🏥 Health", callback_data="health")],
             [InlineKeyboardButton("❓ Trợ giúp", callback_data="help")],
         ])
 
@@ -825,6 +822,39 @@ class MonitoringBot:
                     "🧠 *Knowledge Base (Second Brain)*\n"
                     "Gõ: `/kb <câu hỏi>`\n"
                     "VD: `/kb chính sách hoàn tiền là gì?`",
+                    parse_mode=ParseMode.MARKDOWN,
+                    reply_markup=self._main_menu_keyboard(),
+                )
+            elif d == "ops":
+                await q.edit_message_text(
+                    "📥 *Business Ops Hub*\n"
+                    "Gõ: `/ops` — xem tổng hợp Gmail chưa đọc + Calendar + tasks hôm nay.\n"
+                    "Hoặc hỏi: 'lịch hôm nay?' / 'check mail'.",
+                    parse_mode=ParseMode.MARKDOWN,
+                    reply_markup=self._main_menu_keyboard(),
+                )
+            elif d == "advisory":
+                await q.edit_message_text(
+                    "💡 *AI Advisory Council*\n"
+                    "Gõ: `/advisory <chuyên gia> <câu hỏi>`\n"
+                    "Chuyên gia: hormozi (chiến lược) | buffett (đầu tư) | garyvee (marketing)\n"
+                    "VD: `/advisory buffett có nên mua cổ phiếu ngân hàng không?`",
+                    parse_mode=ParseMode.MARKDOWN,
+                    reply_markup=self._main_menu_keyboard(),
+                )
+            elif d == "sales":
+                await q.edit_message_text(
+                    "📄 *Email → Proposal*\n"
+                    "Gõ: `/sales <email khách>` — bot soạn báo giá + proposal PDF + email follow-up.\n"
+                    "VD: `/sales chào anh A, bên em cần báo giá gói Launch Impact`",
+                    parse_mode=ParseMode.MARKDOWN,
+                    reply_markup=self._main_menu_keyboard(),
+                )
+            elif d == "compete":
+                await q.edit_message_text(
+                    "📊 *Competitive Intelligence*\n"
+                    "Gõ: `/compete` — xem báo cáo tuần (đối thủ, dịch chuyển giá).\n"
+                    "Hoặc: `/compete <tên đối thủ>` để xem riêng.",
                     parse_mode=ParseMode.MARKDOWN,
                     reply_markup=self._main_menu_keyboard(),
                 )
