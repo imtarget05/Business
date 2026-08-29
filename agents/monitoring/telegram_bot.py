@@ -1342,9 +1342,12 @@ class MonitoringBot:
         # 0) Normalize: collapse repeated whitespace for robust keyword matching
         import re as _re_norm
         text = _re_norm.sub(r"\s+", " ", text).strip()
-        # 0a) Help/menu intent -> show quick menu instead of LLM fallback
-        _help_kw = ("help", "trợ giúp", "tro giup", "menu", "làm được gì", "lam duoc gi", "hướng dẫn", "huong dan", "?", "commands")
-        if len(text) <= 30 and any(k == text.lower() or k in text.lower() for k in _help_kw):
+        # 0a) Help/menu intent -> show quick menu instead of LLM fallback.
+        # NOTE: '?' intentionally excluded — a real question ending in '?' must NOT
+        # be hijacked into the menu (was a false positive).
+        _help_kw = ("help", "trợ giúp", "tro giup", "menu", "làm được gì", "lam duoc gi", "hướng dẫn", "huong dan", "commands")
+        _is_pure_help = text.lower() in _help_kw or text.strip() == "?"
+        if len(text) <= 30 and (_is_pure_help or any(k in text.lower() for k in ("trợ giúp", "tro giup", "làm được gì", "lam duoc gi", "hướng dẫn", "huong dan", "commands"))):
             await self._friendly_unknown(update)
             return
         # 2) Quick route for email intent -> use gmail agent (limit hallucination) - CHAT: gui loi chao moi gui
@@ -1356,10 +1359,10 @@ class MonitoringBot:
                 _prev = self._pending_jobsearch[chat_id]
                 _prev["text"] = (text)
                 target_mail = _prev.get("target_mail") or "tanmainguyenbinh@gmail.com"
-                _n_job = "8"
-                _m_n = _re_clar.findall(r"\b(\d+)\b", text)
-                if _m_n:
-                    _n_job = _m_n[0]
+                import re as _re_num_clar
+                _m_job = _re_num_clar.search(r"(tìm|nộp|apply)\s+(\d+)\s*(job|vị trí|viec|việc)", text.lower())
+                _m_any = _re_num_clar.findall(r"\b(\d+)\b", text)
+                _n_job = _m_job.group(2) if _m_job else (_m_any[0] if _m_any else "8")
                 from telegram import InlineKeyboardButton as _Bc, InlineKeyboardMarkup as _Mc
                 kb = _Mc([[_Bc(f"✅ Xác nhận tìm {_n_job} vị trí", callback_data="jobsearch_confirm"), _Bc("❌ Hủy", callback_data="jobsearch_cancel")]])
                 await update.message.reply_text(
@@ -1377,21 +1380,32 @@ class MonitoringBot:
         import re as _re_gmail
         has_email = _re_gmail.search(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}", text)
         is_greeting = has_email and ("gửi lời chào" in low or "gui loi chao" in low or ("gửi" in low and "chào" in low) or ("gui" in low and "chao" in low))
+        # JobSearch intent — require an explicit hiring keyword, and do NOT treat
+        # "tìm hiểu ..." (research) as a hiring request.
+        _is_research_phrase = ("tìm hiểu" in low) or ("tìm ra" in low) or ("research" in low)
         is_jobsearch = (
-            ("tìm" in low or "tim" in low or "search" in low)
-            and ("job" in low or "việc" in low or "viec" in low or "tuyển" in low or "tuyen" in low or "intern" in low or "thực tập" in low or "thuc tap" in low)
-        ) or ("ai intern" in low) or ("job search agent" in low) or ("machine learning intern" in low)
+            ("job" in low or "intern" in low or "thực tập" in low or "thuc tap" in low
+             or "tuyển dụng" in low or "tuyen dung" in low or "tuyển" in low or "tuyen" in low
+             or "ai/ml intern" in low or "machine learning intern" in low)
+            or (
+                ("tìm" in low or "tim" in low or "search" in low)
+                and ("job" in low or "việc" in low or "viec" in low)
+                and not _is_research_phrase
+            )
+        ) or ("ai intern" in low) or ("job search agent" in low)
         # Job Search - hỏi trước khi làm (không tự chạy)
         if is_jobsearch:
             try:
                 import re as _re_mail
                 m_mail = _re_mail.search(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}", text)
                 target_mail = m_mail.group(0) if m_mail else "tanmainguyenbinh@gmail.com"
-                # Trích số lượng job từ brief (vd "tìm 5 job") — mặc định 8
-                _n_job = "8"
-                _m_n = _re_mail.findall(r"\b(\d+)\b", text)
-                if _m_n:
-                    _n_job = _m_n[0]
+                # Trích số lượng job từ brief (vd "tìm 5 job") — mặc định 8.
+                # Ưu tiên số đi cùng "tìm N job", nếu không có thì số đầu tiên,
+                # tránh bắt nhầm số điện thoại / năm.
+                import re as _re_num_job
+                _m_job = _re_num_job.search(r"(tìm|nộp|apply)\s+(\d+)\s*(job|vị trí|viec|việc)", text.lower())
+                _m_any = _re_num_job.findall(r"\b(\d+)\b", text)
+                _n_job = _m_job.group(2) if _m_job else (_m_any[0] if _m_any else "8")
                 self._pending_jobsearch[chat_id] = {"target_mail": target_mail, "text": text}
                 from telegram import InlineKeyboardButton as _B2, InlineKeyboardMarkup as _M2
                 kb2 = _M2([
@@ -1443,15 +1457,9 @@ class MonitoringBot:
             except Exception as e:
                 await update.message.reply_text(f"❌ Gửi mail thất bại: {e} — báo rõ không bịa.")
                 return
-        # 2a) Fast greeting (no LLM) — giảm latency cho tin nhắn đơn giản
-        _simple_greet = ("xin chào", "chào", "hi", "hello", "hey", "cảm ơn", "thanks", "good morning", "good evening", "chào bạn")
-        if len(text) <= 40 and (text.lower().strip() in _simple_greet or any(g in text.lower() for g in _simple_greet)):
-            await update.message.reply_text(
-                "Xin chào! Mình là My AI Agent Bot của Mai Nguyễn Bình Tân. "
-                "Bạn cần mình tìm job AI intern, viết code, hay việc gì khác?"
-            )
-            return
-        # 2b) Quick deterministic code snippet (no LLM) — tránh local model degenerate liệt kê rác
+        # 2b) Quick deterministic code snippet (no LLM) — MUST run BEFORE the greeting
+        # fast-path, otherwise "viết code python hello world" (contains "hello") would be
+        # misclassified as a greeting.
         low2 = text.lower()
         is_code_req = ("hello world" in low2) or ("viết code" in low2) or ("code đơn giản" in low2) or ("viết cho tôi đoạn code" in low2) or ("đoạn code" in low2)
         if is_code_req:
@@ -1481,6 +1489,19 @@ class MonitoringBot:
                     _lang = _k
                     break
             await update.message.reply_text(f"```{_lang}\n{_snippets[_lang]}\n```")
+            return
+        # 2a) Fast greeting (no LLM) — giảm latency cho tin nhắn đơn giản.
+        # Chạy SAU code-snippet để "hello world" không bị bắt nhầm thành chào.
+        # Quan trọng: so khớp theo TỪ ĐỨNG RIÊNG (word boundary), không phải substring —
+        # 'hi' là substring của 'layoff'/'neighbor'/'history' gây false positive.
+        import re as _re_greet
+        _simple_greet = ("xin chào", "chào", "hi", "hello", "hey", "cảm ơn", "thanks", "good morning", "good evening", "chào bạn")
+        _greet_rx = _re_greet.compile(r"\b(" + "|".join(_simple_greet) + r")\b", _re_greet.IGNORECASE)
+        if len(text) <= 40 and (_greet_rx.search(text) or text.lower().strip() in _simple_greet):
+            await update.message.reply_text(
+                "Xin chào! Mình là My AI Agent Bot của Mai Nguyễn Bình Tân. "
+                "Bạn cần mình tìm job AI intern, viết code, hay việc gì khác?"
+            )
             return
         # 2c) Advisory Council auto-detect: if the free-text question carries a
         # persona keyword (strategy/buffett/marketing/invest/...), route to the
