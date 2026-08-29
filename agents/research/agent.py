@@ -70,31 +70,34 @@ class ResearchAgent:
         # Fallback httpx DuckDuckGo HTML search (standalone, no hermes)
         if _HAS_HTTPX and _httpx is not None:
             try:
-                import re as _re
+                import re as _re, urllib.parse as _up
                 async with _httpx.AsyncClient(timeout=12, follow_redirects=True, headers={"User-Agent": "Mozilla/5.0"}) as _cli:
                     r = await _cli.get("https://html.duckduckgo.com/html/", params={"q": query})
                     r.raise_for_status()
                     html = r.text
-                    # parse result links: <a class="result__url" href="..."> or <a rel="nofollow" class="result__a" href="...">
-                    urls = _re.findall(r'href="(https?://[^"]+)"', html)
-                    # deduplicate preserving order, filter duckduckgo itself
+                    # DuckDuckGo encodes real urls as //duckduckgo.com/l/?uddg=https%3A%2F%2F...
+                    uddgs = _re.findall(r"uddg=([^&\"']+)", html)
                     seen: set[str] = set()
                     results: list[dict[str, str]] = []
-                    for u in urls:
-                        if "duckduckgo.com" in u or u in seen:
+                    for enc in uddgs:
+                        try:
+                            u = _up.unquote(enc)
+                        except Exception:
+                            continue
+                        if not u.startswith("http") or "duckduckgo.com" in u or u in seen:
                             continue
                         seen.add(u)
-                        # try extract title near url
-                        results.append({"title": u.split("/")[2], "url": u, "snippet": query})
+                        results.append({"title": u.split("/")[2] + " — " + query[:30], "url": u, "snippet": query})
                         if len(results) >= limit:
                             break
-                    # also try alternative pattern for titles
+                    # fallback if no uddg: try direct hrefs
                     if not results:
-                        # fallback: any https link
-                        for u in urls[: limit * 2]:
-                            if "duckduckgo" not in u and u not in seen:
-                                results.append({"title": u.split("/")[2], "url": u, "snippet": ""})
-                                seen.add(u)
+                        urls = _re.findall(r'href="(https?://[^"]+)"', html)
+                        for u in urls:
+                            if "duckduckgo.com" in u or u in seen:
+                                continue
+                            seen.add(u)
+                            results.append({"title": u.split("/")[2], "url": u, "snippet": query})
                             if len(results) >= limit:
                                 break
                 if results:

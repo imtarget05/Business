@@ -140,6 +140,7 @@ class MonitoringBot:
         self._seen_chats: set[int] = set()  # only greet Target is ready once per new chat
         self._awaiting_add_mail: set[int] = set()
         self._awaiting_del_mail: set[int] = set()
+        self._pending_jobsearch: dict[int, dict] = {}  # chat_id -> {target_mail, text}
     
     async def initialize(self) -> None:
         """Initialize bot application."""
@@ -459,6 +460,151 @@ class MonitoringBot:
             elif d == "help":
                 await self._help_command(q, context)
                 return
+            elif d == "jobsearch_cancel":
+                chat_id2 = q.message.chat.id if q.message and q.message.chat else 0
+                self._pending_jobsearch.pop(chat_id2, None)
+                await q.edit_message_text("❌ Đã hủy JobSearch. Gửi lại brief khi bạn sẵn sàng.", reply_markup=self._main_menu_keyboard())
+            elif d == "jobsearch_confirm":
+                chat_id2 = q.message.chat.id if q.message and q.message.chat else 0
+                pending = self._pending_jobsearch.pop(chat_id2, None)
+                if not pending:
+                    await q.edit_message_text("⚠️ Không tìm thấy brief. Gửi lại brief AI Intern.", reply_markup=self._main_menu_keyboard())
+                    return
+                target_mail = pending.get("target_mail", "binhtan5734@gmail.com")
+                await q.edit_message_text(f"🔍 Đang search 10 job VERIFIED cho *{target_mail}* (2-3 phút)...", parse_mode=ParseMode.MARKDOWN)
+                import asyncio as _aio2, uuid as _uuid2, datetime as _dt2, json as _json2, pathlib as _pl2
+                import httpx as _httpx2
+                async def _do_jobsearch_confirm():
+                    try:
+                        from packages.core.bootstrap import get_container
+                        from packages.contracts.models import TaskRequest, TaskContext
+                        from packages.contracts.enums import Domain
+                        ctn = get_container()
+                        queries = ["AI Intern Ho Chi Minh Vietnam","Machine Learning Intern Hanoi ITviec","Generative AI Intern Vietnam TopCV","MLOps Intern Vietnam"]
+                        all_items: list[dict] = []
+                        for _q in queries:
+                            try:
+                                _req = TaskRequest(task_id=_uuid2.uuid4(), domain=Domain.RESEARCH, action="web_search", payload={"query": _q, "limit": 5}, context=TaskContext(organization_id=_uuid2.UUID("00000000-0000-0000-0000-000000000001"), channel="telegram"))
+                                _desc, _handler = ctn.registry.get_by_capability("research.web_search")
+                                _resp = await _handler.handle(_req)
+                                if _resp.result and _resp.result.get("results"):
+                                    for it in _resp.result["results"]:
+                                        it["_q"] = _q
+                                        all_items.append(it)
+                            except Exception:
+                                continue
+                        # inform searching
+                        try:
+                            await context.bot.send_message(chat_id=chat_id2, text=f"🔎 Đã search {len(all_items)} nguồn, đang verify link Apply + chấm 0-100...")
+                        except Exception:
+                            pass
+                        seen_url: set[str] = set()
+                        uniq: list[dict] = []
+                        for it in all_items:
+                            u = it.get("url","")
+                            if u and u not in seen_url and "example.com" not in u:
+                                seen_url.add(u)
+                                uniq.append(it)
+                        verified: list[dict] = []
+                        audit: list[dict] = []
+                        now = _dt2.datetime.now(_dt2.timezone.utc).isoformat()
+                        bg_keywords = ["python","docker","kubernetes","pytorch","computer vision","machine learning","mlops","llm","generative ai","agent","cloud"]
+                        for it in uniq[:15]:
+                            url = it.get("url","")
+                            title = it.get("title","") or it.get("snippet","") or url.split("/")[2]
+                            status = "UNCERTAIN"
+                            evidence = f"search {it.get('_q','')} found {url}"
+                            confidence = 0.6
+                            try:
+                                async with _httpx2.AsyncClient(timeout=10, follow_redirects=True, headers={"User-Agent":"Mozilla/5.0"}) as _cli:
+                                    _r = await _cli.get(url)
+                                    if _r.status_code == 200:
+                                        _html = _r.text.lower()
+                                        has_apply = any(k in _html for k in ["apply","ứng tuyển","nộp đơn","apply now"])
+                                        is_closed = any(k in _html for k in ["đã đóng","hết hạn","expired","closed","not found"])
+                                        if has_apply and not is_closed:
+                                            status = "VERIFIED"
+                                            confidence = 0.92
+                                            evidence = f"page 200 has Apply button, not closed — checked {now}"
+                                        elif is_closed:
+                                            status = "CLOSED"
+                                            confidence = 0.85
+                                            evidence = "page indicates closed/expired"
+                                        else:
+                                            status = "UNCERTAIN"
+                                            confidence = 0.65
+                                            evidence = "page 200 but no clear Apply button"
+                                    else:
+                                        status = "UNCERTAIN"
+                                        evidence = f"http {_r.status_code}"
+                            except Exception as _e:
+                                evidence = f"fetch error: {_e}"
+                            low_title = (title + " " + url).lower()
+                            skill_match = sum(1 for k in bg_keywords if k in low_title) / max(1, len(bg_keywords)) * 40 + 50
+                            if "intern" in low_title: skill_match += 10
+                            if "ai" in low_title: skill_match += 10
+                            match = int(min(95, max(55, skill_match)))
+                            loc = "Ho Chi Minh" if "hcm" in low_title or "ho chi minh" in low_title else ("Ha Noi" if "hanoi" in low_title or "ha noi" in low_title else "Vietnam")
+                            company = title.split("-")[0].strip()[:40] if "-" in title else title[:40]
+                            job = {"company": company or "Unknown","job_title": title[:80],"location": loc,"work_type": "On-site","salary": "","deadline": "","required_skills": ", ".join([k for k in bg_keywords if k in low_title][:5]),"experience": "Intern","link": url,"checked_at": now,"evidence": evidence,"confidence": confidence,"status": status,"match": match,"source": it.get("_q","")}
+                            if status == "VERIFIED":
+                                verified.append(job)
+                            audit.append({"url": url, "title": title, "search_timestamp": now, "verification_timestamp": now, "status": status, "evidence": evidence, "confidence": confidence})
+                        verified = sorted(verified, key=lambda x: x["match"], reverse=True)[:10]
+                        dedup: dict[str, dict] = {}
+                        for j in verified:
+                            key = f"{j['company'].lower()}|{j['job_title'].lower()}|{j['location'].lower()}"
+                            if key not in dedup or j["match"] > dedup[key]["match"]:
+                                dedup[key] = j
+                        verified = list(dedup.values())[:10]
+                        try:
+                            _base = _pl2.Path("D:/Business Ops Agent Swarm") if _pl2.Path("D:/Business Ops Agent Swarm/job_search_results.json").parent.exists() else _pl2.Path(".")
+                            (_base / "job_search_results.json").write_text(_json2.dumps(uniq, ensure_ascii=False, indent=2), encoding="utf-8")
+                            (_base / "verified_jobs.json").write_text(_json2.dumps(verified, ensure_ascii=False, indent=2), encoding="utf-8")
+                            (_base / "job_audit_log.json").write_text(_json2.dumps(audit, ensure_ascii=False, indent=2), encoding="utf-8")
+                        except Exception:
+                            pass
+                        if not verified:
+                            try:
+                                await context.bot.send_message(chat_id=chat_id2, text=f"⚠️ Không verify được job nào có nút Apply còn mở (đã check {len(uniq)} link). Mình không bịa — đây là danh sách nguồn để bạn tự check:\n" + "\n".join(f"• {u.get('url')}" for u in uniq[:5]))
+                            except Exception:
+                                pass
+                            return
+                        tbl = "| Rank | Company | Position | Location | Match | Status | Apply |\n|------|---------|----------|----------|-------|--------|-------|\n"
+                        for idx, j in enumerate(verified[:5], 1):
+                            tbl += f"| {idx} | {j['company']} | {j['job_title'][:30]} | {j['location']} | {j['match']} | {j['status']} | [Apply]({j['link']}) |\n"
+                        top3_txt = ""
+                        for j in verified[:3]:
+                            top3_txt += f"\n**{j['company']} — {j['job_title']} ({j['match']}/100)**\n- Vì sao phù hợp: {j['required_skills'] or 'AI Intern, khớp background ML/Cloud'}\n- Skill thiếu: Kubernetes/MLOps chuyên sâu\n- CV hướng: nhấn Python + PyTorch + Docker + portfolio CV/LLM demo\n- Nên apply ngay: Có (VERIFIED còn mở)\n"
+                        summary = f"**TOP AI INTERN JOBS (VERIFIED {len(verified)}/{len(uniq)})**\n\n{tbl}\n{top3_txt}\n\nTổng đã tìm: {len(uniq)} | VERIFIED: {len(verified)} | UNCERTAIN: {len([a for a in audit if a['status']=='UNCERTAIN'])} | CLOSED: {len([a for a in audit if a['status']=='CLOSED'])}\nTOP 3 nên apply: {', '.join(v['company'] for v in verified[:3])}\nSkill bổ sung: Kubernetes, MLOps (MLflow), LLM/RAG, Docker K8s"
+                        try:
+                            await context.bot.send_message(chat_id=chat_id2, text=summary[:4000], parse_mode=ParseMode.MARKDOWN)
+                        except Exception:
+                            pass
+                        try:
+                            from integrations.google_client import gmail_send
+                            from packages.config.settings import get_settings
+                            allowed = get_settings().gmail_allowed_recipients or []
+                            email_body = summary + "\n\n" + "\n".join(f"{j['company']} | {j['job_title']} | {j['link']} | Match {j['match']} | {j['evidence']}" for j in verified[:5])
+                            if target_mail.lower() not in [a.lower() for a in allowed]:
+                                await context.bot.send_message(chat_id=chat_id2, text=f"⚠️ {target_mail} chưa trong allowlist ({', '.join(allowed)}). Dùng /menu → ⚙️ Setup Mail → ➕ Thêm mail trước.")
+                            else:
+                                _res = gmail_send(to=target_mail, subject=f"[Business Ops] TOP {len(verified[:5])} AI Intern VERIFIED — {now[:10]}", body=email_body)
+                                if _res.get("mode") == "DRY_RUN":
+                                    await context.bot.send_message(chat_id=chat_id2, text=f"⚠️ Gmail DRY_RUN, chưa gửi thật tới {target_mail}")
+                                else:
+                                    await context.bot.send_message(chat_id=chat_id2, text=f"✅ Đã gửi báo cáo TOP {len(verified[:5])} VERIFIED về {target_mail} (id {_res.get('id')})")
+                        except Exception as _e:
+                            try:
+                                await context.bot.send_message(chat_id=chat_id2, text=f"⚠️ Gửi mail lỗi: {_e}")
+                            except Exception:
+                                pass
+                    except Exception as e2:
+                        try:
+                            await context.bot.send_message(chat_id=chat_id2, text=f"❌ JobSearch lỗi: {e2}")
+                        except Exception:
+                            pass
+                _aio2.create_task(_do_jobsearch_confirm())
             else:
                 await q.edit_message_text("Chọn chức năng:", reply_markup=self._main_menu_keyboard())
         except Exception as e:
@@ -539,171 +685,21 @@ class MonitoringBot:
         has_email = _re_gmail.search(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}", text)
         is_greeting = has_email and ("gửi lời chào" in low or "gui loi chao" in low or ("gửi" in low and "chào" in low) or ("gui" in low and "chao" in low))
         is_jobsearch = ("ai intern" in low or "ai/ml intern" in low or "job search agent" in low or "machine learning intern" in low) and ("tìm" in low or "tim" in low)
-        # Job Search - xử lý riêng, không priority chỉ nhận đúng yêu cầu
+        # Job Search - hỏi trước khi làm (không tự chạy)
         if is_jobsearch:
             try:
-                # Extract target email from brief if specified
                 import re as _re_mail
                 m_mail = _re_mail.search(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}", text)
                 target_mail = m_mail.group(0) if m_mail else "tanmainguyenbinh@gmail.com"
-                await update.message.reply_text(f"🔍 Đã nhận brief AI/ML Intern — đang search 10 job VERIFIED (mất 2-3 phút), xong sẽ gửi bảng + mail về {target_mail}. Vui lòng đợi...", parse_mode=ParseMode.MARKDOWN)
-                import asyncio as _aio
-                async def _do_jobsearch():
-                    try:
-                        from packages.core.bootstrap import get_container
-                        from packages.contracts.models import TaskRequest, TaskContext
-                        from packages.contracts.enums import Domain
-                        import uuid as _uuid, datetime as _dt, json as _json, pathlib as _pl, re as _re2
-                        import httpx as _httpx2
-                        ctn = get_container()
-                        queries = [
-                            "AI Intern Ho Chi Minh Vietnam",
-                            "Machine Learning Intern Hanoi ITviec",
-                            "Generative AI Intern Vietnam TopCV",
-                            "MLOps Intern Vietnam",
-                        ]
-                        all_items: list[dict] = []
-                        for _q in queries:
-                            try:
-                                _req = TaskRequest(task_id=_uuid.uuid4(), domain=Domain.RESEARCH, action="web_search", payload={"query": _q, "limit": 5}, context=TaskContext(organization_id=_uuid.UUID("00000000-0000-0000-0000-000000000001"), channel="telegram"))
-                                _desc, _handler = ctn.registry.get_by_capability("research.web_search")
-                                _resp = await _handler.handle(_req)
-                                if _resp.result and _resp.result.get("results"):
-                                    for it in _resp.result["results"]:
-                                        it["_q"] = _q
-                                        all_items.append(it)
-                            except Exception:
-                                continue
-                        await update.message.reply_text(f"🔎 Đã search {len(all_items)} nguồn, đang verify link apply + chấm 0-100...")
-                        # Deduplicate by url
-                        seen_url: set[str] = set()
-                        uniq: list[dict] = []
-                        for it in all_items:
-                            u = it.get("url","")
-                            if u and u not in seen_url and "example.com" not in u:
-                                seen_url.add(u)
-                                uniq.append(it)
-                        # Verify each link (check Apply button)
-                        verified: list[dict] = []
-                        audit: list[dict] = []
-                        now = _dt.datetime.now(_dt.timezone.utc).isoformat()
-                        # background keywords for scoring
-                        bg_keywords = ["python","docker","kubernetes","pytorch","computer vision","machine learning","mlops","llm","generative ai","agent","cloud"]
-                        for it in uniq[:15]:
-                            url = it.get("url","")
-                            title = it.get("title","") or it.get("snippet","") or url.split("/")[2]
-                            status = "UNCERTAIN"
-                            evidence = f"search {it.get('_q','')} found {url}"
-                            confidence = 0.6
-                            # try fetch page to verify Apply
-                            try:
-                                async with _httpx2.AsyncClient(timeout=10, follow_redirects=True, headers={"User-Agent":"Mozilla/5.0"}) as _cli:
-                                    _r = await _cli.get(url)
-                                    if _r.status_code == 200:
-                                        _html = _r.text.lower()
-                                        has_apply = any(k in _html for k in ["apply","ứng tuyển","nộp đơn","apply now"])
-                                        is_closed = any(k in _html for k in ["đã đóng","hết hạn","expired","closed","not found"])
-                                        if has_apply and not is_closed:
-                                            status = "VERIFIED"
-                                            confidence = 0.92
-                                            evidence = f"page 200 has Apply button, not closed — checked {now}"
-                                        elif is_closed:
-                                            status = "CLOSED"
-                                            confidence = 0.85
-                                            evidence = "page indicates closed/expired"
-                                        else:
-                                            status = "UNCERTAIN"
-                                            confidence = 0.65
-                                            evidence = "page 200 but no clear Apply button"
-                                    else:
-                                        status = "UNCERTAIN"
-                                        evidence = f"http { _r.status_code}"
-                            except Exception as _e:
-                                evidence = f"fetch error: {_e}"
-                            # simple scoring 0-100
-                            low_title = (title + " " + url).lower()
-                            skill_match = sum(1 for k in bg_keywords if k in low_title) / max(1, len(bg_keywords)) * 40 + 50  # base 50
-                            # bonus for intern + AI
-                            if "intern" in low_title: skill_match += 10
-                            if "ai" in low_title: skill_match += 10
-                            match = int(min(95, max(55, skill_match)))
-                            # location
-                            loc = "Ho Chi Minh" if "hcm" in low_title or "ho chi minh" in low_title else ("Ha Noi" if "hanoi" in low_title or "ha noi" in low_title else "Vietnam")
-                            company = title.split("-")[0].strip()[:40] if "-" in title else title[:40]
-                            job = {
-                                "company": company or "Unknown",
-                                "job_title": title[:80],
-                                "location": loc,
-                                "work_type": "On-site",
-                                "salary": "",
-                                "deadline": "",
-                                "required_skills": ", ".join([k for k in bg_keywords if k in low_title][:5]),
-                                "experience": "Intern",
-                                "link": url,
-                                "checked_at": now,
-                                "evidence": evidence,
-                                "confidence": confidence,
-                                "status": status,
-                                "match": match,
-                                "source": it.get("_q",""),
-                            }
-                            if status == "VERIFIED":
-                                verified.append(job)
-                            audit.append({"url": url, "title": title, "search_timestamp": now, "verification_timestamp": now, "status": status, "evidence": evidence, "confidence": confidence})
-                        # sort verified by match desc
-                        verified = sorted(verified, key=lambda x: x["match"], reverse=True)[:10]
-                        # if no verified, fallback to UNCERTAIN as verified with warning
-                        if not verified and uniq:
-                            # take top 3 uncertain as fallback (mark UNCERTAIN but still send with note)
-                            pass
-                        # dedup by company+job_title+location
-                        dedup: dict[str, dict] = {}
-                        for j in verified:
-                            key = f"{j['company'].lower()}|{j['job_title'].lower()}|{j['location'].lower()}"
-                            if key not in dedup or j["match"] > dedup[key]["match"]:
-                                dedup[key] = j
-                        verified = list(dedup.values())[:10]
-                        # Save files (project standalone)
-                        try:
-                            _base = _pl.Path("D:/Business Ops Agent Swarm") if _pl.Path("D:/Business Ops Agent Swarm/job_search_results.json").parent.exists() else _pl.Path(".")
-                            (_base / "job_search_results.json").write_text(_json.dumps(uniq, ensure_ascii=False, indent=2), encoding="utf-8")
-                            (_base / "verified_jobs.json").write_text(_json.dumps(verified, ensure_ascii=False, indent=2), encoding="utf-8")
-                            (_base / "job_audit_log.json").write_text(_json.dumps(audit, ensure_ascii=False, indent=2), encoding="utf-8")
-                        except Exception:
-                            pass
-                        if not verified:
-                            await update.message.reply_text("⚠️ Không verify được job nào có nút Apply còn mở (đã check %d link). Tất cả UNCERTAIN/CLOSED — mình không bịa, bạn thử lại với từ khóa khác hoặc mình sẽ gửi danh sách nguồn để bạn tự check." % len(uniq))
-                            return
-                        # Build report table
-                        tbl = "| Rank | Company | Position | Location | Match | Status | Apply |\n|------|---------|----------|----------|-------|--------|-------|\n"
-                        for idx, j in enumerate(verified[:5], 1):
-                            tbl += f"| {idx} | {j['company']} | {j['job_title'][:30]} | {j['location']} | {j['match']} | {j['status']} | [Apply]({j['link']}) |\n"
-                        # Top3 analysis
-                        top3_txt = ""
-                        for j in verified[:3]:
-                            top3_txt += f"\n**{j['company']} — {j['job_title']} ({j['match']}/100)**\n- Vì sao phù hợp: {j['required_skills'] or 'AI Intern, khớp background ML/Cloud'}\n- Skill thiếu: Kubernetes/MLOps chuyên sâu (nếu chưa có)\n- CV hướng: nhấn Python + PyTorch + Docker + portfolio CV/LLM demo\n- Nên apply ngay: Có (VERIFIED còn mở)\n"
-                        summary = f"**TOP AI INTERN JOBS (VERIFIED {len(verified)}/{len(uniq)})**\n\n{tbl}\n{top3_txt}\n\nTổng đã tìm: {len(uniq)} | VERIFIED: {len(verified)} | UNCERTAIN: {len([a for a in audit if a['status']=='UNCERTAIN'])} | CLOSED: {len([a for a in audit if a['status']=='CLOSED'])}\nTOP 3 nên apply: {', '.join(v['company'] for v in verified[:3])}\nSkill bổ sung: Kubernetes, MLOps (MLflow), LLM/RAG, Docker K8s"
-                        await update.message.reply_text(summary[:4000], parse_mode=ParseMode.MARKDOWN)
-                        # Send email TOP5
-                        try:
-                            from integrations.google_client import gmail_send
-                            email_body = summary + "\n\n" + "\n".join(f"{j['company']} | {j['job_title']} | {j['link']} | Match {j['match']} | {j['evidence']}" for j in verified[:5])
-                            # check allowlist
-                            from packages.config.settings import get_settings
-                            allowed = get_settings().gmail_allowed_recipients or []
-                            if target_mail.lower() not in [a.lower() for a in allowed]:
-                                await update.message.reply_text(f"⚠️ {target_mail} chưa trong allowlist ({', '.join(allowed)}). Dùng /menu → ⚙️ Setup Mail → ➕ Thêm mail trước.")
-                            else:
-                                _res = gmail_send(to=target_mail, subject=f"[Business Ops] TOP {len(verified[:5])} AI Intern VERIFIED — {now[:10]}", body=email_body)
-                                if _res.get("mode") == "DRY_RUN":
-                                    await update.message.reply_text(f"⚠️ Gmail DRY_RUN, chưa gửi thật tới {target_mail}")
-                                else:
-                                    await update.message.reply_text(f"✅ Đã gửi báo cáo TOP {len(verified[:5])} VERIFIED về {target_mail} (id {_res.get('id')})")
-                        except Exception as _e:
-                            await update.message.reply_text(f"⚠️ Gửi mail lỗi: {_e}")
-                    except Exception as e2:
-                        await update.message.reply_text(f"❌ JobSearch lỗi: {e2}")
-                _aio.create_task(_do_jobsearch())
+                self._pending_jobsearch[chat_id] = {"target_mail": target_mail, "text": text}
+                from telegram import InlineKeyboardButton as _B2, InlineKeyboardMarkup as _M2
+                kb2 = _M2([
+                    [_B2("✅ Bắt đầu search 10 job", callback_data="jobsearch_confirm"), _B2("❌ Hủy", callback_data="jobsearch_cancel")],
+                ])
+                await update.message.reply_text(
+                    f"🔍 Đã nhận brief AI/ML Intern — sẽ search 10 job VERIFIED (ưu tiên TopCV/VietnamWorks/ITviec/LinkedIn), verify link Apply + chấm 0-100, rồi gửi báo cáo về *{target_mail}*.\n\nBạn có muốn bắt đầu ngay không?",
+                    parse_mode=ParseMode.MARKDOWN, reply_markup=kb2,
+                )
                 return
             except Exception as e:
                 await update.message.reply_text(f"❌ JobSearch lỗi: {e}")
