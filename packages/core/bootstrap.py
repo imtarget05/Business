@@ -30,11 +30,11 @@ from packages.core.orchestrator import Orchestrator
 from packages.core.persistence import NoopTaskStore, TaskStore
 from packages.core.policy import AllowAllPolicy, PolicyChecker
 from packages.core.reflection import ReflectionEngine
+from packages.core.knowledge_base import KnowledgeBase
 from packages.core.registry import InMemoryAgentRegistry
 from packages.core.router import RouterAgent
-from packages.database.repositories.documents import KnowledgeRepository
 from packages.database.session import get_session_factory
-from packages.llm.factory import get_embedding_provider, get_llm_provider
+from packages.llm.factory import get_llm_provider
 
 
 @dataclass
@@ -47,6 +47,7 @@ class AppContainer:
     audit: AuditService = None
     learning: LearningEngine = None
     reflection: ReflectionEngine = None
+    kb: KnowledgeBase | None = None
 
     def __post_init__(self) -> None:
         if self.task_store is None:
@@ -64,21 +65,12 @@ def build_container(
     s = settings or get_settings()
     registry = InMemoryAgentRegistry()
     llm = get_llm_provider(s)
-    embeddings = get_embedding_provider(s)
     session_factory = get_session_factory(s)
 
-    @asynccontextmanager
-    async def _knowledge_repo() -> AsyncIterator[KnowledgeRepository]:
-        async with session_factory() as session:
-            yield KnowledgeRepository(session)
+    # Full-text Second Brain: offline, no embedding model required.
+    kb = KnowledgeBase(session_factory)
 
-    knowledge_agent = create_knowledge_agent(
-        repository=None,  # resolved per-request (async session); see handle()
-        llm=llm,
-        embeddings=embeddings,
-        similarity_threshold=s.knowledge_similarity_threshold,
-        repo_factory=_knowledge_repo,
-    )
+    knowledge_agent = create_knowledge_agent(kb=kb, llm=llm)
     registry.register(knowledge_agent.descriptor, knowledge_agent)
     reporting_agent = create_reporting_agent(llm=llm)
     registry.register(reporting_agent.descriptor, reporting_agent)
@@ -182,6 +174,7 @@ def build_container(
         audit=audit_service,
         learning=learning_engine,
         reflection=reflection_engine,
+        kb=kb,
     )
 
 

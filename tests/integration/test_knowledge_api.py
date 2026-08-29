@@ -1,124 +1,104 @@
-"""Phase 2 Task 2.5 — /v1/knowledge/* API routes.
+"""Task 1 — /v1/knowledge/* API routes (full-text Second Brain).
 
-Uses sqlite + aiosqlite with tables created directly; the app's global
-session factory is pointed at the test database via Settings override.
+Uses a minimal app containing only the knowledge router. The global container
+is replaced with an in-memory fake wired to an SQLite KnowledgeBase and a
+scripted MockLLM, so the test runs fully offline with no network.
 """
 
 from __future__ import annotations
 
 import asyncio
-import uuid as _uuid
 
 import pytest
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
-from sqlalchemy.ext.asyncio import create_async_engine
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
-import packages.database.session as session_mod
-import packages.config.settings as settings_mod
-from apps.api.main import create_app
-from packages.config.settings import Settings, LLMProviderKind
-from packages.database import models
-from packages.database.base import Base
-from packages.database.session import get_session_factory
+import packages.core.bootstrap as bootstrap_mod
+from agents.knowledge.agent import KnowledgeAgent
+from packages.contracts.enums import Domain
+from packages.contracts.models import AgentDescriptor
+from packages.core.knowledge_base import KnowledgeBase
+from packages.llm.mock import MockLLMProvider
 
 
-@ pytest.fixture()
-def client(tmp_path, monkeypatch):
-    # Fresh module state per test: point the global engine at a temp sqlite db.
-    monkeypatch.setattr(session_mod, "_engine", None)
-    monkeypatch.setattr(session_mod, "_session_factory", None)
-
-    url = f"sqlite+aiosqlite:///{(tmp_path / 'k.db').as_posix()}"
-    # Provide legacy tenant_api_keys for backward compatibility
-    get_session_factory(
-        Settings(
-            database_url=url,
-            llm_provider=LLMProviderKind.MOCK,
-            tenant_api_keys={
-                "tenant-key-a": "00000000-0000-0000-0000-000000000001",
-            },
+class _FakeRegistry:
+    def __init__(self, handler: KnowledgeAgent) -> None:
+        self._handler = handler
+        self._descriptor = AgentDescriptor(
+            name="knowledge",
+            domain=Domain.KNOWLEDGE,
+            version="1",
+            capabilities=frozenset({"knowledge.query"}),
         )
+
+    def get_by_capability(self, capability: str):
+        return self._descriptor, self._handler
+
+
+class _FakeContainer:
+    def __init__(self, kb: KnowledgeBase, llm: MockLLMProvider) -> None:
+        self.kb = kb
+        self.llm = llm
+        self.registry = _FakeRegistry(KnowledgeAgent(kb=kb, llm=llm, top_k=3))
+
+
+@pytest.fixture()
+def client(tmp_path, monkeypatch):
+    engine = create_async_engine(f"sqlite+aiosqlite:///{(tmp_path / 'kb.db').as_posix()}")
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    kb = KnowledgeBase(factory)
+    asyncio.run(kb.init())
+
+    doc = tmp_path / "policy.md"
+    doc.write_text(
+        "Our refunds policy: customers may request refunds within 14 days.",
+        encoding="utf-8",
     )
+    asyncio.run(kb.add_document(doc))
 
-    # Point the cached settings singleton at our test configuration
-    live = settings_mod.get_settings()
-    monkeypatch.setattr(live, "database_url", url)
-    monkeypatch.setattr(live, "llm_provider", LLMProviderKind.MOCK)
-    monkeypatch.setattr(live, "tenant_api_keys", {
-        "tenant-key-a": "00000000-0000-0000-0000-000000000001",
-    })
-    monkeypatch.setattr(live, "rate_limit_per_minute", 1000)
-
-    async def _setup() -> None:
-        eng = create_async_engine(url)
-        async with eng.begin() as conn:
-            await conn.run_sync(Base.metadata.create_all)
-            await conn.execute(
-                models.Organization.__table__.insert().values(
-                    id=_uuid.UUID("00000000-0000-0000-0000-000000000001"),
-                    name="Pilot Org",
-                    slug="pilot",
-                )
-            )
-        await eng.dispose()
-
-    asyncio.run(_setup())
-    yield TestClient(create_app())
-    session_mod._engine = None
-    session_mod._session_factory = None
-
-
-def test_ingest_query_delete_roundtrip(client) -> None:
-    resp = client.post(
-        "/v1/knowledge/ingest",
-        json={
-            "title": "Refunds",
-            "content": "We process refunds within 14 days of purchase. "
-            "Shipping takes 3-5 business days.",
-        },
-        headers={"X-API-Key": "tenant-key-a"},
+    llm = MockLLMProvider(
+        scripted=[{"answer": "Refunds within 14 days.", "confidence": 0.9}]
     )
+    container = _FakeContainer(kb, llm)
+    monkeypatch.setattr(bootstrap_mod, "get_container", lambda: container)
+
+    import apps.api.routes.knowledge as kb_routes
+
+    async def _noop_session():
+        yield None
+
+    monkeypatch.setattr(kb_routes, "get_session", _noop_session)
+
+    kb_dir = tmp_path / "kb"
+    kb_dir.mkdir()
+    (kb_dir / "faq.md").write_text("Shipping takes 3-5 business days.", encoding="utf-8")
+    monkeypatch.setattr(kb_routes, "KB_DIR", kb_dir)
+
+    app = FastAPI()
+    app.include_router(kb_routes.router)
+    with TestClient(app) as c:
+        yield c
+    asyncio.run(engine.dispose())
+
+
+def test_index_endpoint(client) -> None:
+    resp = client.post("/v1/knowledge/index")
     assert resp.status_code == 200, resp.text
     data = resp.json()
-    assert data["chunk_count"] >= 1
-    doc_id = data["document_id"]
+    assert data["indexed"] >= 1
+    assert "source" in data
 
-    listing = client.get(
-        "/v1/knowledge/documents", headers={"X-API-Key": "tenant-key-a"}
-    ).json()
-    assert any(d["id"] == doc_id for d in listing["documents"])
 
-    q = client.post(
-        "/v1/knowledge/query",
-        json={"question": "refunds within 14 days"},
-        headers={"X-API-Key": "tenant-key-a"},
-    )
-    assert q.status_code == 200, q.text
-    body = q.json()
+def test_query_endpoint_returns_answer(client) -> None:
+    resp = client.post("/v1/knowledge/query", json={"question": "refund policy"})
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
     assert body["answer"]
     assert isinstance(body["citations"], list)
-
-    d = client.delete(
-        f"/v1/knowledge/documents/{doc_id}", headers={"X-API-Key": "tenant-key-a"}
-    )
-    assert d.status_code == 200, d.text
-    assert d.json()["deleted"] is True
-
-    d2 = client.delete(
-        f"/v1/knowledge/documents/{doc_id}", headers={"X-API-Key": "tenant-key-a"}
-    )
-    assert d2.status_code == 404
+    assert body["refused_to_answer"] is False
 
 
-def test_ingest_uses_default_org(client) -> None:
-    resp = client.post(
-        "/v1/knowledge/ingest", json={"title": "x", "content": "y"}, headers={"X-API-Key": "tenant-key-a"}
-    )
-    assert resp.status_code == 200
-
-
-def test_validation_empty_content(client) -> None:
-    resp = client.post(
-        "/v1/knowledge/ingest", json={"title": "x", "content": ""}, headers={"X-API-Key": "tenant-key-a"}
-    )
+def test_query_endpoint_empty_question(client) -> None:
+    resp = client.post("/v1/knowledge/query", json={"question": ""})
     assert resp.status_code == 422

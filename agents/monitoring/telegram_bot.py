@@ -153,6 +153,7 @@ class MonitoringBot:
         self.app.add_handler(CommandHandler("health", self._health_command))
         self.app.add_handler(CommandHandler("report", self._report_command))
         self.app.add_handler(CommandHandler("research", self._research_command))
+        self.app.add_handler(CommandHandler("kb", self._kb_command))
         self.app.add_handler(CommandHandler("help", self._help_command))
         
         # Callback query handler for inline menu
@@ -311,6 +312,60 @@ class MonitoringBot:
         except Exception as e:
             await update.message.reply_text(f"❌ Research error: {str(e)}")
     
+    async def _kb_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Handle /kb <câu hỏi> — query the Second Brain knowledge base."""
+        from agents.knowledge.agent import NO_INFO_ANSWER
+        from packages.contracts.enums import Domain
+        from packages.contracts.models import TaskContext, TaskRequest
+        import uuid as _uuid
+
+        question = " ".join(context.args) if context.args else ""
+        if not question:
+            await update.message.reply_text(
+                "*Usage:* `/kb <câu hỏi>`\n\n"
+                "Ví dụ: `/kb chính sách hoàn tiền là gì?`",
+                parse_mode=ParseMode.MARKDOWN,
+            )
+            return
+
+        await update.message.reply_text(
+            f"🧠 Đang tìm trong Knowledge Base: *{question}*",
+            parse_mode=ParseMode.MARKDOWN,
+        )
+        try:
+            from packages.core.bootstrap import get_container
+
+            ctn = get_container()
+            req = TaskRequest(
+                task_id=_uuid.uuid4(),
+                domain=Domain.KNOWLEDGE,
+                action="query",
+                payload={"question": question},
+                context=TaskContext(
+                    organization_id=_uuid.UUID("00000000-0000-0000-0000-000000000001"),
+                    channel="telegram",
+                ),
+            )
+            desc, handler = ctn.registry.get_by_capability("knowledge.query")
+            resp = await handler.handle(req)
+            if resp.status.value == "success":
+                ans = resp.result.get("answer", "")
+                if ans == NO_INFO_ANSWER:
+                    await update.message.reply_text(
+                        "🤔 Không tìm thấy thông tin liên quan trong Knowledge Base.",
+                        parse_mode=ParseMode.MARKDOWN,
+                    )
+                else:
+                    text = f"🧠 *Knowledge Base*\n\n{ans}"
+                    if len(text) > 4000:
+                        text = text[:3900] + "\n*... (đã rút gọn) ...*"
+                    await update.message.reply_text(text, parse_mode=ParseMode.MARKDOWN)
+            else:
+                msg = resp.error.message if resp.error else "unknown"
+                await update.message.reply_text(f"❌ Lỗi: {msg}")
+        except Exception as e:
+            await update.message.reply_text(f"❌ Lỗi KB: {e}")
+    
     async def _help_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Handle /help command."""
         help_text = (
@@ -323,6 +378,7 @@ class MonitoringBot:
             "🎥 *YouTube* — Hỏi 'tìm video ...'\n"
             "🧠 *Context* — 'tóm tắt context'\n"
             "📦 *Supply Chain* — 'check inventory'\n"
+            "🧠 *Knowledge* — '/kb <câu hỏi>' (Second Brain)\n"
             "📋 *`/menu`* — Mở menu chính\n\n"
             "⏰ *Scheduled:* Health 30p | Report 09:00 | 🚨 Alert khi DOWN"
         )
@@ -339,8 +395,9 @@ class MonitoringBot:
             [InlineKeyboardButton("🔍 Nghiên cứu", callback_data="research"), InlineKeyboardButton("📧 Gmail", callback_data="gmail")],
             [InlineKeyboardButton("📅 Calendar", callback_data="calendar"), InlineKeyboardButton("🎥 YouTube", callback_data="youtube")],
             [InlineKeyboardButton("🧠 Context", callback_data="context"), InlineKeyboardButton("📦 Supply", callback_data="supply")],
-            [InlineKeyboardButton("📤 Xuất", callback_data="export"), InlineKeyboardButton("🔄 Session mới", callback_data="new_session")],
-            [InlineKeyboardButton("⚙️ Setup Mail", callback_data="setup_mail"), InlineKeyboardButton("❓ Trợ giúp", callback_data="help")],
+            [InlineKeyboardButton("🧠 Knowledge", callback_data="kb"), InlineKeyboardButton("📤 Xuất", callback_data="export")],
+            [InlineKeyboardButton("🔄 Session mới", callback_data="new_session"), InlineKeyboardButton("⚙️ Setup Mail", callback_data="setup_mail")],
+            [InlineKeyboardButton("❓ Trợ giúp", callback_data="help")],
         ])
 
     async def _start_command(self, update, context):
@@ -439,7 +496,7 @@ class MonitoringBot:
                     md2 = r2.to_markdown()
                     # Gửi file export
                     import tempfile, pathlib as _pl2
-                    tf = pathlib.Path(tempfile.gettempdir()) / "export_report.md"
+                    tf = _pl2.Path(tempfile.gettempdir()) / "export_report.md"
                     tf.write_text(md2, encoding="utf-8")
                     await q.message.reply_document(document=open(tf, "rb"), filename="bao_cao.md", caption="📤 Xuất báo cáo")
                     await q.edit_message_text("✅ Đã xuất báo cáo (file đính kèm)", reply_markup=self._main_menu_keyboard())
@@ -458,6 +515,14 @@ class MonitoringBot:
                 await q.edit_message_text("Chọn chức năng:", reply_markup=self._main_menu_keyboard())
             elif d == "open_menu":
                 await q.edit_message_text("📋 *Menu chính* — chọn chức năng:", parse_mode=ParseMode.MARKDOWN, reply_markup=self._main_menu_keyboard())
+            elif d == "kb":
+                await q.edit_message_text(
+                    "🧠 *Knowledge Base (Second Brain)*\n"
+                    "Gõ: `/kb <câu hỏi>`\n"
+                    "VD: `/kb chính sách hoàn tiền là gì?`",
+                    parse_mode=ParseMode.MARKDOWN,
+                    reply_markup=self._main_menu_keyboard(),
+                )
             elif d == "help":
                 await self._help_command(q, context)
                 return

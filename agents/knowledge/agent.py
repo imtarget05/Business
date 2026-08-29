@@ -1,8 +1,11 @@
-"""Knowledge Agent — RAG answer loop (Phase 2 Task 2.4).
+"""Knowledge Agent — full-text Second Brain answer loop (Task 1).
 
-Flow: embed question -> retrieve above hard threshold -> if no context:
-return "no relevant information found" WITHOUT calling the LLM; else prompt
-the LLM with retrieved context and return answer + citations.
+Flow: retrieve top-k chunks from :class:`KnowledgeBase` (tsvector full-text,
+**no embeddings**) -> if no relevant chunk: return "no relevant information
+found" WITHOUT calling the LLM (hard rule: never answer without verified
+context) -> else synthesize a cited answer via the LLM (container LLM).
+
+Capability: ``knowledge.query``.
 """
 
 from __future__ import annotations
@@ -19,10 +22,10 @@ from packages.contracts.models import (
     ErrorDetail,
     TaskRequest,
 )
-from packages.database.repositories.documents import KnowledgeRepository
-from packages.llm.base import EmbeddingProvider, LLMProvider
+from packages.core.knowledge_base import KnowledgeBase
+from packages.llm.base import LLMProvider
 
-DEFAULT_SIMILARITY_THRESHOLD = 0.75
+DEFAULT_TOP_K = 5
 NO_INFO_ANSWER = "no relevant information found"
 
 
@@ -35,66 +38,29 @@ class KnowledgeAgent:
     def __init__(
         self,
         *,
-        repository: KnowledgeRepository | None = None,
+        kb: KnowledgeBase | None = None,
         llm: LLMProvider | None = None,
-        embeddings: EmbeddingProvider | None = None,
         descriptor: AgentDescriptor | None = None,
-        similarity_threshold: float = DEFAULT_SIMILARITY_THRESHOLD,
-        repo_factory=None,
+        top_k: int = DEFAULT_TOP_K,
     ) -> None:
         self.descriptor = descriptor or AgentDescriptor(
             name="knowledge",
             domain=Domain.KNOWLEDGE,
             version="1",
-            description="Answers questions from the internal knowledge base "
-            "with citations; refuses to guess without relevant context.",
-            capabilities=frozenset(
-                {"knowledge.query", "knowledge.summarize", "knowledge.delete"}
+            description=(
+                "Answers questions from the internal knowledge base (Second Brain) "
+                "using full-text retrieval + LLM synthesis; refuses to guess "
+                "without relevant context."
             ),
+            capabilities=frozenset({"knowledge.query"}),
         )
-        self._repo = repository
+        self._kb = kb
         self._llm = llm
-        self._embeddings = embeddings
-        self._threshold = similarity_threshold
-        self._repo_factory = repo_factory
-
-    async def _get_repo(self) -> tuple[KnowledgeRepository | None, Any]:
-        """Return (repo, ctx). ``ctx`` is an async context manager to exit when
-        the repo was created per-request from the repo factory (session cleanup).
-        """
-        if self._repo is not None:
-            return self._repo, None
-        if self._repo_factory is not None:
-            candidate = self._repo_factory()
-            if hasattr(candidate, "__aenter__"):
-                # Async context manager (e.g. session-scoped repo): enter now,
-                # caller must __aexit__ it in finally.
-                return await candidate.__aenter__(), candidate
-            return await candidate, None
-        return None, None
+        self._top_k = top_k
 
     async def handle(self, request: TaskRequest) -> AgentResponse:
         question = str(request.payload.get("question", "")).strip()
-        try:
-            return await self._handle(request, question)
-        finally:
-            pass
-
-    async def _handle(self, request: TaskRequest, question: str) -> AgentResponse:
-        repo, repo_ctx = (
-            await self._get_repo() if question else (None, None)
-        )
-        if repo_ctx is not None:
-            try:
-                return await self._handle_with_repo(request, question, repo)
-            finally:
-                await repo_ctx.__aexit__(None, None, None)
-        return await self._handle_with_repo(request, question, repo)
-
-    async def _handle_with_repo(
-        self, request: TaskRequest, question: str, repo: KnowledgeRepository | None
-    ) -> AgentResponse:
-        if not question or repo is None or self._llm is None:
+        if not question:
             return AgentResponse(
                 task_id=request.task_id,
                 agent=self.descriptor.qualified_name,
@@ -105,54 +71,39 @@ class KnowledgeAgent:
                 ),
             )
 
-        org_id = request.context.organization_id
-        if org_id is None:
+        if self._kb is None or self._llm is None:
             return AgentResponse(
                 task_id=request.task_id,
                 agent=self.descriptor.qualified_name,
                 status=AgentResponseStatus.REJECTED,
                 error=ErrorDetail(
-                    code="VALIDATION_ERROR",
-                    message="context.organization_id is required for knowledge.query",
+                    code="CONFIGURATION_ERROR",
+                    message="knowledge base / llm not configured for knowledge.query",
                 ),
             )
-        query_vec = None
-        if self._embeddings is not None:
-            query_vec = (await self._embeddings.embed([question]))[0]
-        try:
-            hits = await repo.search(
-                organization_id=org_id,
-                query=question,
-                top_k=4,
-                threshold=self._threshold,
-                query_embedding=query_vec,
-            )
-        except Exception:
-            # Retrieval backend unavailable: refuse to guess instead of failing
-            # the whole task (hard rule: never answer without verified context).
-            hits = []
 
-        if not hits:
-            # HARD RULE: never let the LLM answer from weak/no context.
+        chunks = await self._kb.query(question, k=self._top_k)
+
+        # HARD RULE: never let the LLM answer from weak/no context.
+        if not chunks:
             return AgentResponse(
                 task_id=request.task_id,
                 agent=self.descriptor.qualified_name,
                 status=AgentResponseStatus.SUCCESS,
                 result={"answer": NO_INFO_ANSWER, "confidence": 0.0},
                 citations=[],
-                metadata={"retrieval": "below_threshold"},
+                metadata={"retrieval": "no_match"},
             )
 
-        context_blocks = []
+        context_blocks: list[str] = []
         citations: list[Citation] = []
-        for i, (chunk, _score) in enumerate(hits, start=1):
-            doc_title = chunk.document.title if chunk.document else "document"
-            context_blocks.append(f"[{i}] {doc_title}: {chunk.content}")
+        for i, chunk in enumerate(chunks, start=1):
+            context_blocks.append(f"[{i}] {chunk}")
             citations.append(
                 Citation(
-                    source_id=str(chunk.document_id),
-                    title=doc_title,
-                    snippet=chunk.content[:200],
+                    source_id=f"kb-chunk-{i}",
+                    title="Knowledge Base",
+                    snippet=chunk[:200],
                 )
             )
         context_text = "\n\n".join(context_blocks)
@@ -161,7 +112,9 @@ class KnowledgeAgent:
             _build_prompt(question),
             schema=_AnswerOut,
             system=(
-                "Answer ONLY from the provided context. Cite blocks as [n].\n\n"
+                "Answer ONLY from the provided context. Cite the supporting "
+                "blocks as [n]. If the context does not contain the answer, say "
+                "so. Be concise.\n\n"
                 f"CONTEXT:\n{context_text}"
             ),
         )
@@ -173,8 +126,8 @@ class KnowledgeAgent:
             status=AgentResponseStatus.SUCCESS,
             result={"answer": raw.answer, "confidence": raw.confidence},
             citations=citations,
-            confidence=max(raw.confidence, min(s for _, s in hits)),
-            metadata={"retrieval_hits": len(hits)},
+            confidence=raw.confidence,
+            metadata={"retrieval_hits": len(chunks)},
         )
 
 
@@ -183,13 +136,19 @@ def _build_prompt(question: str) -> str:
 
 
 # Backwards-compatible factory used by bootstrap/scripts.
-def create_knowledge_agent(**kwargs: Any) -> KnowledgeAgent:
-    return KnowledgeAgent(**kwargs)
+def create_knowledge_agent(
+    *,
+    kb: KnowledgeBase | None = None,
+    llm: LLMProvider | None = None,
+    top_k: int = DEFAULT_TOP_K,
+    **kwargs: Any,
+) -> KnowledgeAgent:
+    return KnowledgeAgent(kb=kb, llm=llm, top_k=top_k)
 
 
 __all__ = [
     "KnowledgeAgent",
     "create_knowledge_agent",
     "NO_INFO_ANSWER",
-    "DEFAULT_SIMILARITY_THRESHOLD",
+    "DEFAULT_TOP_K",
 ]
