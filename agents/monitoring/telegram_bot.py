@@ -154,6 +154,7 @@ class MonitoringBot:
         self.app.add_handler(CommandHandler("report", self._report_command))
         self.app.add_handler(CommandHandler("research", self._research_command))
         self.app.add_handler(CommandHandler("kb", self._kb_command))
+        self.app.add_handler(CommandHandler("ops", self._ops_command))
         self.app.add_handler(CommandHandler("help", self._help_command))
         
         # Callback query handler for inline menu
@@ -312,6 +313,48 @@ class MonitoringBot:
         except Exception as e:
             await update.message.reply_text(f"❌ Research error: {str(e)}")
     
+    async def _ops_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Handle /ops — Business Ops Hub daily digest (Task 2)."""
+        await update.message.reply_text(
+            "📥 Đang tổng hợp Business Ops Hub (Gmail chưa đọc + Calendar + tasks)...",
+            parse_mode=ParseMode.MARKDOWN,
+        )
+        try:
+            from agents.monitoring.scheduler import _format_ops_digest
+
+            digest_dict = await self._dispatch_ops_digest()
+            text = _format_ops_digest(digest_dict)
+            if len(text) > 4000:
+                text = text[:3900] + "\n*... (đã rút gọn) ...*"
+            await update.message.reply_text(text, parse_mode=ParseMode.MARKDOWN)
+        except Exception as e:
+            await update.message.reply_text(f"❌ Lỗi Ops Hub: {e}")
+
+    async def _dispatch_ops_digest(self) -> dict:
+        """Build the ops.digest result dict via the registry (shared with scheduler)."""
+        from packages.core.bootstrap import get_container
+        from packages.contracts.enums import Domain
+        from packages.contracts.models import TaskContext, TaskRequest
+        import uuid as _uuid
+
+        ctn = get_container()
+        desc, handler = ctn.registry.get_by_capability("ops.digest")
+        resp = await handler.handle(
+            TaskRequest(
+                task_id=_uuid.uuid4(),
+                domain=Domain.OPS,
+                action="digest",
+                payload={},
+                context=TaskContext(
+                    organization_id=_uuid.UUID("00000000-0000-0000-0000-000000000001"),
+                    channel="telegram",
+                ),
+            )
+        )
+        if resp.status.value != "success" or not resp.result:
+            raise RuntimeError(resp.error.message if resp.error else "ops.digest thất bại")
+        return resp.result
+
     async def _kb_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Handle /kb <câu hỏi> — query the Second Brain knowledge base."""
         from agents.knowledge.agent import NO_INFO_ANSWER
@@ -379,7 +422,8 @@ class MonitoringBot:
             "🧠 *Context* — 'tóm tắt context'\n"
             "📦 *Supply Chain* — 'check inventory'\n"
             "🧠 *Knowledge* — '/kb <câu hỏi>' (Second Brain)\n"
-            "📋 *`/menu`* — Mở menu chính\n\n"
+            "📥 *Ops Hub* — '/ops' (tổng hợp Gmail+Calendar+tasks)\n"
+            "📋 *`/menu`* — Mở menu chính\n"
             "⏰ *Scheduled:* Health 30p | Report 09:00 | 🚨 Alert khi DOWN"
         )
         # support callback query too
@@ -396,7 +440,7 @@ class MonitoringBot:
             [InlineKeyboardButton("📅 Calendar", callback_data="calendar"), InlineKeyboardButton("🎥 YouTube", callback_data="youtube")],
             [InlineKeyboardButton("🧠 Context", callback_data="context"), InlineKeyboardButton("📦 Supply", callback_data="supply")],
             [InlineKeyboardButton("🧠 Knowledge", callback_data="kb"), InlineKeyboardButton("📤 Xuất", callback_data="export")],
-            [InlineKeyboardButton("🔄 Session mới", callback_data="new_session"), InlineKeyboardButton("⚙️ Setup Mail", callback_data="setup_mail")],
+            [InlineKeyboardButton("📥 Ops Hub", callback_data="ops"), InlineKeyboardButton("❓ Trợ giúp", callback_data="help")],
             [InlineKeyboardButton("❓ Trợ giúp", callback_data="help")],
         ])
 

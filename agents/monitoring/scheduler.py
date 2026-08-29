@@ -20,6 +20,8 @@ from apscheduler.triggers.interval import IntervalTrigger
 
 from agents.monitoring.health_check import run_health_check
 from agents.monitoring.progress_report import generate_daily_report
+from agents.ops_hub import build_task_provider, create_ops_hub_agent
+from packages.contracts.enums import AgentResponseStatus, Domain
 
 logger = logging.getLogger(__name__)
 
@@ -94,10 +96,20 @@ class MonitoringScheduler:
             replace_existing=True,
         )
 
+        # Business Ops Hub daily digest (Task 2) — 08:00 local time.
+        self.scheduler.add_job(
+            self._run_ops_hub_job,
+            CronTrigger(hour=8, minute=0),
+            id="ops_hub_daily",
+            name="Business Ops Hub daily digest",
+            replace_existing=True,
+        )
+
         logger.info(
             f"Scheduler initialized: health every {self.config.health_check_interval_minutes}m, "
             f"daily report at {self.config.daily_report_time.strftime('%H:%M')}, "
-            f"learning at {learning_hour:02d}:00"
+            f"learning at {learning_hour:02d}:00, "
+            f"ops hub digest at 08:00"
         )
     
     async def start(self) -> None:
@@ -194,6 +206,77 @@ class MonitoringScheduler:
                     logger.info(f"Daily report generated: {report.summary_text}")
         except Exception as e:
             logger.error(f"Daily report job error: {e}")
+
+    async def _run_ops_hub_job(self) -> None:
+        """Execute the daily Business Ops Hub digest job (Task 2).
+
+        Builds the digest via the registry's ``ops.digest`` capability and
+        pushes it to Telegram (if configured). Degrades gracefully on error.
+        """
+        try:
+            from packages.core.bootstrap import get_container
+
+            ctn = get_container()
+            desc, handler = ctn.registry.get_by_capability("ops.digest")
+            import uuid as _uuid
+            from packages.contracts.models import TaskContext, TaskRequest
+
+            resp = await handler.handle(
+                TaskRequest(
+                    task_id=_uuid.uuid4(),
+                    domain=Domain.OPS,
+                    action="digest",
+                    payload={},
+                    context=TaskContext(
+                        organization_id=_uuid.UUID("00000000-0000-0000-0000-000000000001"),
+                        channel="scheduler",
+                    ),
+                )
+            )
+            if resp.status != AgentResponseStatus.SUCCESS or not resp.result:
+                logger.warning("ops.digest returned %s — skip push", resp.status)
+                return
+            digest_dict = resp.result
+            text = _format_ops_digest(digest_dict)
+            if self._telegram_bot and hasattr(self._telegram_bot, "send_message"):
+                try:
+                    await self._telegram_bot.send_message(text)
+                    logger.info("Ops Hub daily digest sent to Telegram")
+                except Exception:  # noqa: BLE001
+                    pass
+            else:
+                logger.info("Ops Hub digest (no Telegram): %s", text[:200])
+        except Exception as e:
+            logger.error(f"Ops Hub job error: {e}")
+
+
+def _format_ops_digest(digest: dict[str, Any]) -> str:
+    """Render an ``ops.digest`` result dict into a compact Telegram message."""
+    summary = digest.get("summary", "")
+    counts = digest.get("counts", {})
+    alerts = digest.get("alerts", [])
+    items = digest.get("items", [])
+    lines = ["*📥 Business Ops Hub — Daily Digest*", ""]
+    if summary:
+        lines.append(summary)
+        lines.append("")
+    lines.append(
+        f"📧 Chưa đọc: {counts.get('emails_unread', 0)} | "
+        f"📅 Sự kiện: {counts.get('events_upcoming', 0)} | "
+        f"✅ Công việc: {counts.get('tasks_open', 0)}"
+    )
+    if alerts:
+        lines.append("")
+        lines.append("*🚨 Cần làm ngay:*")
+        for a in alerts[:10]:
+            lines.append(f"• {a.get('detail') or a.get('title')}")
+    if items:
+        lines.append("")
+        lines.append("*📋 Chi tiết:*")
+        for it in items[:15]:
+            icon = {"email": "📧", "event": "📅", "task": "✅"}.get(it.get("kind"), "•")
+            lines.append(f"{icon} {it.get('title')} — {it.get('detail')}")
+    return "\n".join(lines)
 
 
 # ---------------------------------------------------------------------------

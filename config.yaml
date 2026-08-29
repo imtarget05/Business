@@ -52,6 +52,20 @@ monitoring:
     extract_char_limit: 5000
 
 # ------------------------------------------------------------------------------
+# Business Ops Hub (Task 2) — daily digest of Gmail + Calendar + Tasks
+# ------------------------------------------------------------------------------
+# Operational to-do items aggregated into the /ops digest + 08:00 scheduler job.
+# Real data only (never fabricated). Each task: title (required), due (ISO 8601,
+# optional), priority (low|normal|high, default normal), done (bool, default false).
+ops:
+  tasks:
+    - title: "Duyệt báo giá nhà cung cấp A"
+      priority: "high"
+    - title: "Gửi báo cáo tuần cho khách hàng"
+      due: "2026-08-30T17:00:00"
+      priority: "normal"
+
+# ------------------------------------------------------------------------------
 # Supply Chain Agentic Pipeline (LangGraph)
 # ------------------------------------------------------------------------------
 supply_chain:

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from enum import StrEnum
 from functools import lru_cache
+from typing import Any
 
 from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -136,6 +137,11 @@ class Settings(BaseSettings):
     gmail_send_enabled: bool = False
     gmail_allowed_recipients: list[str] = []
 
+    # --- Business Ops Hub (Task 2) -------------------------------------------
+    # Operational to-do items aggregated into the daily ops.digest. Real data
+    # only — seeded from config/env, never fabricated by the agent.
+    ops_tasks: list[dict[str, Any]] = []
+
     @model_validator(mode="before")
     @classmethod
     def _sanitize_empty_env(cls, data: dict) -> dict:
@@ -154,7 +160,7 @@ class Settings(BaseSettings):
                 data[key] = {}
 
         # List fields
-        for key in ("email_recipient_allowlist", "gmail_allowed_recipients"):
+        for key in ("email_recipient_allowlist", "gmail_allowed_recipients", "ops_tasks"):
             val = data.get(key)
             if val == "":
                 data[key] = []

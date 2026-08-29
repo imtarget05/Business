@@ -10,6 +10,7 @@ from agents.calendar import create_calendar_agent
 from agents.context import create_context_agent
 from agents.gmail import create_gmail_agent
 from agents.knowledge import create_knowledge_agent
+from agents.ops_hub import create_ops_hub_agent
 from agents.reporting import create_reporting_agent
 from agents.research import create_research_agent
 from agents.root_cause import create_root_cause_agent
@@ -72,6 +73,17 @@ def build_container(
 
     knowledge_agent = create_knowledge_agent(kb=kb, llm=llm)
     registry.register(knowledge_agent.descriptor, knowledge_agent)
+
+    # Business Ops Hub (Task 2): aggregates Gmail unread + Calendar + tasks.
+    # Sources are injected; gmail/calendar default sources call the registry's
+    # existing agents, the task provider reads ops_tasks from settings (config/env).
+    from agents.ops_hub.tasks_provider import build_task_provider
+
+    ops_hub_agent = create_ops_hub_agent(
+        task_provider=build_task_provider(s),
+        llm=llm,
+    )
+    registry.register(ops_hub_agent.descriptor, ops_hub_agent)
     reporting_agent = create_reporting_agent(llm=llm)
     registry.register(reporting_agent.descriptor, reporting_agent)
     support_agent = create_support_agent(llm=llm)
