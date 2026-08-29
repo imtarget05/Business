@@ -1,0 +1,29 @@
+{
+  "currency": "VND",
+  "currency_symbol": "₫",
+  "packages": {
+    "launch_impact": {
+      "label": "Launch Impact",
+      "price": 180000000,
+      "scope": "Chiến dịch ra mắt thương hiệu: định vị, content mẫu, 1 landing page, 3 video ngắn, báo cáo đo lường 30 ngày.",
+      "timeline": "20/08 - 15/10 (8 tuần)",
+      "support_duration": "30 ngày sau bàn giao"
+    },
+    "growth_boost": {
+      "label": "Growth Boost",
+      "price": 120000000,
+      "scope": "Tối ưu kênh hiện tại: audit, 2 tháng vận hành quảng cáo, A/B test, báo cáo tuần.",
+      "timeline": "4 tuần (có thể gia hạn)",
+      "support_duration": "14 ngày sau bàn gọi"
+    },
+    "starter": {
+      "label": "Starter",
+      "price": 45000000,
+      "scope": "Gói cơ bản: 1 bộ nhận diện social, 10 bài content, 1 tư vấn chiến lược.",
+      "timeline": "2 tuần",
+      "support_duration": "7 ngày sau bàn giao"
+    }
+  },
+  "default_package": "launch_impact",
+  "validity_days": 14
+}

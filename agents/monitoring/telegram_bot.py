@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Callable, Optional
@@ -156,6 +157,7 @@ class MonitoringBot:
         self.app.add_handler(CommandHandler("kb", self._kb_command))
         self.app.add_handler(CommandHandler("ops", self._ops_command))
         self.app.add_handler(CommandHandler("advisory", self._advisory_command))
+        self.app.add_handler(CommandHandler("sales", self._sales_command))
         self.app.add_handler(CommandHandler("help", self._help_command))
         
         # Callback query handler for inline menu
@@ -431,6 +433,113 @@ class MonitoringBot:
         except Exception as e:
             await update.message.reply_text(f"❌ Lỗi Advisory: {e}")
 
+    async def _sales_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Handle /sales <email_text|email_id> — Email-to-Proposal Automation (Task 4).
+
+        Usage:
+            /sales <email_text>        — dán nội dung email khách
+            /sales <email_id>          — truy xuất từ Gmail (nếu có), fallback dán text
+
+        Generates a branded proposal + pricing, renders a PDF (reportlab,
+        offline) and sends it back as a Telegram document, plus a follow-up
+        email draft summary.
+        """
+        from packages.contracts.enums import Domain
+        from packages.contracts.models import TaskContext, TaskRequest
+        import uuid as _uuid
+
+        raw = " ".join(context.args) if context.args else ""
+        if not raw.strip():
+            await update.message.reply_text(
+                "*Usage:* `/sales <email_text>` hoặc `/sales <email_id>`\n\n"
+                "VD: `/sales Chào bạn, mình cần báo giá gói Launch Impact ra mắt thương hiệu`",
+                parse_mode=ParseMode.MARKDOWN,
+            )
+            return
+
+        await update.message.reply_text(
+            "📨 Đang xử lý email khách → soạn đề xuất + PDF branding...",
+            parse_mode=ParseMode.MARKDOWN,
+        )
+        try:
+            from packages.core.bootstrap import get_container
+
+            ctn = get_container()
+            # If it looks like a Gmail message id, try to resolve the body first.
+            email_text = raw
+            if re.match(r"^[a-zA-Z0-9_-]{6,}$", raw.strip()) and "@" not in raw:
+                try:
+                    desc_g, handler_g = ctn.registry.get_by_capability("gmail.search")
+                    gresp = await handler_g.handle(
+                        TaskRequest(
+                            task_id=_uuid.uuid4(),
+                            domain=Domain.GMAIL,
+                            action="search",
+                            payload={"query": raw.strip(), "max_results": 1},
+                            context=TaskContext(
+                                organization_id=_uuid.UUID("00000000-0000-0000-0000-000000000001"),
+                                channel="telegram",
+                            ),
+                        )
+                    )
+                    if gresp.status.value == "success" and gresp.result and gresp.result.get("messages"):
+                        # Use the id as a placeholder body if we cannot fetch full text.
+                        email_text = f"[Gmail message id: {raw.strip()}]"
+                except Exception:
+                    pass  # fall back to treating raw as email text
+
+            req = TaskRequest(
+                task_id=_uuid.uuid4(),
+                domain=Domain.SALES,
+                action="process_email",
+                payload={"email_text": email_text},
+                context=TaskContext(
+                    organization_id=_uuid.UUID("00000000-0000-0000-0000-000000000001"),
+                    channel="telegram",
+                ),
+            )
+            desc, handler = ctn.registry.get_by_capability("sales.process_email")
+            resp = await handler.handle(req)
+            if resp.status.value != "success" or not resp.result:
+                msg = resp.error.message if resp.error else "sales.process_email thất bại"
+                await update.message.reply_text(f"❌ Lỗi Sales: {msg}")
+                return
+
+            result = resp.result
+            intent = result.get("intent", "other")
+            client = result.get("client", "Quý khách hàng")
+            proposal_name = result.get("proposal_name", "")
+            price = result.get("price", 0)
+            currency = result.get("currency", "VND")
+            follow = result.get("follow_up", {}) or {}
+            pdf_bytes = result.get("pdf_bytes") or b""
+
+            summary = (
+                f"📨 *Email-to-Proposal* ({intent})\n\n"
+                f"👤 Khách: *{client}*\n"
+                f"📦 Gói: *{proposal_name}*\n"
+                f"💰 Báo giá: *{price:,.0f} {currency}*\n"
+                f"📧 Follow-up: _{follow.get('subject', '')}_\n\n"
+                f"📎 Đính kèm file PDF đề xuất bên dưới."
+            )
+            if len(summary) > 4000:
+                summary = summary[:3900] + "\n*... (đã rút gọn) ...*"
+            await update.message.reply_text(summary, parse_mode=ParseMode.MARKDOWN)
+
+            if pdf_bytes:
+                import io as _io
+
+                fname = f"proposal_{proposal_name or 'client'}.pdf".replace(" ", "_")
+                await update.message.reply_document(
+                    document=_io.BytesIO(pdf_bytes),
+                    filename=fname,
+                    caption=f"📑 Đề xuất {proposal_name} — {client}",
+                )
+            else:
+                await update.message.reply_text("⚠️ Không sinh được PDF (rỗng).")
+        except Exception as e:
+            await update.message.reply_text(f"❌ Lỗi Sales: {e}")
+
     async def _kb_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Handle /kb <câu hỏi> — query the Second Brain knowledge base."""
         from agents.knowledge.agent import NO_INFO_ANSWER
@@ -498,6 +607,7 @@ class MonitoringBot:
             "🧠 *Context* — 'tóm tắt context'\n"
             "📦 *Supply Chain* — 'check inventory'\n"
             "🧠 *Knowledge* — '/kb <câu hỏi>' (Second Brain)\n"
+            "📨 *Sales* — '/sales <email khách>' (soạn đề xuất + PDF)\n"
             "📥 *Ops Hub* — '/ops' (tổng hợp Gmail+Calendar+tasks)\n"
             "📋 *`/menu`* — Mở menu chính\n"
             "⏰ *Scheduled:* Health 30p | Report 09:00 | 🚨 Alert khi DOWN"
@@ -1153,6 +1263,19 @@ class MonitoringBot:
             from packages.core.personas import select_persona as _sel_persona
             if _sel_persona(text):
                 await self._advisory_command(
+                    update,
+                    type("__Ctx", (), {"args": text.split()})(),
+                )
+                return
+        except Exception:
+            pass
+        # 2d) Sales email-to-proposal: if the free-text message carries a sales
+        # intent keyword (báo giá / proposal / quote / email khách), route to the
+        # sales.process_email capability instead of the generic chat path (Task 4).
+        try:
+            _sales_kw = ("báo giá", "bao gia", "quote", "proposal", "đề xuất", "de xuat", "chào giá", "chao gia", "email khách", "báo gia")
+            if any(k in low for k in _sales_kw):
+                await self._sales_command(
                     update,
                     type("__Ctx", (), {"args": text.split()})(),
                 )

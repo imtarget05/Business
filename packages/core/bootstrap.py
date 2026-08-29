@@ -15,6 +15,7 @@ from agents.ops_hub import create_ops_hub_agent
 from agents.reporting import create_reporting_agent
 from agents.research import create_research_agent
 from agents.root_cause import create_root_cause_agent
+from agents.sales import create_sales_agent
 from agents.supply_chain import (
     create_inventory_monitor,
     create_supply_chain_agents,
@@ -79,6 +80,11 @@ def build_container(
     # over the shared LLM. Auto-detects persona from question text.
     advisory_agent = create_advisory_agent(llm=llm)
     registry.register(advisory_agent.descriptor, advisory_agent)
+
+    # Email-to-Proposal Automation (Task 4): email -> proposal + PDF + follow-up.
+    # Deterministic offline pipeline (reportlab); LLM optional, not required.
+    sales_agent = create_sales_agent(llm=llm)
+    registry.register(sales_agent.descriptor, sales_agent)
 
     # Business Ops Hub (Task 2): aggregates Gmail unread + Calendar + tasks.
     # Sources are injected; gmail/calendar default sources call the registry's

@@ -1,0 +1,12 @@
+{
+  "company_name": "Mai Nguyen Binh Tan Studio",
+  "short_name": "MNT Studio",
+  "tagline": "Giúp thương hiệu Việt ra mắt và tăng trưởng với AI.",
+  "primary_color": "#1E88E5",
+  "accent_color": "#FFC107",
+  "text_color": "#212121",
+  "logo_path": "data/brand/logo.png",
+  "contact_email": "tanmainguyenbinh@gmail.com",
+  "contact_phone": "0397134170",
+  "website": "https://example.com"
+}
