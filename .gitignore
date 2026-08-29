@@ -36,6 +36,7 @@ secrets/
 # --- Agent tooling artifacts (plans/ledgers) ---
 .hermes/
 .superpowers/
+tools/
 
 # --- Runtime output files (root) ---
 pytest_out.txt
