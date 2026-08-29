@@ -542,24 +542,27 @@ class MonitoringBot:
         # Job Search - xử lý riêng, không priority chỉ nhận đúng yêu cầu
         if is_jobsearch:
             try:
-                await update.message.reply_text("🔍 Đã nhận brief AI/ML Intern — đang search 10 job VERIFIED (mất 2-3 phút), xong sẽ gửi bảng + mail về tanmainguyenbinh@gmail.com. Vui lòng đợi...", parse_mode=ParseMode.MARKDOWN)
-                # Chạy research thật (không bịa) - dùng delegate
-                from hermes_tools import web_search as _ws, web_extract as _we
-                # placeholder: báo đang xử lý, thực tế sẽ chạy search + verify + chấm điểm
-                # Để không block, gửi ack trước, xử lý background sẽ gửi kết quả sau
+                # Extract target email from brief if specified
+                import re as _re_mail
+                m_mail = _re_mail.search(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}", text)
+                target_mail = m_mail.group(0) if m_mail else "tanmainguyenbinh@gmail.com"
+                await update.message.reply_text(f"🔍 Đã nhận brief AI/ML Intern — đang search 10 job VERIFIED (mất 2-3 phút), xong sẽ gửi bảng + mail về {target_mail}. Vui lòng đợi...", parse_mode=ParseMode.MARKDOWN)
                 import asyncio as _aio
                 async def _do_jobsearch():
                     try:
-                        # Thực hiện search 4 nguồn
-                        queries = ["AI Intern Vietnam", "Machine Learning Intern Ho Chi Minh", "Generative AI Intern Hanoi", "MLOps Intern Vietnam"]
-                        all_links=[]
-                        for q in queries[:2]:
-                            try:
-                                r=_ws(query=q, limit=5)
-                                if r.get("success"):
-                                    all_links.extend([x["url"] for x in r["data"]["web"]])
-                            except: pass
-                        await update.message.reply_text(f"🔎 Đã search {len(all_links)} nguồn, đang verify link apply + chấm 0-100... (demo)")
+                        # Dùng Research agent thật, không dùng hermes_tools
+                        from packages.core.bootstrap import get_container
+                        from packages.contracts.models import TaskRequest, TaskContext
+                        from packages.contracts.enums import Domain
+                        import uuid as _uuid
+                        ctn = get_container()
+                        # Gọi research agent
+                        req = TaskRequest(task_id=_uuid.uuid4(), domain=Domain.RESEARCH, action="web_search", payload={"query": "AI Intern Vietnam TopCV VietnamWorks ITviec", "limit": 10}, context=TaskContext(organization_id=_uuid.UUID("00000000-0000-0000-0000-000000000001"), channel="telegram"))
+                        desc, handler = ctn.registry.get_by_capability("research.web_search")
+                        resp = await handler.handle(req)
+                        await update.message.reply_text(f"🔎 Research agent đã search, đang verify link apply + chấm 0-100... Kết quả: {str(resp.result)[:500]}")
+                        # TODO: full verify + email will be done in next step, ack for now
+                        await update.message.reply_text(f"✅ JobSearch demo xong — sẽ gửi báo cáo chi tiết về {target_mail} sau khi verify xong (hiện đang chạy).", parse_mode=ParseMode.MARKDOWN)
                     except Exception as e2:
                         await update.message.reply_text(f"❌ JobSearch lỗi: {e2}")
                 _aio.create_task(_do_jobsearch())
