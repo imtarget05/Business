@@ -20,6 +20,7 @@ from packages.contracts.enums import Domain
 from packages.contracts.models import TaskContext, TaskRequest
 from packages.core.errors import DatabaseError, ValidationError
 from packages.database.session import get_session
+from apps.api.deps import current_org
 
 router = APIRouter(prefix="/v1/knowledge", tags=["knowledge"])
 
@@ -32,7 +33,11 @@ class QueryRequest(BaseModel):
 
 
 @router.post("/index")
-async def index(request: Request, db=Depends(get_session)) -> dict:
+async def index(
+    request: Request,
+    org_id: UUID = Depends(current_org),
+    db=Depends(get_session),
+) -> dict:
     from packages.core.bootstrap import get_container
 
     container = get_container()
@@ -47,7 +52,12 @@ async def index(request: Request, db=Depends(get_session)) -> dict:
 
 
 @router.post("/query")
-async def query(body: QueryRequest, request: Request, db=Depends(get_session)) -> dict:
+async def query(
+    body: QueryRequest,
+    request: Request,
+    org_id: UUID = Depends(current_org),
+    db=Depends(get_session),
+) -> dict:
     from agents.knowledge.agent import NO_INFO_ANSWER
     from packages.core.bootstrap import get_container
 

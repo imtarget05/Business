@@ -8,8 +8,10 @@ from __future__ import annotations
 
 import os
 import tempfile
+from pathlib import Path
 
 import pytest
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from packages.core.knowledge_base import KnowledgeBase, chunk_text
@@ -96,3 +98,64 @@ async def test_index_directory_counts_only_supported_files(kb) -> None:
 async def test_empty_question_returns_no_chunks(kb) -> None:
     assert await kb.query("", k=5) == []
     assert await kb.query("   ", k=5) == []
+
+
+async def test_add_document_is_idempotent_on_reindex(kb) -> None:
+    """Re-indexing the same source must not duplicate its chunks.
+
+    FIX round 1: calling add_document (or /v1/knowledge/index) repeatedly for
+    the same file must keep the chunk count stable — the prior chunks for that
+    source_path are dropped before the new ones are inserted.
+    """
+    d = tempfile.mkdtemp()
+    path = os.path.join(d, "guide.md")
+    with open(path, "w", encoding="utf-8") as f:
+        f.write("Alpha beta gamma delta epsilon zeta. " * 300)  # spans several chunks
+
+    first = await kb.add_document(path)
+    assert first["chunks"] >= 1
+
+    # Simulate a second index pass (e.g. POST /v1/knowledge/index called again).
+    second = await kb.add_document(path)
+
+    source = str(Path(path).resolve())
+    async with kb._factory() as session:
+        row_count = (
+            await session.execute(
+                text("SELECT COUNT(*) FROM kb_chunks WHERE source_path = :sp"),
+                {"sp": source},
+            )
+        ).scalar()
+
+    assert row_count == first["chunks"] == second["chunks"], (
+        f"re-index duplicated chunks: {row_count} rows for {source} "
+        f"(expected {first['chunks']})"
+    )
+
+
+async def test_index_directory_twice_is_idempotent(kb) -> None:
+    """Indexing the same directory twice must not double its chunks."""
+    d = tempfile.mkdtemp()
+    with open(os.path.join(d, "a.md"), "w", encoding="utf-8") as f:
+        f.write("Document about refunds and warranty policy details.")
+    with open(os.path.join(d, "b.txt"), "w", encoding="utf-8") as f:
+        f.write("Document about shipping and delivery timelines.")
+
+    first = await kb.index_directory(d)
+    assert first == 2
+
+    # Capture row count after the first pass.
+    async with kb._factory() as session:
+        after_first = (
+            await session.execute(text("SELECT COUNT(*) FROM kb_chunks"))
+        ).scalar()
+
+    second = await kb.index_directory(d)
+    assert second == 2
+
+    async with kb._factory() as session:
+        after_second = (
+            await session.execute(text("SELECT COUNT(*) FROM kb_chunks"))
+        ).scalar()
+
+    assert after_second == after_first, "re-indexing the directory duplicated chunks"

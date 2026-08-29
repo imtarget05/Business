@@ -187,6 +187,15 @@ class KnowledgeBase:
 
         await self._ensure_schema()
         async with self._factory() as session:
+            # Idempotent re-index: drop any chunks previously stored for this
+            # exact source *before* (re)inserting. Without this, calling
+            # index_directory / POST /v1/knowledge/index repeatedly duplicates
+            # every chunk for the same file. Dedupe is keyed on the resolved
+            # source_path so re-indexing an updated file replaces its chunks.
+            await session.execute(
+                text("DELETE FROM kb_chunks WHERE source_path = :sp"),
+                {"sp": str(p.resolve())},
+            )
             for idx, piece in enumerate(pieces):
                 await session.execute(
                     text(
