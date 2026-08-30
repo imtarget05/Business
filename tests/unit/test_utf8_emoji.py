@@ -186,3 +186,28 @@ def test_sanitize_text_drops_replacement_and_control():
     assert "\ufffd" not in out
     assert "\u0007" not in out
     assert "L'Usine" in out and "Michelin" in out and "next" in out
+
+
+def test_sanitizing_bot_wraps_send_message():
+    """The _SanitizingBot wrapper forces _sanitize_text onto every send_message,
+    so a handler that forgets to sanitize still ships clean text."""
+    import sys
+    sys.path.insert(0, str(ROOT))
+    from agents.monitoring.telegram_bot import _SanitizingBot
+
+    captured = {}
+
+    class _FakeBot:
+        async def send_message(self, chat_id, text, **kw):
+            captured["text"] = text
+            return {"text": text}
+        async def edit_message_text(self, text, **kw):
+            captured["edit"] = text
+            return {"text": text}
+
+    bot = _SanitizingBot(_FakeBot())
+    import asyncio
+    asyncio.run(bot.send_message(1, "Hà Nội 📚\ufe0f corrupt\uFFFD\u0007", parse_mode="HTML"))
+    assert captured["text"] == "Hà Nội 📚 corrupt"
+    asyncio.run(bot.edit_message_text("Gaggan 🍛\ufffd"))
+    assert captured["edit"] == "Gaggan 🍛"

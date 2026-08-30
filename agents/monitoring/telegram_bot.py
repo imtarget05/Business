@@ -76,6 +76,32 @@ def _sanitize_text(text: str) -> str:
     return "".join(out)
 
 
+class _SanitizingBot:
+    """Wrapper that forces every outgoing text through _sanitize_text.
+
+    Guarantees emoji + Vietnamese diacritics survive to the Telegram client
+    regardless of which send path a handler uses (reply_text / send_message /
+    edit_message_text). This is the runtime defense against the "lỗi phông chữ"
+    symptom on clients that mangle copy-pasted / decomposed Unicode.
+    """
+
+    def __init__(self, bot: Any) -> None:
+        self._bot = bot
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._bot, name)
+
+    async def send_message(self, chat_id: int, text: str, *a: Any, **kw: Any) -> Any:
+        return await self._bot.send_message(chat_id, _sanitize_text(text), *a, **kw)
+
+    async def edit_message_text(self, text: str, *a: Any, **kw: Any) -> Any:
+        return await self._bot.edit_message_text(_sanitize_text(text), *a, **kw)
+
+
+def _sanitize_reply(text: str) -> str:
+    return _sanitize_text(text)
+
+
 def _md_to_telegram_html(md: str) -> str:
     """Convert an LLM/markdown report into friendly Telegram HTML.
 
@@ -218,9 +244,9 @@ class MonitoringBot:
     def __init__(self, config: TelegramConfig) -> None:
         self.config = config
         if TELEGRAM_AVAILABLE:
-            self.bot = Bot(token=config.bot_token)
+            self.bot = _SanitizingBot(Bot(token=config.bot_token))
         else:
-            self.bot = _StubBot(token=config.bot_token)  # Use stub for testing/offline
+            self.bot = _SanitizingBot(_StubBot(token=config.bot_token))  # Use stub for testing/offline
         self.app: Application | None = None
         self._research_awaiting: dict[int, str] = {}  # chat_id -> query
         self._seen_chats: set[int] = set()  # only greet Target is ready once per new chat
@@ -1644,6 +1670,17 @@ class MonitoringBot:
         # 0) Normalize: collapse repeated whitespace for robust keyword matching
         import re as _re_norm
         text = _re_norm.sub(r"\s+", " ", text).strip()
+        # 0b) Persist to PostgreSQL (conversations/messages/customers) — non-blocking
+        if not text.startswith("/"):
+            try:
+                import asyncio as _aio
+                from agents.monitoring.persistence import ChatMemory
+                if getattr(self, "_chat_memory", None) is None:
+                    self._chat_memory = ChatMemory()
+                tg_user = update.effective_user
+                _aio.create_task(self._chat_memory.log_user(chat_id, tg_user, text))
+            except Exception:
+                pass
         # 0a) Help/menu intent -> show quick menu instead of LLM fallback.
         # NOTE: '?' intentionally excluded — a real question ending in '?' must NOT
         # be hijacked into the menu (was a false positive).
@@ -1929,22 +1966,33 @@ class MonitoringBot:
                 return
             from packages.config.settings import get_settings
             from packages.llm.factory import get_llm_provider
+            from packages.core.prompts import render as _render
+            # Personalization: profile + recent history from DB
+            try:
+                _mem = self._chat_memory
+                profile_line = ""
+                if _mem is not None and update.effective_user:
+                    _blurb = await _mem.customer_profile_blurb(update.effective_user)
+                    if _blurb:
+                        profile_line = f"Hồ sơ khách hàng: {_blurb}.\n"
+                    _hist = await _mem.recent_history(chat_id, limit=8)
+                    if _hist:
+                        _hist_txt = "\n".join(
+                            f"{'User' if r == 'user' else 'Bot'}: {c[:200]}" for r, c in _hist[:-1]
+                        )
+                        if _hist_txt:
+                            profile_line += _render("HISTORY_BLOCK", history=_hist_txt) + "\n"
+                else:
+                    profile_line = ""
+            except Exception:
+                profile_line = ""
             llm = get_llm_provider(get_settings())
             answer = await llm.generate(
                 prompt=text,
-                system=(
-                    "Bạn là trợ lý Business Ops của Mai Nguyễn Bình Tân (trả lời tiếng Việt).\n"
-                    "QUY TẮC BẮT BUỘC:\n"
-                    "1. KHÔNG BAO GIỜ bịa dữ liệu, địa chỉ, tên quán, con số hay danh sách. "
-                    "Nếu bạn không chắc chắn THẬT SỰ, trả lời đúng 1 câu: "
-                    "'Mình không có dữ liệu thời gian thực — gõ /research <câu hỏi> để mình tra web.'\n"
-                    "2. Khi được yêu cầu 'viết code', chỉ trả ĐÚNG 1 đoạn code đơn giản nhất "
-                    "(mặc định Python) trừ khi người dùng chỉ rõ ngôn ngữ khác.\n"
-                    "3. KHÔNG liệt kê nhiều ngôn ngữ, KHÔNG lặp lại nội dung, KHÔNG giải thích dài dòng.\n"
-                    "4. TÓM TẮT TRỌNG TÂM: trả lời ngắn gọn, đúng ý hỏi, tối đa 5 dòng.\n"
-                    "5. Cần dữ liệu thật (mail, calendar, tin tức) thì nói rõ chưa có tool, không tự tạo.\n"
-                    "6. CHỈ dùng emoji phổ thông (📧 📅 ✅ ❌ 🔍 ⚠️ 💡 📌 • —) để trang trí, "
-                    "KHÔNG dùng ký tự đặc biệt lạ, icon hiếm hay ký tự trang trí unicode khác."
+                system=_render(
+                    "TELEGRAM_SYSTEM",
+                    owner_name="Mai Nguyễn Bình Tân",
+                    profile_line=profile_line,
                 ),
                 max_tokens=400,
                 temperature=0.3,
@@ -1952,6 +2000,12 @@ class MonitoringBot:
             reply = answer if isinstance(answer, str) else str(answer)
             if typing_task: typing_task.cancel()
             await update.message.reply_text(_sanitize_text(reply)[:4000])
+            try:
+                import asyncio as _aio2
+                if getattr(self, "_chat_memory", None) is not None and update.effective_user:
+                    _aio2.create_task(self._chat_memory.log_assistant(chat_id, update.effective_user, reply))
+            except Exception:
+                pass
         except Exception as e:
             if typing_task:
                 try: typing_task.cancel()
