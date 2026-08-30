@@ -50,6 +50,75 @@ def _needs_web_lookup(text: str) -> bool:
     return bool(text) and bool(_WEB_LOOKUP_RE.search(text))
 
 
+# Food / restaurant / Michelin questions must be web-verified, never answered
+# from LLM memory (it hallucinates dishes, stars, and fake restaurants like
+# "Noma (Hà Nội)"). This regex gates the strict verify-before-answer path.
+_FOOD_LOOKUP_RE = re.compile(
+    r"(món ăn|mon an|ẩm thực|am thuc|nhà hàng|nha hang|michelin|saо michelin|"
+    r"saо michelin|vinh danh|danh sách.*michelin|restaurant)",
+    re.I,
+)
+
+
+def _is_food_lookup(text: str) -> bool:
+    return bool(text) and bool(_FOOD_LOOKUP_RE.search(text))
+
+
+_FOOD_STOPWORDS = {
+    "cac", "các", "nhung", "những", "mon", "món", "nào", "gi", "gì", "lot", "lọt",
+    "vao", "vào", "co", "có", "khong", "không", "duoc", "được", "la", "là", "cua",
+    "của", "o", "ở", "tai", "tại", "viet", "việt", "nam", "hanoi", "hà", "nội",
+    "ho", "hồ", "chi", "chí", "minh", "hcm", "saigon", "dat", "đạt", "vinh",
+    "danh", "sao", "trong", "ngoai", "ngoài", "va", "và", "voi", "với", "cho",
+    "toi", "tôi", "ban", "bạn", "hay", "hãy", "giup", "giúp", "biet", "biết",
+    "the", "thế", "nao", "nào", "ke", "kể", "ten", "tên", "liet", "liệt", "ke",
+    "cho",
+}
+
+
+def _food_query(text: str) -> str:
+    """Build a focused web query from a food/Michelin question (drop filler words)."""
+    _toks = re.findall(r"[a-zA-ZÀ-ỹ0-9]+", text.lower())
+    _kept = [t for t in _toks if t not in _FOOD_STOPWORDS]
+    _q = " ".join(_kept) or text
+    if "michelin" not in _q.lower():
+        _q = (_q + " michelin").strip()
+    return _q
+
+
+async def _real_web_search(query: str) -> list[dict]:
+    """Run a REAL web_search via the container registry (proven in JobSearch).
+
+    Returns the raw result list; empty list means nothing verifiable was found.
+    Never falls back to LLM memory, so callers can refuse to answer instead of
+    hallucinating.
+    """
+    try:
+        from packages.core.bootstrap import get_container
+        from packages.contracts.enums import Domain
+        from packages.contracts.models import TaskRequest, TaskContext
+        import uuid as _uuid
+        ctn = get_container()
+        _desc, _handler = ctn.registry.get_by_capability("research.web_search")
+        resp = await _handler.handle(
+            TaskRequest(
+                task_id=_uuid.uuid4(),
+                domain=Domain.RESEARCH,
+                action="web_search",
+                payload={"query": query, "limit": 5},
+                context=TaskContext(
+                    organization_id=_uuid.UUID("00000000-0000-0000-0000-000000000001"),
+                    channel="telegram",
+                ),
+            )
+        )
+        if resp and getattr(resp, "result", None):
+            return resp.result.get("results", []) or []
+    except Exception:
+        pass
+    return []
+
+
 def _sanitize_text(text: str) -> str:
     """Clean AI-generated text before sending to Telegram.
 
@@ -1908,6 +1977,59 @@ class MonitoringBot:
                     except Exception:
                         break
             typing_task = asyncio.create_task(_keep_typing())
+            # 2e) Food / restaurant / Michelin: MUST web-verify before answering.
+            # The LLM path hallucinates dishes, stars and fake restaurants, so we
+            # run a REAL web_search and only echo verifiable links — never invent.
+            if _is_food_lookup(text):
+                try:
+                    results = await _real_web_search(_food_query(text))
+                    if typing_task:
+                        typing_task.cancel()
+                        typing_task = None
+                    if not results:
+                        await update.message.reply_text(
+                            "⚠️ Mình đã tra web thực tế nhưng KHÔNG tìm thấy nguồn chính thức nào "
+                            "cho câu hỏi này, nên sẽ KHÔNG bịa danh sách. Bạn có thể thử lại với "
+                            "từ khóa cụ thể hơn (vd: 'nhà hàng Hà Nội đạt Michelin 2024') hoặc "
+                            "tự tra trên guide.michelin.com.",
+                            reply_markup=self._feedback_keyboard("food"),
+                        )
+                        return
+                    _lines = []
+                    for _i, _r in enumerate(results[:5], 1):
+                        _t = (_r.get("title") or "").strip()
+                        _u = (_r.get("url") or "").strip()
+                        if _u:
+                            _lines.append(f"{_i}. [{_sanitize_text(_t)}]({_u})")
+                        elif _t:
+                            _lines.append(f"{_i}. {_sanitize_text(_t)}")
+                    if not _lines:
+                        await update.message.reply_text(
+                            "⚠️ Mình đã tra web nhưng kết quả thiếu tiêu đề/link, nên KHÔNG bịa. "
+                            "Thử lại với từ khóa cụ thể hơn.",
+                            reply_markup=self._feedback_keyboard("food"),
+                        )
+                        return
+                    _lines_txt = "\n".join(_lines)
+                    await update.message.reply_text(
+                        "🔎 Theo web tra được (chưa tự kiểm chứng từng mục, chỉ liệt kê nguồn):\n\n"
+                        + _lines_txt
+                        + "\n\n⚠️ Mình chỉ trích nguồn thực tế, không tự bịa tên/mô tả. Bạn bấm vào link để xác minh.",
+                        reply_markup=self._feedback_keyboard("food"),
+                    )
+                    return
+                except Exception:
+                    if typing_task:
+                        typing_task.cancel()
+                        typing_task = None
+                    try:
+                        await update.message.reply_text(
+                            "⚠️ Lỗi khi tra web món ăn/Michelin, nên KHÔNG bịa. Thử lại sau.",
+                            reply_markup=self._feedback_keyboard("food"),
+                        )
+                    except Exception:
+                        pass
+                    return
             try:
                 from packages.core.bootstrap import get_container
                 from packages.contracts.models import TaskRequest, TaskContext
