@@ -1149,6 +1149,25 @@ class MonitoringBot:
                             _kw = _kw.replace(_w, " ")
                         _kw = " ".join(_kw.split()).strip() or "thực tập sinh"
                         _kw_cap = _kw[:40].title()
+                        # Feature 4: boost relevance from org context memory.
+                        try:
+                            _ctn = get_container()
+                            _ctx_desc, _ctx_handler = _ctn.registry.get_by_capability("context.get")
+                            _org_id = _uuid2.UUID("00000000-0000-0000-0000-000000000001")
+                            _ctx_res = await _ctx_handler.handle(TaskRequest(
+                                task_id=_uuid2.uuid4(), domain=Domain.RESEARCH,
+                                action="get", payload={},
+                                context=TaskContext(organization_id=_org_id, channel="telegram"),
+                            ))
+                            _ctx_items = (_ctx_res.result or {}).get("messages", [])
+                            if _ctx_items:
+                                from agents.monitoring.jobsearch_filters import context_job_keywords as _ctx_jw
+                                _ctx_k = _ctx_jw(_ctx_items)
+                                if _ctx_k and _ctx_k != _kw:
+                                    _kw = f"{_kw} {_ctx_k}".strip()
+                                    _kw_cap = _kw[:40].title()
+                        except Exception:
+                            pass
                         # Target the REAL location the user stated (Feature 2).
                         from agents.monitoring.jobsearch_filters import extract_location as _ext_loc
                         _loc = _ext_loc(pending.get("text", ""))
@@ -1200,6 +1219,13 @@ class MonitoringBot:
                         now = _dt2.datetime.now(_dt2.timezone.utc).isoformat()
                         bg_keywords = ["python","docker","kubernetes","pytorch","computer vision","machine learning","mlops","llm","generative ai","agent","cloud"]
                         from agents.monitoring.jobsearch_filters import verify_job_listing
+                        # Task 3.2: fetch page text via WebToolsProvider (handles anti-bot
+                        # better than raw httpx); falls back to httpx inside helper.
+                        try:
+                            from packages.tools.web import HttpxWebTools
+                            _web = HttpxWebTools()
+                        except Exception:
+                            _web = None
                         for it in uniq[:25]:
                             url = it.get("url","")
                             orig_title = it.get("title","") or it.get("snippet","") or url.split("/")[2]
@@ -1208,20 +1234,19 @@ class MonitoringBot:
                             evidence = f"search {it.get('_q','')} found {url}"
                             confidence = 0.6
                             html_title = ""
-                            # fetch de lay title that + check Apply
+                            # fetch de lay title that + check Apply (Task 3.2: via WebToolsProvider)
                             try:
-                                async with _httpx2.AsyncClient(timeout=10, follow_redirects=True, headers={"User-Agent":"Mozilla/5.0"}) as _cli:
-                                    _r = await _cli.get(url)
-                                    if _r.status_code == 200:
-                                        _html = _r.text
-                                        _vr = verify_job_listing(url, _html, now, fallback_title=orig_title)
-                                        title = _vr["title"]
-                                        status = _vr["status"]
-                                        confidence = _vr["confidence"]
-                                        evidence = _vr["evidence"]
-                                    else:
-                                        status = "UNCERTAIN"
-                                        evidence = f"http {_r.status_code}"
+                                from agents.monitoring.jobsearch_filters import extract_page_text
+                                _html = await extract_page_text(url, _web)
+                                if _html:
+                                    _vr = verify_job_listing(url, _html, now, fallback_title=orig_title)
+                                    title = _vr["title"]
+                                    status = _vr["status"]
+                                    confidence = _vr["confidence"]
+                                    evidence = _vr["evidence"]
+                                else:
+                                    status = "UNCERTAIN"
+                                    evidence = "no html fetched"
                             except Exception as _e:
                                 evidence = f"fetch error: {_e}"
                             # chi dua VERIFIED detail vao list chinh

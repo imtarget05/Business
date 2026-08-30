@@ -213,6 +213,35 @@ def test_select_candidates_verified_ranked_first():
     assert len(out) == 2
 
 
+# --- context_job_keywords: use org memory to boost relevance (Feature 4) ------
+
+def test_context_job_keywords_pulls_prior_intent():
+    from agents.monitoring.jobsearch_filters import context_job_keywords
+    items = [
+        {"role": "user", "content": "tìm marketing hà nội"},
+        {"role": "user", "content": "job ai intern"},
+    ]
+    kw = context_job_keywords(items)
+    assert "marketing" in kw.lower()
+    # empty memory -> empty string (no fake keywords)
+    assert context_job_keywords([]) == ""
+
+
+# --- extract_page_text: fetch via WebToolsProvider, fallback to httpx (3.2) ----
+
+def test_extract_page_text_from_web_provider():
+    from agents.monitoring.jobsearch_filters import extract_page_text
+
+    class _FakeWeb:
+        async def web_extract(self, urls, char_limit=5000):
+            return {"results": [{"url": urls[0], "content": "<title>MKT Job</title> apply now"}]}
+
+    import asyncio
+    text = asyncio.run(extract_page_text("https://topcv.vn/viec-lam/mkt.html", _FakeWeb()))
+    assert "apply" in text.lower()
+    assert "MKT Job" in text
+
+
 # --- confirm screen must NOT promise a hardcoded '8' (Feature 1.2) -----------
 
 def test_confirm_screen_no_hardcoded_8():

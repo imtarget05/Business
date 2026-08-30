@@ -212,6 +212,57 @@ def extract_location(text: str) -> str | None:
     return None
 
 
+async def extract_page_text(url: str, web_provider=None) -> str:
+    """Fetch page text for verification, preferring the project's WebToolsProvider.
+
+    Task 3.2: use ``await web_provider.web_extract`` (handles anti-bot/JS-rendered
+    pages better than a raw httpx GET) when available; fall back to a plain httpx
+    GET so the pipeline never hard-fails on fetch. Returns extracted text (may be
+    empty). Async because it is called from inside the bot's async handler.
+    """
+    if web_provider is not None:
+        try:
+            _res = await web_provider.web_extract(urls=[url], char_limit=5000)
+            _results = _res.get("results") if isinstance(_res, dict) else None
+            if _results:
+                return _results[0].get("content", "") or _results[0].get("text", "")
+        except Exception:
+            pass
+    # Fallback: raw GET (kept intentionally — last-resort, not primary path).
+    try:
+        import httpx
+        with httpx.Client(timeout=10, follow_redirects=True, headers={"User-Agent": "Mozilla/5.0"}) as _c:
+            _r = _c.get(url)
+            if _r.status_code == 200:
+                return _r.text
+    except Exception:
+        pass
+    return ""
+
+
+def context_job_keywords(items: list[dict]) -> str:
+    """Derive a relevance-boost keyword string from an org's context memory.
+
+    Feature 4: surfaces what the user has previously asked about (e.g. 'marketing')
+    so the JobSearch query/boost can lean toward their real interest. Returns '' when
+    memory is empty — never invents a keyword.
+    """
+    if not items:
+        return ""
+    _stop = set(extract_job_keywords.__globals__.get("_STOPWORDS", ()))
+    words: dict[str, int] = {}
+    for it in items:
+        content = (it.get("content") or it.get("text") or "") if isinstance(it, dict) else str(it)
+        for w in content.lower().split():
+            w = w.strip(".,:;()[]\"'")
+            if len(w) >= 4 and w not in _stop and w.isalpha():
+                words[w] = words.get(w, 0) + 1
+    # most frequent meaningful word becomes the boost keyword
+    if not words:
+        return ""
+    return max(words.items(), key=lambda kv: kv[1])[0]
+
+
 def select_candidates(verified: list[dict], uncertain: list[dict], limit: int = 8) -> list[dict]:
     """Pick the final, ranked, de-duplicated candidate list to show the user.
 
