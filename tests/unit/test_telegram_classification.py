@@ -275,3 +275,18 @@ async def test_jobsearch_sua_clears_pending(bot, ctx):
     txt = update.message.text or ""
     assert "tiêu chí nào" in txt
     assert "Xác nhận tìm" not in txt
+
+
+def test_tg_escape_md_escapes_special_chars():
+    """External content with markdown must be escaped so Telegram never 500s."""
+    from agents.monitoring.telegram_bot import _tg_escape_md
+    # link-style markdown from LLM must be neutralized (was causing parse crash)
+    out = _tg_escape_md("See [LangGraph](https://langchain.com) for *details*")
+    assert "\\[LangGraph\\]" in out
+    assert "\\*details\\*" in out
+    assert "https://langchain.com" in out  # url preserved, just not a link
+    # underscores / backticks escaped
+    assert "\\_x\\_" in _tg_escape_md("a_x_b")
+    # empty / plain text passes through
+    assert _tg_escape_md("") == ""
+    assert _tg_escape_md("Plain Vietnamese text") == "Plain Vietnamese text"

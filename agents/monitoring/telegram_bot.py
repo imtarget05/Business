@@ -21,6 +21,18 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Callable, Optional
 
+# Telegram MarkdownV1 requires these characters to be backslash-escaped or the
+# API raises "Can't parse entities". External content (web/LLM research reports,
+# ops digests) is NOT safe markdown, so we escape it before sending.
+_TG_MD_ESCAPE = re.compile(r"([_*`\[\]()~>#+\-=|{}])")
+
+
+def _tg_escape_md(text: str) -> str:
+    """Escape Telegram-MarkdownV1 special chars so untrusted text never crashes send."""
+    if not text:
+        return text
+    return _TG_MD_ESCAPE.sub(r"\\\1", text)
+
 # Optional telegram import — make it graceful if not installed
 try:
     from telegram import Update, Bot, InlineKeyboardButton, InlineKeyboardMarkup
@@ -342,7 +354,7 @@ class MonitoringBot:
                 report = result.get("report", "")
                 if len(report) > 4000:
                     report = report[:3900] + "\n*... truncated ...*"
-                await update.message.reply_text(report, parse_mode=ParseMode.MARKDOWN)
+                await update.message.reply_text(_tg_escape_md(report), parse_mode=ParseMode.MARKDOWN)
             else:
                 await update.message.reply_text(f"❌ Research failed: {result.get('error', 'unknown')}")
         except Exception as e:
@@ -361,7 +373,7 @@ class MonitoringBot:
             text = _format_ops_digest(digest_dict)
             if len(text) > 4000:
                 text = text[:3900] + "\n*... (đã rút gọn) ...*"
-            await update.message.reply_text(text, parse_mode=ParseMode.MARKDOWN)
+            await update.message.reply_text(_tg_escape_md(text), parse_mode=ParseMode.MARKDOWN)
         except Exception as e:
             await update.message.reply_text(f"❌ Lỗi Ops Hub: {e}")
 
