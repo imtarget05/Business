@@ -1056,10 +1056,7 @@ class MonitoringBot:
                         from packages.contracts.enums import Domain
                         ctn = get_container()
                         # Chỉ giữ URL thuộc trang tuyển dụng uy tín (loại google/mail/accounts spam)
-                        _JOB_DOMAINS = ("topcv.vn","itviec.com","vietnamworks.com","linkedin.com","careerbuilder.vn","careerviet.vn","indeed.com","careerjet.vn","glassdoor.com","tuyen dụng","vnw.vn","timviecnhanh.com")
-                        def _is_job_url(u: str) -> bool:
-                            _d = (u.split("//")[1].split("/")[0] if "//" in u else u.split("/")[0]).lower().replace("www.","")
-                            return any(_d == dom or _d.endswith("." + dom) or dom in _d for dom in _JOB_DOMAINS)
+                        from agents.monitoring.jobsearch_filters import is_job_url as _is_job_url
                         # Tạo queries từ brief user (không tự thêm "AI" nếu user không nói)
                         _brief = (pending.get("text", "") or "").lower()
                         _kw = _brief
@@ -1103,29 +1100,9 @@ class MonitoringBot:
                         audit: list[dict] = []
                         now = _dt2.datetime.now(_dt2.timezone.utc).isoformat()
                         bg_keywords = ["python","docker","kubernetes","pytorch","computer vision","machine learning","mlops","llm","generative ai","agent","cloud"]
-                        # helper: chi verify trang chi tiet, bo listing
-                        def _is_detail(u: str) -> bool:
-                            low = u.lower()
-                            if "topcv.vn/viec-lam/" in low and ".html" in low:
-                                return True
-                            if "itviec.com/it-jobs/" in low:
-                                path = low.split("it-jobs/")[1].split("?")[0].split("#")[0].strip("/")
-                                # detail co slug dai va nhieu dau -
-                                if path in ["machine-learning","generative-ai","python","ai","jobs"]: return False
-                                if path.count("-") >= 2 and len(path) > 12: return True
-                                return False
-                            if "linkedin.com/jobs/view/" in low: return True
-                            if "vietnamworks.com" in low and "/job" in low: return True
-                            # loai listing
-                            if "tim-viec-lam" in low: return False
-                            if "q=" in low and "indeed.com" in low: return False
-                            if low.endswith("/it-jobs") or low.endswith("/it-jobs/"): return False
-                            return False
-                        import re as _re_title
+                        from agents.monitoring.jobsearch_filters import verify_job_listing
                         for it in uniq[:25]:
                             url = it.get("url","")
-                            # bo listing truoc khi verify
-                            is_detail = _is_detail(url)
                             orig_title = it.get("title","") or it.get("snippet","") or url.split("/")[2]
                             title = orig_title
                             status = "UNCERTAIN"
@@ -1138,32 +1115,11 @@ class MonitoringBot:
                                     _r = await _cli.get(url)
                                     if _r.status_code == 200:
                                         _html = _r.text
-                                        _html_low = _html.lower()
-                                        # lay <title> thuc
-                                        m_t = _re_title.search(r"<title[^>]*>(.*?)</title>", _html, flags=_re_title.IGNORECASE | _re_title.DOTALL)
-                                        if m_t:
-                                            html_title = _re_title.sub(r"<[^>]+>", "", m_t.group(1)).strip()[:120]
-                                            if html_title and len(html_title) > 10:
-                                                title = html_title
-                                        # neu khong phai detail thi khong VERIFIED du co Apply
-                                        has_apply = any(k in _html_low for k in ["apply","ứng tuyển","nộp đơn","apply now"])
-                                        is_closed = any(k in _html_low for k in ["đã đóng","hết hạn","expired","closed","not found","404"])
-                                        if not is_detail:
-                                            status = "UNCERTAIN"
-                                            confidence = 0.55
-                                            evidence = f"listing page, not detail — checked {now} — title: {title[:60]}"
-                                        elif has_apply and not is_closed:
-                                            status = "VERIFIED"
-                                            confidence = 0.92
-                                            evidence = f"detail page 200 has Apply button, not closed — checked {now}"
-                                        elif is_closed:
-                                            status = "CLOSED"
-                                            confidence = 0.85
-                                            evidence = "page indicates closed/expired"
-                                        else:
-                                            status = "UNCERTAIN"
-                                            confidence = 0.65
-                                            evidence = "detail page 200 but no clear Apply button"
+                                        _vr = verify_job_listing(url, _html, now, fallback_title=orig_title)
+                                        title = _vr["title"]
+                                        status = _vr["status"]
+                                        confidence = _vr["confidence"]
+                                        evidence = _vr["evidence"]
                                     else:
                                         status = "UNCERTAIN"
                                         evidence = f"http {_r.status_code}"
@@ -1506,9 +1462,13 @@ class MonitoringBot:
         # 2c) Advisory Council auto-detect: if the free-text question carries a
         # persona keyword (strategy/buffett/marketing/invest/...), route to the
         # advisory.ask capability instead of the generic chat path (Task 3).
+        # NOTE: an explicit sales intent (báo giá/proposal/quote/...) must NOT be
+        # hijacked into a persona suggestion — sales (2d) handles it. So skip
+        # advisory when a sales keyword is present.
         try:
+            _sales_kw_2c = ("báo giá", "bao gia", "quote", "proposal", "đề xuất", "de xuat", "chào giá", "chao gia", "email khách", "báo gia")
             from packages.core.personas import select_persona as _sel_persona
-            if _sel_persona(text):
+            if _sel_persona(text) and not any(k in low for k in _sales_kw_2c):
                 await self._advisory_command(
                     update,
                     type("__Ctx", (), {"args": text.split()})(),
