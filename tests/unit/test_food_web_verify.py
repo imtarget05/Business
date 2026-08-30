@@ -14,7 +14,7 @@ import pytest
 ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(ROOT))
 
-from agents.monitoring.telegram_bot import _is_food_lookup, _food_query, _real_web_search
+from agents.monitoring.telegram_bot import _is_food_lookup, _food_query, _real_web_search, _summarize_food
 
 
 class _FakeResult:
@@ -79,8 +79,35 @@ def test_real_web_search_returns_verifiable_links(monkeypatch):
     assert out[0]["url"].startswith("https://")
 
 
-def test_real_web_search_empty_on_no_source(monkeypatch):
-    _patch_container(monkeypatch, [])
+def test_summarize_food_uses_only_snippets(monkeypatch):
+    """LLM must summarize from real snippets; never invent. Falls back to '' on failure."""
     import asyncio
-    out = asyncio.run(_real_web_search("món việt nam michelin"))
-    assert out == []
+    calls = {}
+
+    class FakeLLM:
+        async def generate(self, prompt, system, max_tokens=500, temperature=0.0):
+            calls["prompt"] = prompt
+            calls["system"] = system
+            # Echo only names present in the snippet (proves it read the source).
+            return "1. Michelin Guide Vietnam (https://guide.michelin.com/vn)"
+
+    res = [
+        {"title": "Vietnam MICHELIN Restaurants", "url": "https://guide.michelin.com/vn",
+         "snippet": "Michelin Guide Việt Nam 2026 vinh danh 193 cơ sở"},
+    ]
+    out = asyncio.run(_summarize_food(FakeLLM(), "Các món ăn việt nam lọt vào Michelin", res))
+    assert "guide.michelin.com" in out
+    # The snippet text must have been passed to the LLM (no memory-only answer).
+    assert "193 cơ sở" in calls["prompt"]
+    assert "KHÔNG" in calls["system"] and "bịa" in calls["system"]
+
+
+def test_summarize_food_falls_back_on_error():
+    import asyncio
+
+    class BoomLLM:
+        async def generate(self, *a, **k):
+            raise RuntimeError("llm down")
+
+    out = asyncio.run(_summarize_food(BoomLLM(), "q", [{"title": "x", "url": "https://y"}]))
+    assert out == ""

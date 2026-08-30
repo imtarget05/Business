@@ -116,6 +116,43 @@ async def _real_web_search(query: str) -> list[dict]:
     return []
 
 
+_FOOD_SUMMARY_SYSTEM = (
+    "Bạn là trợ lý tổng hợp ẩm thực Michelin Việt Nam. Bạn NHẬN được các đoạn trích (snippet) "
+    "web THẬT từ Michelin Guide và báo chính thức. NHIỆM VỤ: chỉ trích xuất những TÊN nhà hàng / "
+    "món ăn CÓ XUẤT HIỆN trong snippet — KHÔNG được tự bịa thêm bất kỳ tên, địa chỉ hay mô tả nào "
+    "không có trong snippet. Mỗi mục ghi kèm link nguồn. Nếu snippet không có tên cụ thể, hãy ghi "
+    "rõ 'nguồn chưa liệt kê tên cụ thể'. Viết tiếng Việt, ngắn gọn, định dạng mỗi mục 1 dòng."
+)
+
+
+async def _summarize_food(llm, question: str, results: list[dict]) -> str:
+    """Summarize REAL web snippets into a clean list via LLM.
+
+    The LLM only sees the verified snippets (never its own memory), so it cannot
+    hallucinate. Returns empty string on any failure -> caller falls back to raw links.
+    """
+    if not results or llm is None:
+        return ""
+    _ctx = "\n\n".join(
+        f"[{i}] {r.get('title','')}\n{r.get('snippet','')}\n{r.get('url','')}"
+        for i, r in enumerate(results[:5], 1)
+    )
+    _prompt = (
+        f"Câu hỏi: {question}\n\nCác snippet web thật:\n{_ctx}\n\n"
+        "Hãy tổng hợp thành danh sách ngắn (chỉ tên có trong snippet, kèm link)."
+    )
+    try:
+        _ans = await llm.generate(
+            prompt=_prompt,
+            system=_FOOD_SUMMARY_SYSTEM,
+            max_tokens=500,
+            temperature=0.0,
+        )
+        return (_ans if isinstance(_ans, str) else str(_ans)).strip()
+    except Exception:
+        return ""
+
+
 def _sanitize_text(text: str) -> str:
     """Clean AI-generated text before sending to Telegram.
 
@@ -2010,14 +2047,32 @@ class MonitoringBot:
                             reply_markup=self._feedback_keyboard("food"),
                         )
                         return
-                    _lines_txt = "\n\n".join(_lines)
-                    await update.message.reply_text(
-                        "🔎 Theo nguồn Michelin Guide & báo chính thức (mình chỉ trích trực tiếp, "
-                        "KHÔNG tự bịa tên/mô tả):\n\n"
-                        + _lines_txt
-                        + "\n\n⚠️ Bấm link để xem danh sách đầy đủ và xác minh từng mục.",
-                        reply_markup=self._feedback_keyboard("food"),
-                    )
+                    # Summarize the REAL snippets via LLM (no memory -> no hallucination).
+                    # Falls back to raw links if the LLM is unavailable or returns nothing.
+                    try:
+                        from packages.config.settings import get_settings
+                        from packages.llm.factory import get_llm_provider
+                        _llm = get_llm_provider(get_settings())
+                        _summary = await _summarize_food(_llm, text, results[:5])
+                    except Exception:
+                        _summary = ""
+                    if _summary:
+                        await update.message.reply_text(
+                            "🔎 Theo Michelin Guide & báo chính thức (tổng hợp từ nguồn thật, "
+                            "KHÔNG tự bịa):\n\n"
+                            + _sanitize_text(_summary)
+                            + "\n\n⚠️ Bấm link trong phần nguồn để xác minh từng mục.",
+                            reply_markup=self._feedback_keyboard("food"),
+                        )
+                    else:
+                        _lines_txt = "\n\n".join(_lines)
+                        await update.message.reply_text(
+                            "🔎 Theo nguồn Michelin Guide & báo chính thức (mình chỉ trích trực tiếp, "
+                            "KHÔNG tự bịa tên/mô tả):\n\n"
+                            + _lines_txt
+                            + "\n\n⚠️ Bấm link để xem danh sách đầy đủ và xác minh từng mục.",
+                            reply_markup=self._feedback_keyboard("food"),
+                        )
                     return
                 except Exception:
                     if typing_task:
