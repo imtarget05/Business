@@ -87,8 +87,10 @@ class TestSendEmailReplyTool:
     """Tests for send_email_reply tool."""
 
     @pytest.fixture()
-    def tool(self) -> SendEmailReplyTool:
-        return SendEmailReplyTool()
+    def tool(self, org_id) -> SendEmailReplyTool:
+        t = SendEmailReplyTool()
+        t.bind_organization(org_id)
+        return t
 
     @pytest.mark.asyncio
     async def test_dry_run_mode_default(self, tool):

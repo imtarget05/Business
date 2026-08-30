@@ -118,6 +118,12 @@ class SendEmailReplyTool(_OrgBoundTool):
         body_html = arguments.get("body_html")
         conversation_id = arguments.get("conversation_id")
 
+        # Enforce tenant binding UP FRONT (covers DRY-RUN drafts too — a draft
+        # addressed to another org's customer is still a cross-tenant leak of
+        # intent, and an LLM-supplied organization_id must never override the
+        # server-side principal).
+        org_id = self._resolve_org(arguments)
+
         # Build the email message
         msg = EmailMessage()
         msg["From"] = settings.email_from_address or "noreply@example.com"
@@ -131,6 +137,7 @@ class SendEmailReplyTool(_OrgBoundTool):
         if not settings.email_send_enabled:
             draft = {
                 "mode": "DRY_RUN",
+                "organization_id": str(org_id),
                 "from": msg["From"],
                 "to": to_email,
                 "subject": subject,
@@ -146,7 +153,6 @@ class SendEmailReplyTool(_OrgBoundTool):
                 "email_send_enabled=True but email_smtp_host not configured"
             )
 
-        org_id = self._resolve_org(arguments)
         if not await self._recipient_allowed(org_id, to_email, conversation_id):
             raise ToolExecutionError(
                 f"recipient {to_email!r} is not allowlisted for this "
@@ -264,6 +270,10 @@ class SendGmailReplyTool(_OrgBoundTool):
         body = arguments["body"]
         conversation_id = arguments.get("conversation_id")
 
+        # Enforce tenant binding UP FRONT (DRY-RUN drafts included). An LLM must
+        # never address another org's customer, even as a draft.
+        org_id = self._resolve_org(arguments)
+
         # Determine dry-run mode: per-tool flag overrides settings
         dry_run = (
             self._dry_run if self._dry_run is not None else not settings.gmail_send_enabled
@@ -273,6 +283,7 @@ class SendGmailReplyTool(_OrgBoundTool):
         if dry_run:
             draft = {
                 "mode": "DRY_RUN",
+                "organization_id": str(org_id),
                 "to": to_email,
                 "subject": subject,
                 "body": body,
@@ -303,7 +314,6 @@ class SendGmailReplyTool(_OrgBoundTool):
                 "gmail_send_enabled=True but google_sheet_id not configured"
             )
 
-        org_id = self._resolve_org(arguments)
         if not await self._recipient_allowed(org_id, to_email):
             raise ToolExecutionError(
                 f"recipient {to_email!r} is not allowlisted for this "
