@@ -239,6 +239,20 @@ class WebSearchAgent(ResearchAgentBase):
                 "error": None,
             })
 
+        if not extracted:
+            # Every web extract failed/blocked (403 etc.) -> fall back to the
+            # search snippets (description) so the report still has real content
+            # to synthesize from instead of coming back empty.
+            for r in results:
+                desc = r.get("description") or ""
+                if desc and not _looks_like_html(desc) and not _looks_like_error_text(desc):
+                    extracted.append({
+                        "title": r.get("title", ""),
+                        "content": desc,
+                        "url": r.get("url", ""),
+                        "error": None,
+                    })
+
         return extracted
 
 

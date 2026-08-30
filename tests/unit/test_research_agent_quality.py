@@ -75,6 +75,29 @@ async def test_extract_drops_error_text_content(monkeypatch):
     assert extracted[0]["title"] == "Good"
 
 
+async def test_extract_falls_back_to_search_snippets_when_all_blocked(monkeypatch):
+    """When every web extract is blocked, fall back to search-result descriptions."""
+
+    async def fake_extract(urls, char_limit=5000):
+        return {
+            "results": [
+                {"title": "Blocked", "url": "https://sider.ai/x", "content": "[extract error: 403 Forbidden]"},
+                {"title": "Blocked2", "url": "https://viblo.asia/y", "content": "<html>spam</html>"},
+            ]
+        }
+
+    monkeypatch.setattr(research_mod, "_call_web_extract", fake_extract)
+    agent = WebSearchAgent()
+    search_results = [
+        {"title": "Sider", "url": "https://sider.ai/x", "description": "LangGraph là framework xây dựng agent."},
+        {"title": "Viblo", "url": "https://viblo.asia/y", "description": "Dùng graph để quản lý state."},
+    ]
+    extracted = await agent.extract(search_results)
+    assert len(extracted) == 2
+    assert any("framework" in e["content"] for e in extracted)
+    assert any("graph" in e["content"] for e in extracted)
+
+
 async def test_summarize_uses_llm_when_available(monkeypatch):
     """summarize() should call the LLM and return its synthesized answer."""
 
