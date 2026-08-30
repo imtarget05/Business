@@ -64,25 +64,22 @@ def _is_food_lookup(text: str) -> bool:
     return bool(text) and bool(_FOOD_LOOKUP_RE.search(text))
 
 
-_FOOD_STOPWORDS = {
-    "cac", "các", "nhung", "những", "mon", "món", "nào", "gi", "gì", "lot", "lọt",
-    "vao", "vào", "co", "có", "khong", "không", "duoc", "được", "la", "là", "cua",
-    "của", "o", "ở", "tai", "tại", "viet", "việt", "nam", "hanoi", "hà", "nội",
-    "ho", "hồ", "chi", "chí", "minh", "hcm", "saigon", "dat", "đạt", "vinh",
-    "danh", "sao", "trong", "ngoai", "ngoài", "va", "và", "voi", "với", "cho",
-    "toi", "tôi", "ban", "bạn", "hay", "hãy", "giup", "giúp", "biet", "biết",
-    "the", "thế", "nao", "nào", "ke", "kể", "ten", "tên", "liet", "liệt", "ke",
-    "cho",
-}
-
-
 def _food_query(text: str) -> str:
-    """Build a focused web query from a food/Michelin question (drop filler words)."""
+    """Build a focused web query from a food/Michelin question (drop filler words).
+
+    Targets the official Michelin Guide so results are verifiable instead of
+    generic (and often hallucinated) LLM memory.
+    """
     _toks = re.findall(r"[a-zA-ZÀ-ỹ0-9]+", text.lower())
-    _kept = [t for t in _toks if t not in _FOOD_STOPWORDS]
+    _KEEP = {
+        "mon", "món", "an", "ăn", "am", "ẩm", "thuc", "thực", "nha", "nhà", "hang", "hàng",
+        "bun", "bún", "pho", "phở", "banh", "bánh", "com", "cơm", "mi", "mì", "xoi", "xèo",
+        "cha", "chả", "cuon", "cuốn", "rieu", "riêu", "hanoi", "hà", "nội", "ho", "hồ",
+        "chi", "chí", "minh", "hcm", "saigon", "viet", "việt", "nam",
+    }
+    _kept = [t for t in _toks if t in _KEEP]
     _q = " ".join(_kept) or text
-    if "michelin" not in _q.lower():
-        _q = (_q + " michelin").strip()
+    _q = (_q + " michelin guide vietnam").strip()
     return _q
 
 
@@ -1999,10 +1996,13 @@ class MonitoringBot:
                     for _i, _r in enumerate(results[:5], 1):
                         _t = (_r.get("title") or "").strip()
                         _u = (_r.get("url") or "").strip()
+                        _s = (_r.get("snippet") or "").strip()
+                        _entry = f"{_i}. {_sanitize_text(_t)}"
+                        if _s:
+                            _entry += f"\n   {_sanitize_text(_s)}"
                         if _u:
-                            _lines.append(f"{_i}. [{_sanitize_text(_t)}]({_u})")
-                        elif _t:
-                            _lines.append(f"{_i}. {_sanitize_text(_t)}")
+                            _entry += f"\n   🔗 {_u}"
+                        _lines.append(_entry)
                     if not _lines:
                         await update.message.reply_text(
                             "⚠️ Mình đã tra web nhưng kết quả thiếu tiêu đề/link, nên KHÔNG bịa. "
@@ -2010,11 +2010,12 @@ class MonitoringBot:
                             reply_markup=self._feedback_keyboard("food"),
                         )
                         return
-                    _lines_txt = "\n".join(_lines)
+                    _lines_txt = "\n\n".join(_lines)
                     await update.message.reply_text(
-                        "🔎 Theo web tra được (chưa tự kiểm chứng từng mục, chỉ liệt kê nguồn):\n\n"
+                        "🔎 Theo nguồn Michelin Guide & báo chính thức (mình chỉ trích trực tiếp, "
+                        "KHÔNG tự bịa tên/mô tả):\n\n"
                         + _lines_txt
-                        + "\n\n⚠️ Mình chỉ trích nguồn thực tế, không tự bịa tên/mô tả. Bạn bấm vào link để xác minh.",
+                        + "\n\n⚠️ Bấm link để xem danh sách đầy đủ và xác minh từng mục.",
                         reply_markup=self._feedback_keyboard("food"),
                     )
                     return

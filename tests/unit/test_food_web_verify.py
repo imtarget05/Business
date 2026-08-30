@@ -63,9 +63,9 @@ def test_is_food_lookup_detects_michelin_queries():
 
 
 def test_food_query_strips_fillers():
-    assert _food_query("Các món ăn việt nam lọt vào Michelin") == "ăn michelin"
-    assert "michelin" in _food_query("nhà hàng hà nội đạt sao")
-    assert _food_query("món nước việt nam") == "nước michelin"
+    assert _food_query("Các món ăn việt nam lọt vào Michelin") == "món ăn việt nam michelin guide vietnam"
+    assert "michelin guide vietnam" in _food_query("nhà hàng hà nội đạt sao")
+    assert _food_query("món nước việt nam") == "món việt nam michelin guide vietnam"
 
 
 def test_real_web_search_returns_verifiable_links(monkeypatch):
