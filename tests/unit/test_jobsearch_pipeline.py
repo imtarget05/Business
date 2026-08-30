@@ -145,3 +145,87 @@ def test_extract_keywords_fallback():
     assert extract_job_keywords("") == "thực tập sinh AI"
     # only hiring verbs remain -> falls back to default (no empty keyword)
     assert extract_job_keywords("tìm job") == "thực tập sinh AI"
+
+
+# --- parse_job_count: NO hardcoded '8' (Feature 1) ---------------------------
+
+def test_parse_job_count_explicit():
+    from agents.monitoring.jobsearch_filters import parse_job_count
+    assert parse_job_count("tìm 5 job marketing hà nội") == 5
+    assert parse_job_count("tìm 3 vị trí AI intern") == 3
+
+
+def test_parse_job_count_none_when_not_stated():
+    from agents.monitoring.jobsearch_filters import parse_job_count
+    # no count stated -> must return None (never silently default to 8)
+    assert parse_job_count("tìm việc marketing") is None
+    assert parse_job_count("tìm marketing ở hà nội còn apply được") is None
+
+
+def test_parse_job_count_ignores_phone_or_year():
+    from agents.monitoring.jobsearch_filters import parse_job_count
+    # a standalone number not tied to "tìm N job" must NOT be treated as count
+    assert parse_job_count("liên hệ 0909123456") is None
+    assert parse_job_count("tuyển từ 2024") is None
+
+
+# --- extract_location: target the real location (Feature 2) -------------------
+
+def test_extract_location_hanoi():
+    from agents.monitoring.jobsearch_filters import extract_location
+    assert extract_location("tìm marketing ở hà nội") == "Hà Nội"
+    assert extract_location("tìm marketing tại hanoi") == "Hà Nội"
+    assert extract_location("AI intern tại HCMC") == "Hồ Chí Minh"
+    assert extract_location("remote backend developer") == "Remote"
+    # no location stated -> None (caller must not silently default to a city)
+    assert extract_location("tìm marketing còn apply được") is None
+
+
+# --- select_candidates: return USEFUL ranked results, not empty (Feature 3) ---
+
+def test_select_candidates_keeps_uncertain_when_no_verified():
+    from agents.monitoring.jobsearch_filters import select_candidates
+    verified = []
+    uncertain = [
+        {"job_title": "Marketing HN", "link": "https://topcv.vn/viec-lam/mkt-hn.html",
+         "status": "UNCERTAIN", "match": 80, "company": "C1", "location": "Hà Nội"},
+        {"job_title": "Marketing HCM", "link": "https://itviec.com/it-jobs/mkt-1",
+         "status": "UNCERTAIN", "match": 70, "company": "C2", "location": "Hồ Chí Minh"},
+    ]
+    out = select_candidates(verified, uncertain, limit=5)
+    # must NOT give up — returns ranked candidates even without VERIFIED
+    assert len(out) == 2
+    assert out[0]["job_title"] == "Marketing HN"
+    assert all(j["status"] == "UNCERTAIN" for j in out)
+
+
+def test_select_candidates_verified_ranked_first():
+    from agents.monitoring.jobsearch_filters import select_candidates
+    verified = [
+        {"job_title": "V1", "link": "u1", "status": "VERIFIED", "match": 60, "company": "C", "location": "Hà Nội"},
+    ]
+    uncertain = [
+        {"job_title": "U1", "link": "u2", "status": "UNCERTAIN", "match": 90, "company": "C", "location": "Hà Nội"},
+    ]
+    out = select_candidates(verified, uncertain, limit=5)
+    # VERIFIED must come before higher-match UNCERTAIN
+    assert out[0]["status"] == "VERIFIED"
+    assert len(out) == 2
+
+
+# --- confirm screen must NOT promise a hardcoded '8' (Feature 1.2) -----------
+
+def test_confirm_screen_no_hardcoded_8():
+    from agents.monitoring.jobsearch_filters import parse_job_count
+    # brief says 5 -> screen should echo 5, never 8
+    assert parse_job_count("tìm 5 job marketing hà nội") == 5
+    # brief says nothing -> caller must show neutral text, not "8 vị trí"
+    assert parse_job_count("tìm marketing ở hà nội") is None
+
+
+def test_search_limit_driven_by_count():
+    from agents.monitoring.jobsearch_filters import parse_job_count
+    brief = "tìm 5 job marketing hà nội"
+    limit = parse_job_count(brief) or 8  # default only at search-time, not promised to user
+    assert limit == 5
+    assert parse_job_count("tìm marketing hà nội") is None  # -> falls back to 8 at runtime

@@ -166,3 +166,76 @@ def extract_job_keywords(text: str) -> str:
         kw = kw.replace(w, " ")
     kw = " ".join(kw.split()).strip()
     return kw[:60].title() if kw else "thực tập sinh AI"
+
+
+def parse_job_count(text: str) -> int | None:
+    """Extract the requested number of jobs from a brief — NO hardcoded default.
+
+    Returns an int only when the user explicitly says ``<verb> N job/vị trí``
+    (e.g. "tìm 5 job", "tìm 3 vị trí"). Otherwise returns ``None`` so the caller
+    must NOT promise a fixed count before searching. Standalone numbers (phone
+    numbers, years) are ignored to avoid mis-parsing.
+    """
+    if not text:
+        return None
+    low = text.lower()
+    m = re.search(r"(tìm|nộp|apply)\s+(\d{1,2})\s*(job|vị trí|viec|việc)", low)
+    if m:
+        return int(m.group(2))
+    # Only treat a bare number as a count if it is clearly tied to hiring.
+    # A standalone number like a phone/year must not be treated as count.
+    return None
+
+
+_LOCATION_MAP = (
+    (("hà nội", "ha noi", "hanoi", "hn"), "Hà Nội"),
+    (("hcm", "hồ chí minh", "ho chi minh", "tp.hcm", "tphcm", "sài gòn", "saigon"), "Hồ Chí Minh"),
+    (("đà nẵng", "da nang", "danang", "dn"), "Đà Nẵng"),
+    (("remote", "từ xa", "online"), "Remote"),
+)
+
+
+def extract_location(text: str) -> str | None:
+    """Extract the job location from a free-text brief — NO silent city default.
+
+    Returns a canonical city name (e.g. ``"Hà Nội"``), ``"Remote"``, or ``None``
+    when the user did not state a location (so the caller must not fall back to a
+    hardcoded city and must keep results city-agnostic).
+    """
+    if not text:
+        return None
+    low = text.lower()
+    for keys, canon in _LOCATION_MAP:
+        for k in keys:
+            if k in low:
+                return canon
+    return None
+
+
+def select_candidates(verified: list[dict], uncertain: list[dict], limit: int = 8) -> list[dict]:
+    """Pick the final, ranked, de-duplicated candidate list to show the user.
+
+    Feature 3: the pipeline must NEVER give up with an empty list just because no
+    listing could be machine-verified as VERIFIED. Verified listings rank first
+    (most trustworthy), then UNCERTAIN ones (still relevant, labeled honestly).
+    De-dup keeps the highest-match entry per (company|title|location).
+
+    ``verified`` / ``uncertain`` items must carry at least: job_title, link,
+    status, match, company, location.
+    """
+    merged: list[dict] = []
+    merged.extend(verified)  # VERIFIED first
+    merged.extend(uncertain)
+
+    def _dedup_key(j: dict) -> str:
+        return f"{(j.get('company') or '').lower()}|{(j.get('job_title') or '').lower()}|{(j.get('location') or '').lower()}"
+
+    dedup: dict[str, dict] = {}
+    for j in merged:
+        key = _dedup_key(j)
+        if key not in dedup or j.get("match", 0) > dedup[key].get("match", 0):
+            dedup[key] = j
+    items = list(dedup.values())
+    # VERIFIED ahead of UNCERTAIN, then by match desc.
+    items.sort(key=lambda x: (0 if x.get("status") == "VERIFIED" else 1, -x.get("match", 0)))
+    return items[:limit]

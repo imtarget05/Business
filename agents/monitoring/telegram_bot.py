@@ -320,6 +320,28 @@ class MonitoringBot:
         except Exception as e:
             await update.message.reply_text(f"Error generating report: {str(e)}")
     
+    async def _start_typing(self, chat_id: int):
+        """Start a keep-typing loop; returns a task to cancel when done."""
+        async def _keep():
+            while True:
+                try:
+                    await self.app.bot.send_chat_action(chat_id=chat_id, action="typing")
+                except Exception:
+                    return
+                await asyncio.sleep(4)
+        try:
+            await self.app.bot.send_chat_action(chat_id=chat_id, action="typing")
+        except Exception:
+            pass
+        return asyncio.create_task(_keep())
+
+    async def _stop_typing(self, task) -> None:
+        if task:
+            try:
+                task.cancel()
+            except Exception:
+                pass
+
     async def _research_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Handle /research command — start research workflow."""
         query = " ".join(context.args) if context.args else ""
@@ -332,11 +354,12 @@ class MonitoringBot:
             )
             return
         
-        # Acknowledge
+        # Acknowledge + keep "typing..." while researching
         await update.message.reply_text(
             f"🔍 Researching: *{query}*\n\nThis may take a moment...",
             parse_mode=ParseMode.MARKDOWN,
         )
+        typing = await self._start_typing(update.effective_chat.id)
         
         # Run research in background
         try:
@@ -359,9 +382,12 @@ class MonitoringBot:
                 await update.message.reply_text(f"❌ Research failed: {result.get('error', 'unknown')}")
         except Exception as e:
             await update.message.reply_text(f"❌ Research error: {str(e)}")
+        finally:
+            await self._stop_typing(locals().get("typing"))
     
     async def _ops_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Handle /ops — Business Ops Hub daily digest (Task 2)."""
+        typing = await self._start_typing(update.effective_chat.id)
         await update.message.reply_text(
             "📥 Đang tổng hợp Business Ops Hub (Gmail chưa đọc + Calendar + tasks)...",
             parse_mode=ParseMode.MARKDOWN,
@@ -376,6 +402,8 @@ class MonitoringBot:
             await update.message.reply_text(_tg_escape_md(text), parse_mode=ParseMode.MARKDOWN)
         except Exception as e:
             await update.message.reply_text(f"❌ Lỗi Ops Hub: {e}")
+        finally:
+            await self._stop_typing(locals().get("typing"))
 
     async def _dispatch_ops_digest(self) -> dict:
         """Build the ops.digest result dict via the registry (shared with scheduler)."""
@@ -738,10 +766,58 @@ class MonitoringBot:
     async def _menu_command(self, update, context):
         await update.message.reply_text("Menu chinh — chon chuc nang:", parse_mode=ParseMode.MARKDOWN, reply_markup=self._main_menu_keyboard())
 
+    def _feedback_keyboard(self, task_id: str):
+        """👍/👎 inline keyboard linking a reply to its task (learning loop)."""
+        return InlineKeyboardMarkup(
+            [
+                [
+                    InlineKeyboardButton("👍 Hữu ích", callback_data=f"fb:up:{task_id}"),
+                    InlineKeyboardButton("👎 Chưa đúng", callback_data=f"fb:down:{task_id}"),
+                ]
+            ]
+        )
+
     async def _button_callback(self, update, context):
         q = update.callback_query
         await q.answer()
         d = q.data
+        # Inline feedback buttons (👍/👎) — route into the learning loop so the
+        # system visibly improves from user ratings (friendly feedback loop).
+        if d and d.startswith("fb:"):
+            try:
+                _, rating, task_id = d.split(":", 2)
+                from packages.core.bootstrap import get_container
+                try:
+                    learning = get_container().learning
+                except Exception:
+                    from packages.core.learning import LearningEngine
+                    learning = LearningEngine()
+                await learning.record_feedback(
+                    {
+                        "task_id": task_id,
+                        "rating": rating,
+                        "source": "telegram",
+                    }
+                )
+                thanks = (
+                    "🙏 Cảm ơn bạn! Tôi đã ghi nhận phản hồi *tích cực* và sẽ "
+                    "tiếp tục trả lời theo hướng này."
+                    if rating == "up"
+                    else "🙏 Cảm ơn bạn đã góp ý! Tôi đã ghi nhận và sẽ cải thiện "
+                    "cách trả lời. Bạn có thể diễn đạt lại hoặc cho tôi biết "
+                    "bạn cần agent nào (research/report/gmail/kb...)."
+                )
+                try:
+                    await q.edit_message_reply_markup(reply_markup=None)
+                except Exception:
+                    pass
+                if update.message:
+                    await update.message.reply_text(thanks, parse_mode=ParseMode.MARKDOWN)
+                else:
+                    await q.edit_message_text(thanks, parse_mode=ParseMode.MARKDOWN)
+            except Exception as e:
+                logger.error("feedback callback failed: %s", e)
+            return
         try:
             if d == "health":
                 from agents.monitoring.health_check import run_health_check as _rhc
@@ -1035,11 +1111,8 @@ class MonitoringBot:
                     await q.edit_message_text("⚠️ Không tìm thấy brief. Gửi lại brief AI Intern.", reply_markup=self._main_menu_keyboard())
                     return
                 target_mail = pending.get("target_mail", "binhtan5734@gmail.com")
-                _n_job = "8"
-                import re as _re_n
-                _m_n = _re_n.findall(r"\b(\d+)\b", pending.get("text", ""))
-                if _m_n:
-                    _n_job = _m_n[0]
+                from agents.monitoring.jobsearch_filters import parse_job_count as _parse_n
+                _n_job = parse_job_count(pending.get("text", "")) or 8
                 # Hỏi clarifying nếu brief chưa rõ vị trí cụ thể
                 _brief_l = (pending.get("text", "") or "").lower()
                 _stop = ["tìm","job","việc","tuyển","gửi","về","mail","trên","mọi","nền","tảng","đang","nhiều","ai intern","intern","ai/ml","5","5 job","cho","tôi","help","trợ giúp"]
@@ -1076,12 +1149,25 @@ class MonitoringBot:
                             _kw = _kw.replace(_w, " ")
                         _kw = " ".join(_kw.split()).strip() or "thực tập sinh"
                         _kw_cap = _kw[:40].title()
-                        queries = [
-                            f"{_kw_cap} Ho Chi Minh Vietnam",
-                            f"{_kw_cap} Hanoi Vietnam",
-                            f"{_kw_cap} Vietnam TopCV",
-                            f"{_kw_cap} Vietnam ITviec",
-                        ]
+                        # Target the REAL location the user stated (Feature 2).
+                        from agents.monitoring.jobsearch_filters import extract_location as _ext_loc
+                        _loc = _ext_loc(pending.get("text", ""))
+                        if _loc and _loc != "Remote":
+                            # one focused query on the stated city, plus a
+                            # Vietnam-wide query to catch other local boards.
+                            queries = [
+                                f"{_kw_cap} {_loc} Vietnam",
+                                f"{_kw_cap} {_loc}",
+                            ]
+                        elif _loc == "Remote":
+                            queries = [f"{_kw_cap} Remote Vietnam", f"{_kw_cap} Remote"]
+                        else:
+                            # no location stated -> city-agnostic, not HCMC-biased
+                            queries = [
+                                f"{_kw_cap} Vietnam TopCV",
+                                f"{_kw_cap} Vietnam ITviec",
+                                f"{_kw_cap} Vietnam VietnamWorks",
+                            ]
                         all_items: list[dict] = []
                         for _q in queries:
                             try:
@@ -1109,6 +1195,7 @@ class MonitoringBot:
                                 seen_url.add(u)
                                 uniq.append(it)
                         verified: list[dict] = []
+                        candidates: list[dict] = []
                         audit: list[dict] = []
                         now = _dt2.datetime.now(_dt2.timezone.utc).isoformat()
                         bg_keywords = ["python","docker","kubernetes","pytorch","computer vision","machine learning","mlops","llm","generative ai","agent","cloud"]
@@ -1143,7 +1230,13 @@ class MonitoringBot:
                             if "intern" in low_title: skill_match += 10
                             if "ai" in low_title: skill_match += 10
                             match = int(min(95, max(55, skill_match)))
-                            loc = "Ho Chi Minh" if "hcm" in low_title or "ho chi minh" in low_title else ("Ha Noi" if "hanoi" in low_title or "ha noi" in low_title else "Vietnam")
+                            # Label location from the user's stated location FIRST,
+                            # then fall back to what the listing/page actually says.
+                            _loc_label = _ext_loc(pending.get("text", ""))
+                            if _loc_label:
+                                loc = _loc_label
+                            else:
+                                loc = "Hồ Chí Minh" if "hcm" in low_title or "ho chi minh" in low_title else ("Hà Nội" if "hanoi" in low_title or "ha noi" in low_title else "Vietnam")
                             # tach company tu html title: thuong "Job - Company | Site"
                             company = "Unknown"
                             if " - " in title: company = title.split(" - ")[1].split("|")[0].split("-")[0].strip()[:40]
@@ -1153,22 +1246,24 @@ class MonitoringBot:
                             job = {"company": company or "Unknown","job_title": title[:80],"location": loc,"work_type": "On-site","salary": "","deadline": "","required_skills": ", ".join([k for k in bg_keywords if k in low_title][:5]),"experience": "Intern","link": url,"checked_at": now,"evidence": evidence,"confidence": confidence,"status": status,"match": match,"source": it.get("_q","")}
                             if status == "VERIFIED":
                                 verified.append(job)
+                            else:
+                                # Feature 3: keep UNCERTAIN/CLOSED as ranked candidates
+                                # (honest label) instead of discarding — never give up empty.
+                                candidates.append(job)
                             audit.append({"url": url, "title": title, "search_timestamp": now, "verification_timestamp": now, "status": status, "evidence": evidence, "confidence": confidence})
-                        verified = sorted(verified, key=lambda x: x["match"], reverse=True)[:8]
-                        dedup: dict[str, dict] = {}
-                        for j in verified:
-                            key = f"{j['company'].lower()}|{j['job_title'].lower()}|{j['location'].lower()}"
-                            if key not in dedup or j["match"] > dedup[key]["match"]:
-                                dedup[key] = j
-                        verified = list(dedup.values())[:8]
+                        # Feature 3: merge VERIFIED (ranked first) + UNCERTAIN into a
+                        # single de-duplicated, match-ranked candidate list.
+                        from agents.monitoring.jobsearch_filters import select_candidates as _select
+                        _limit = parse_job_count(pending.get("text", "")) or 8
+                        final_list = _select(verified, candidates, limit=_limit)
                         try:
                             _base = _pl2.Path("D:/Business Ops Agent Swarm") if _pl2.Path("D:/Business Ops Agent Swarm/job_search_results.json").parent.exists() else _pl2.Path(".")
                             (_base / "job_search_results.json").write_text(_json2.dumps(uniq, ensure_ascii=False, indent=2), encoding="utf-8")
-                            (_base / "verified_jobs.json").write_text(_json2.dumps(verified, ensure_ascii=False, indent=2), encoding="utf-8")
+                            (_base / "verified_jobs.json").write_text(_json2.dumps(final_list, ensure_ascii=False, indent=2), encoding="utf-8")
                             (_base / "job_audit_log.json").write_text(_json2.dumps(audit, ensure_ascii=False, indent=2), encoding="utf-8")
                         except Exception:
                             pass
-                        if not verified:
+                        if not final_list:
                             try:
                                 from urllib.parse import urlparse
                                 src_lines = []
@@ -1196,17 +1291,25 @@ class MonitoringBot:
                                 pass
                             return
                         job_lines = []
-                        for idx, j in enumerate(verified, 1):
+                        for idx, j in enumerate(final_list, 1):
                             why = j.get("required_skills") or "Đúng ngành AI Intern, khớp nền tảng ML/Cloud"
+                            if j.get("status") == "VERIFIED":
+                                _check = "✅ Đã kiểm tra: Còn tuyển (có nút ứng tuyển)"
+                                _apply = "Có"
+                            else:
+                                _check = "⚠️ Chưa xác nhận được nút ứng tuyển (liên kết liên quan, tự kiểm tra trước khi nộp)"
+                                _apply = "Cần kiểm tra"
                             job_lines.append(
                                 f"**{idx}. {j['job_title']} — {j['company']}**\n"
                                 f"- 📍 Địa điểm: {j.get('location') or '—'}\n"
-                                f"- ✅ Đã kiểm tra: Còn tuyển\n"
+                                f"- {_check}\n"
                                 f"- 🔗 Xem chi tiết: {j.get('link') or j.get('url') or '—'}\n"
                                 f"- 💡 Phù hợp vì: {why}\n"
-                                f"- 👉 Nên nộp hồ sơ: Có"
+                                f"- 👉 Nên nộp hồ sơ: {_apply}"
                             )
-                        summary = "**TUYỂN DỤNG AI INTERN — ĐÃ KIỂM TRA**\n\n" + "\n\n".join(job_lines)
+                        _has_verified = any(j.get("status") == "VERIFIED" for j in final_list)
+                        _header = "**TUYỂN DỤNG — ĐÃ KIỂM TRA**" if _has_verified else "**TUYỂN DỤNG — CHƯA XÁC NHẬN (liên kết liên quan)**"
+                        summary = f"{_header}\n\n" + "\n\n".join(job_lines)
                         try:
                             await context.bot.send_message(chat_id=chat_id2, text=summary[:4000], parse_mode=ParseMode.MARKDOWN)
                         except Exception:
@@ -1215,15 +1318,16 @@ class MonitoringBot:
                             from integrations.google_client import gmail_send
                             from packages.config.settings import get_settings
                             allowed = get_settings().gmail_allowed_recipients or []
-                            email_body = summary + "\n\n" + "\n".join(f"{j['company']} | {j['job_title']} | {j['link']} | Match {j['match']} | {j['evidence']}" for j in verified[:5])
+                            email_body = summary + "\n\n" + "\n".join(f"{j['company']} | {j['job_title']} | {j['link']} | Match {j['match']} | {j['evidence']}" for j in final_list[:5])
                             if target_mail.lower() not in [a.lower() for a in allowed]:
                                 await context.bot.send_message(chat_id=chat_id2, text=f"⚠️ {target_mail} chưa trong allowlist ({', '.join(allowed)}). Dùng /menu → ⚙️ Setup Mail → ➕ Thêm mail trước.")
                             else:
-                                _res = gmail_send(to=target_mail, subject=f"[Business Ops] TOP {len(verified[:5])} AI Intern VERIFIED — {now[:10]}", body=email_body)
+                                _tag = "VERIFIED" if _has_verified else "CHUA XAC NHAN"
+                                _res = gmail_send(to=target_mail, subject=f"[Business Ops] TOP {len(final_list[:5])} JobSearch {_tag} — {now[:10]}", body=email_body)
                                 if _res.get("mode") == "DRY_RUN":
                                     await context.bot.send_message(chat_id=chat_id2, text=f"⚠️ Gmail DRY_RUN, chưa gửi thật tới {target_mail}")
                                 else:
-                                    await context.bot.send_message(chat_id=chat_id2, text=f"✅ Đã gửi báo cáo TOP {len(verified[:5])} VERIFIED về {target_mail} (id {_res.get('id')})")
+                                    await context.bot.send_message(chat_id=chat_id2, text=f"✅ Đã gửi báo cáo TOP {len(final_list[:5])} {_tag} về {target_mail} (id {_res.get('id')})")
                         except Exception as _e:
                             try:
                                 await context.bot.send_message(chat_id=chat_id2, text=f"⚠️ Gửi mail lỗi: {_e}")
@@ -1338,7 +1442,8 @@ class MonitoringBot:
                 import re as _re_num_clar
                 _m_job = _re_num_clar.search(r"(tìm|nộp|apply)\s+(\d+)\s*(job|vị trí|viec|việc)", text.lower())
                 _m_any = _re_num_clar.findall(r"\b(\d+)\b", text)
-                _n_job = _m_job.group(2) if _m_job else (_m_any[0] if _m_any else "8")
+                from agents.monitoring.jobsearch_filters import parse_job_count as _parse_n2
+                _n_job = _parse_n2(text) or 8
                 from agents.monitoring.jobsearch_filters import extract_job_keywords
                 _kw_disp = extract_job_keywords(text)
                 from telegram import InlineKeyboardButton as _Bc, InlineKeyboardMarkup as _Mc
@@ -1385,7 +1490,8 @@ class MonitoringBot:
                 import re as _re_num_job
                 _m_job = _re_num_job.search(r"(tìm|nộp|apply)\s+(\d+)\s*(job|vị trí|viec|việc)", text.lower())
                 _m_any = _re_num_job.findall(r"\b(\d+)\b", text)
-                _n_job = _m_job.group(2) if _m_job else (_m_any[0] if _m_any else "8")
+                from agents.monitoring.jobsearch_filters import parse_job_count as _parse_n3
+                _n_job = _parse_n3(text) or 8
                 self._pending_jobsearch[chat_id] = {"target_mail": target_mail, "text": text}
                 from agents.monitoring.jobsearch_filters import extract_job_keywords
                 _kw_disp = extract_job_keywords(text)
@@ -1546,7 +1652,8 @@ class MonitoringBot:
                         await self._friendly_unknown(update)
                         return
                     if typing_task: typing_task.cancel()
-                    await update.message.reply_text(reply[:4000])
+                    kb = self._feedback_keyboard(str(req.task_id))
+                    await update.message.reply_text(reply[:4000], reply_markup=kb)
                     return
                 except Exception:
                     pass
