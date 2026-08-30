@@ -251,3 +251,27 @@ async def test_empty_message_ignored(bot, ctx):
     assert ctx.bot.sent == []
     assert "Mình" not in (update.message.text or "")
     assert "chưa rõ" not in (update.message.text or "")
+
+
+@pytest.mark.asyncio
+async def test_jobsearch_confirm_format_is_natural(bot, ctx):
+    """Confirm screen must echo the keyword, not claim VERIFIED pre-search, and
+    offer an edit escape hatch (per UX review 2026-08-30)."""
+    update = await _run(bot, ctx, "tìm job AI intern gần đây")
+    txt = update.message.text or ""
+    assert "Từ khóa: Ai Intern" in txt
+    assert "sẽ xác minh trước khi gửi" in txt
+    assert "Thời gian dự kiến" in txt
+    # The misleading pre-search 'VERIFIED' label must be gone.
+    assert "vị trí VERIFIED" not in txt
+    assert "sửa" in txt.lower()
+
+
+@pytest.mark.asyncio
+async def test_jobsearch_sua_clears_pending(bot, ctx):
+    """Typing 'sửa' while in the clarifying state must clear pending and ask for new criteria."""
+    await _run(bot, ctx, "tìm job AI intern")
+    update = await _run(bot, ctx, "sửa", chat_id=123456)
+    txt = update.message.text or ""
+    assert "tiêu chí nào" in txt
+    assert "Xác nhận tìm" not in txt

@@ -1311,23 +1311,35 @@ class MonitoringBot:
         # Nếu đang ở bước clarifying JobSearch mà user gửi text -> cập nhật brief + hỏi xác nhận lại
         if chat_id in self._pending_jobsearch and not text.startswith("/"):
             try:
-                import re as _re_clar
                 _prev = self._pending_jobsearch[chat_id]
+                _low_txt = text.lower().strip()
+                # "sửa" -> hủy pending, yêu cầu nhập lại tiêu chí
+                if _low_txt in ("sửa", "sua", "edit", "change", "thay đổi", "doi"):
+                    self._pending_jobsearch.pop(chat_id, None)
+                    await update.message.reply_text(
+                        "📝 Bạn muốn tìm với tiêu chí nào? Ví dụ: *tìm 5 job AI intern tại Hà Nội*",
+                        parse_mode=ParseMode.MARKDOWN,
+                    )
+                    return
                 _prev["text"] = (text)
                 target_mail = _prev.get("target_mail") or "tanmainguyenbinh@gmail.com"
                 import re as _re_num_clar
                 _m_job = _re_num_clar.search(r"(tìm|nộp|apply)\s+(\d+)\s*(job|vị trí|viec|việc)", text.lower())
                 _m_any = _re_num_clar.findall(r"\b(\d+)\b", text)
                 _n_job = _m_job.group(2) if _m_job else (_m_any[0] if _m_any else "8")
+                from agents.monitoring.jobsearch_filters import extract_job_keywords
+                _kw_disp = extract_job_keywords(text)
                 from telegram import InlineKeyboardButton as _Bc, InlineKeyboardMarkup as _Mc
                 kb = _Mc([[_Bc(f"✅ Xác nhận tìm {_n_job} vị trí", callback_data="jobsearch_confirm"), _Bc("❌ Hủy", callback_data="jobsearch_cancel")]])
                 await update.message.reply_text(
-                    f"📋 *Yêu cầu tìm kiếm vị trí tuyển dụng*\n\n"
-                    f"• Brief: {text[:200]}\n"
-                    f"• Số lượng: {_n_job} vị trí VERIFIED\n"
-                    f"• Ưu tiên nguồn: TopCV · VietnamWorks · ITviec · LinkedIn\n"
-                    f"• Nhận báo cáo tại: {target_mail}\n\n"
-                    f"Vui lòng xác nhận để hệ thống bắt đầu tìm kiếm.",
+                    f"📋 Xác nhận tìm kiếm việc làm\n\n"
+                    f"🔍 Từ khóa: {_kw_disp}\n"
+                    f"📊 Số lượng: {_n_job} vị trí (sẽ xác minh trước khi gửi)\n"
+                    f"🌐 Nguồn: TopCV, VietnamWorks, ITviec, LinkedIn\n"
+                    f"✅ Kiểm tra: link còn mở + chấm điểm phù hợp 0–100\n"
+                    f"📧 Gửi báo cáo tới: {target_mail}\n"
+                    f"⏱ Thời gian dự kiến: ~2–3 phút\n\n"
+                    f"→ Gõ \"OK\" để bắt đầu, hoặc \"sửa\" để thay đổi tiêu chí.",
                     parse_mode=ParseMode.MARKDOWN, reply_markup=kb,
                 )
                 return
@@ -1363,17 +1375,21 @@ class MonitoringBot:
                 _m_any = _re_num_job.findall(r"\b(\d+)\b", text)
                 _n_job = _m_job.group(2) if _m_job else (_m_any[0] if _m_any else "8")
                 self._pending_jobsearch[chat_id] = {"target_mail": target_mail, "text": text}
+                from agents.monitoring.jobsearch_filters import extract_job_keywords
+                _kw_disp = extract_job_keywords(text)
                 from telegram import InlineKeyboardButton as _B2, InlineKeyboardMarkup as _M2
                 kb2 = _M2([
                     [_B2(f"✅ Xác nhận tìm {_n_job} vị trí", callback_data="jobsearch_confirm"), _B2("❌ Hủy", callback_data="jobsearch_cancel")],
                 ])
                 await update.message.reply_text(
-                    f"📋 *Yêu cầu tìm kiếm vị trí tuyển dụng*\n\n"
-                    f"• Số lượng: {_n_job} vị trí VERIFIED\n"
-                    f"• Ưu tiên nguồn: TopCV · VietnamWorks · ITviec · LinkedIn\n"
-                    f"• Kiểm tra: link ứng tuyển còn mở + chấm điểm 0–100\n"
-                    f"• Nhận báo cáo tại: {target_mail}\n\n"
-                    f"Vui lòng xác nhận để hệ thống bắt đầu tìm kiếm.",
+                    f"📋 Xác nhận tìm kiếm việc làm\n\n"
+                    f"🔍 Từ khóa: {_kw_disp}\n"
+                    f"📊 Số lượng: {_n_job} vị trí (sẽ xác minh trước khi gửi)\n"
+                    f"🌐 Nguồn: TopCV, VietnamWorks, ITviec, LinkedIn\n"
+                    f"✅ Kiểm tra: link còn mở + chấm điểm phù hợp 0–100\n"
+                    f"📧 Gửi báo cáo tới: {target_mail}\n"
+                    f"⏱ Thời gian dự kiến: ~2–3 phút\n\n"
+                    f"→ Gõ \"OK\" để bắt đầu, hoặc \"sửa\" để thay đổi tiêu chí.",
                     parse_mode=ParseMode.MARKDOWN, reply_markup=kb2,
                 )
                 return

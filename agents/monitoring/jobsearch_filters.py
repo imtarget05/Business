@@ -141,3 +141,28 @@ def verify_job_listing(url: str, html: str, now: str, fallback_title: str = "") 
         "evidence": "detail page 200 but no clear Apply button",
         "is_detail": True,
     }
+
+
+_STOPWORDS = (
+    "tìm", "job", "việc", "tuyển", "gửi", "về", "mail", "trên", "mọi", "nền",
+    "tảng", "đang", "nhiều", "cho", "tôi", "với", "các", "những", "để",
+    "nhận", "báo", "cáo", "tại", "vị", "trí", "làm", "tim", "viec", "tuyen",
+    "tìm kiếm", "search", "agent", "gần đây", "gần", "đây", "các bạn", "cho tôi",
+)
+
+
+def extract_job_keywords(text: str) -> str:
+    """Derive a display keyword from a free-text job brief (no hardcoding).
+
+    Strips common Vietnamese/English stop-words and the hiring verbs so the
+    confirmation screen can echo back WHAT the user actually asked for (e.g.
+    'AI intern'), not the raw command.
+    """
+    if not text:
+        return "thực tập sinh AI"
+    low = text.lower()
+    kw = low
+    for w in _STOPWORDS:
+        kw = kw.replace(w, " ")
+    kw = " ".join(kw.split()).strip()
+    return kw[:60].title() if kw else "thực tập sinh AI"

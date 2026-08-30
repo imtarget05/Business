@@ -131,3 +131,17 @@ def test_google_url_never_verified_even_with_apply_html():
     html = "<title>Search</title><a href='/apply'>Apply</a>"
     r = verify_job_listing("https://www.google.com/search?q=x", html, "now")
     assert r["status"] != "VERIFIED"
+
+
+def test_extract_keywords_keeps_core_intern():
+    from agents.monitoring.jobsearch_filters import extract_job_keywords
+    # 'ai intern' is the core keyword and must NOT be stripped.
+    assert extract_job_keywords("tìm job AI intern gần đây") == "Ai Intern"
+    assert "intern" in extract_job_keywords("tìm 5 job AI/ml intern tại Hà Nội").lower()
+
+
+def test_extract_keywords_fallback():
+    from agents.monitoring.jobsearch_filters import extract_job_keywords
+    assert extract_job_keywords("") == "thực tập sinh AI"
+    # only hiring verbs remain -> falls back to default (no empty keyword)
+    assert extract_job_keywords("tìm job") == "thực tập sinh AI"
