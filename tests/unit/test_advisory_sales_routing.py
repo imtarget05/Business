@@ -142,7 +142,9 @@ async def _run(bot, ctx, text, chat_id=123456):
 async def test_jobsearch_not_routed_to_advisory(bot, ctx):
     update = await _run(bot, ctx, "tìm 5 job AI intern về a@b.com")
     assert "[advisory-routed]" not in (update.message.text or "")
-    assert "tìm kiếm vị trí tuyển dụng" in (update.message.text or "")
+    # JobSearch confirm screen must appear (not an advisory routing) — using the
+    # post-UX-review wording ("Xác nhận tìm kiếm việc làm").
+    assert "Xác nhận tìm kiếm việc làm" in (update.message.text or "")
 
 
 @pytest.mark.asyncio
