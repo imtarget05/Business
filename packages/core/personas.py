@@ -73,7 +73,7 @@ PERSONA_KEYWORDS: dict[str, tuple[str, ...]] = {
         "growth",
         "offer",
         "đề xuất",
-        "giá",
+        "định giá",
         "pricing",
         "bán hàng",
         "business model",
