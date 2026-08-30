@@ -291,3 +291,94 @@ def select_candidates(verified: list[dict], uncertain: list[dict], limit: int = 
     # VERIFIED ahead of UNCERTAIN, then by match desc.
     items.sort(key=lambda x: (0 if x.get("status") == "VERIFIED" else 1, -x.get("match", 0)))
     return items[:limit]
+
+
+# ---------------------------------------------------------------------------
+# Post-audit helpers (silent contract violations, 2026-08-30)
+# ---------------------------------------------------------------------------
+
+def searching_label(count: int | str) -> str:
+    """State-machine label for the SEARCHING phase — must NOT claim VERIFIED.
+
+    V1: the old label said 'Đang tìm kiếm N vị trí VERIFIED' before any verification
+    happened, misrepresenting state. Now it clearly says we are searching AND will
+    verify (no false 'VERIFIED' claim).
+    """
+    return (
+        f"🔍 Đang tìm kiếm {count} vị trí (sẽ xác minh nút ứng tuyển trước khi gửi)... "
+        f"dự kiến 2–3 phút"
+    )
+
+
+def _domain(url: str) -> str:
+    from urllib.parse import urlparse
+
+    net = urlparse(url).netloc.lower()
+    return net[4:] if net.startswith("www.") else net
+
+
+def _url_path(url: str) -> str:
+    from urllib.parse import urlparse
+
+    p = urlparse(url).path.rstrip("/")
+    return p or "/"
+
+
+def dedupe_candidates(items: list[dict]) -> list[dict]:
+    """Dedupe by (domain + URL path) so 'topcv.vn/viec-lam' and 'www.topcv.vn/viec-lam'
+
+    V4: the prior list showed 'TopCV /viec-lam' and 'TopCV' as if two sources. They
+    are the same domain+path. Collapse to one entry (keep highest match).
+    """
+    seen: dict[tuple[str, str], dict] = {}
+    for j in items:
+        key = (_domain(j.get("url", "")), _url_path(j.get("url", "")))
+        if key not in seen or j.get("match", 0) > seen[key].get("match", 0):
+            seen[key] = j
+    return list(seen.values())
+
+
+def classify_drop(url: str) -> str:
+    """Reason code for why a collected link was dropped before display (V3)."""
+    from agents.monitoring.jobsearch_filters import is_job_url
+
+    if not is_job_url(url):
+        return "NON_JOB_DOMAIN"
+    # job domain but not a detail page -> listing/search page, not a real posting
+    from agents.monitoring.jobsearch_filters import is_job_detail
+
+    if not is_job_detail(url):
+        return "NOT_DETAIL_PAGE"
+    return "KEPT"
+
+
+def decide_send_gate(promised: int, verified_count: int, final_list: list[dict]) -> dict:
+    """Verify-gate: decide whether to auto-send email or stop and ASK the user (V2).
+
+    Contract (from STEP 1 confirm screen): 'sẽ xác minh trước khi gửi'. If we could
+    not verify a single listing (or fell below the promised count), we must NOT
+    silently email unverified results. We stop and ask the user instead.
+    """
+    if not final_list:
+        return {"action": "ASK_USER", "reason": "EMPTY"}
+    if verified_count == 0:
+        return {"action": "ASK_USER", "reason": "NO_VERIFIED"}
+    if promised and verified_count < promised:
+        return {"action": "ASK_USER", "reason": "BELOW_PROMISED"}
+    return {"action": "SEND", "reason": "OK"}
+
+
+def build_header(verified_count: int, total: int) -> str:
+    """Honest header reflecting verification reality (V5).
+
+    When nothing is VERIFIED we must say so plainly and admit the core question
+    ('còn apply được?' = is it still open) is NOT answered by these links.
+    """
+    if verified_count > 0:
+        return f"**TUYỂN DỤNG — ĐÃ KIỂM TRA ({verified_count}/{total} VERIFIED)**"
+    return (
+        "**TUYỂN DỤNG — CHƯA XÁC NHẬN (liên kết liên quan)**\n"
+        "⚠️ Chưa xác thực được nút ứng tuyển nào còn mở, nên CHƯA trả lời được câu hỏi "
+        "'còn apply được không'. Các link dưới chỉ là trang tuyển dụng liên quan — "
+        "bạn cần tự kiểm tra từng vị trí trước khi nộp."
+    )

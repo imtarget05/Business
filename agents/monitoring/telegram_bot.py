@@ -33,6 +33,37 @@ def _tg_escape_md(text: str) -> str:
         return text
     return _TG_MD_ESCAPE.sub(r"\\\1", text)
 
+
+def _md_to_telegram_html(md: str) -> str:
+    """Convert an LLM/markdown report into friendly Telegram HTML.
+
+    - Removes literal escape backslashes (\\#, \\-, \\* ...)
+    - Headings  #/##/###  -> bold section titles
+    - Bullets   -/*       -> "•"
+    - Dividers  ---/***/  -> ━━━ line
+    - **bold** / __bold__ -> <b>, *italic* -> <i>, `code` -> <code>
+    - [text](url)         -> <a href="url">text</a>
+    - HTML-escapes < > & so untrusted content can't break parsing.
+    """
+    if not md:
+        return md
+    t = re.sub(r"\\([_`\[\]()~>#+\-=|{}.!])", r"\1", md)  # unescape \x -> x
+    t = t.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+    # headings -> bold with a small marker for visual hierarchy
+    t = re.sub(r"(?m)^#{1,6}\s*(.+?)\s*:?\s*$", r"<b>📌 \1</b>", t)
+    # dividers
+    t = re.sub(r"(?m)^[-*_]{3,}\s*$", "━━━━━━━━━━━━━━━━━━", t)
+    # bullets (after dividers so '---' isn't touched; '* ' at line start -> •)
+    t = re.sub(r"(?m)^(\s*)[-*+]\s+", r"\1• ", t)
+    # links first (before bold/italic eat the brackets)
+    t = re.sub(r"\[([^\]]+)\]\((https?://[^)\s]+)\)", r'<a href="\2">\1</a>', t)
+    # emphasis
+    t = re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", t, flags=re.S)
+    t = re.sub(r"__(.+?)__", r"<b>\1</b>", t, flags=re.S)
+    t = re.sub(r"`([^`\n]+)`", r"<code>\1</code>", t)
+    t = re.sub(r"(?<![\w*])\*([^*\n]+)\*(?![\w*])", r"<i>\1</i>", t)
+    return t
+
 # Optional telegram import — make it graceful if not installed
 try:
     from telegram import Update, Bot, InlineKeyboardButton, InlineKeyboardMarkup
@@ -154,6 +185,7 @@ class MonitoringBot:
         self._awaiting_add_mail: set[int] = set()
         self._awaiting_del_mail: set[int] = set()
         self._pending_jobsearch: dict[int, dict] = {}  # chat_id -> {target_mail, text}
+        self._last_jobsearch: dict[int, list[dict]] = {}  # chat_id -> final_list from last run (for send-unconfirmed)
         self._pending_youtube: dict[int, dict] = {}  # chat_id -> {target_mail, text}
     
     async def initialize(self) -> None:
@@ -433,7 +465,7 @@ class MonitoringBot:
                 report = result.get("report", "")
                 if len(report) > 4000:
                     report = report[:3900] + self._tr(update, "truncated")
-                await update.message.reply_text(_tg_escape_md(report), parse_mode=ParseMode.MARKDOWN)
+                await update.message.reply_text(_md_to_telegram_html(report), parse_mode=ParseMode.HTML)
             else:
                 await update.message.reply_text(
                     self._tr(update, "research_failed", err=result.get("error", "unknown"))
@@ -461,7 +493,7 @@ class MonitoringBot:
             text = _format_ops_digest(digest_dict)
             if len(text) > 4000:
                 text = text[:3900] + "\n*... (đã rút gọn) ...*"
-            await update.message.reply_text(_tg_escape_md(text), parse_mode=ParseMode.MARKDOWN)
+            await update.message.reply_text(_md_to_telegram_html(text), parse_mode=ParseMode.HTML)
         except Exception as e:
             await update.message.reply_text(f"❌ Lỗi Ops Hub: {e}")
         finally:
@@ -1166,6 +1198,34 @@ class MonitoringBot:
                         try: await context.bot.send_message(chat_id=chat_id2, text=f"❌ YouTube lỗi: {e2}")
                         except Exception: pass
                 _aioY.create_task(_do_youtube())
+            elif d == "jobsearch_send_unconfirmed":
+                chat_id2 = q.message.chat.id if q.message and q.message.chat else 0
+                _final = self._last_jobsearch.get(chat_id2, [])
+                if not _final:
+                    await q.edit_message_text("⚠️ Không có kết quả để gửi. Hãy chạy tìm kiếm lại.", reply_markup=self._main_menu_keyboard())
+                    return
+                target_mail = (self._pending_jobsearch.get(chat_id2, {}) or {}).get("target_mail") or "tanmainguyenbinh@gmail.com"
+                try:
+                    from integrations.google_client import gmail_send
+                    from packages.config.settings import get_settings
+                    allowed = get_settings().gmail_allowed_recipients or []
+                    _summary_lines = "\n".join(f"{i+1}. {j.get('job_title','?')} — {j.get('company','?')} | {j.get('link') or j.get('url')}" for i,j in enumerate(_final))
+                    _body = f"**TUYỂN DỤNG — CHƯA XÁC NHẬN (gửi theo yêu cầu user)**\n\n{_summary_lines}"
+                    if target_mail.lower() not in [a.lower() for a in allowed]:
+                        await context.bot.send_message(chat_id=chat_id2, text=f"⚠️ {target_mail} chưa trong allowlist. Dùng /menu → ⚙️ Setup Mail → ➕ Thêm mail trước.")
+                    else:
+                        _res = gmail_send(to=target_mail, subject=f"[Business Ops] TOP {len(_final)} JobSearch CHUA XAC NHAN (user yêu cầu gửi) — {_dt2.datetime.now(_dt2.timezone.utc).isoformat()[:10]}", body=_body)
+                        if _res.get("mode") == "DRY_RUN":
+                            await context.bot.send_message(chat_id=chat_id2, text=f"⚠️ Gmail DRY_RUN, chưa gửi thật tới {target_mail}")
+                        else:
+                            await context.bot.send_message(chat_id=chat_id2, text=f"📨 Đã gửi (chưa verify) TOP {len(_final)} về {target_mail} (id {_res.get('id')})")
+                except Exception as _e:
+                    try: await context.bot.send_message(chat_id=chat_id2, text=f"⚠️ Gửi mail lỗi: {_e}")
+                    except Exception: pass
+                return
+            elif d == "jobsearch_expand":
+                await q.edit_message_text("🔍 Mở rộng nguồn: thử lại với thêm từ khóa ngành + nhiều trang (TopCV, ITviec, VietnamWorks, LinkedIn, CareerBuilder)... Vui lòng gõ lại brief nếu muốn đổi tiêu chí.", reply_markup=self._main_menu_keyboard())
+                return
             elif d == "jobsearch_confirm":
                 chat_id2 = q.message.chat.id if q.message and q.message.chat else 0
                 pending = self._pending_jobsearch.pop(chat_id2, None)
@@ -1193,7 +1253,8 @@ class MonitoringBot:
                         reply_markup=self._main_menu_keyboard(),
                     )
                     return
-                await q.edit_message_text(f"🔍 Đang tìm kiếm {_n_job} vị trí VERIFIED cho *{target_mail}* (dự kiến 2-3 phút)...", parse_mode=ParseMode.MARKDOWN)
+                from agents.monitoring.jobsearch_filters import searching_label as _search_lbl
+                await q.edit_message_text(_search_lbl(_n_job) + f" cho *{target_mail}*", parse_mode=ParseMode.MARKDOWN)
                 import asyncio as _aio2, uuid as _uuid2, datetime as _dt2, json as _json2, pathlib as _pl2
                 import httpx as _httpx2
                 async def _do_jobsearch_confirm():
@@ -1343,7 +1404,19 @@ class MonitoringBot:
                         from agents.monitoring.jobsearch_filters import select_candidates as _select
                         from agents.monitoring.jobsearch_filters import parse_job_count as _pjc
                         _limit = _pjc(pending.get("text", "")) or 8
-                        final_list = _select(verified, candidates, limit=_limit)
+                        from agents.monitoring.jobsearch_filters import dedupe_candidates as _dedupe
+                        final_list = _dedupe(_select(verified, candidates, limit=_limit))
+                        # V3: log why items were dropped (promised -> actual)
+                        _verified_count = sum(1 for j in final_list if j.get("status") == "VERIFIED")
+                        try:
+                            _drop_log = (
+                                f"📊 Thống kê: hứa {_limit} | thu thập {len(all_items)} | "
+                                f"job-URL hợp lệ {len(uniq)} | sau verify còn {len(final_list)} "
+                                f"(VERIFIED={_verified_count})."
+                            )
+                            await context.bot.send_message(chat_id=chat_id2, text=_drop_log)
+                        except Exception:
+                            pass
                         try:
                             _base = _pl2.Path("D:/Business Ops Agent Swarm") if _pl2.Path("D:/Business Ops Agent Swarm/job_search_results.json").parent.exists() else _pl2.Path(".")
                             (_base / "job_search_results.json").write_text(_json2.dumps(uniq, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -1395,13 +1468,38 @@ class MonitoringBot:
                                 f"- 💡 Phù hợp vì: {why}\n"
                                 f"- 👉 Nên nộp hồ sơ: {_apply}"
                             )
-                        _has_verified = any(j.get("status") == "VERIFIED" for j in final_list)
-                        _header = "**TUYỂN DỤNG — ĐÃ KIỂM TRA**" if _has_verified else "**TUYỂN DỤNG — CHƯA XÁC NHẬN (liên kết liên quan)**"
+                        # V5: honest header reflecting verification reality
+                        from agents.monitoring.jobsearch_filters import build_header as _build_header
+                        _header = _build_header(_verified_count, len(final_list))
                         summary = f"{_header}\n\n" + "\n\n".join(job_lines)
                         try:
                             await context.bot.send_message(chat_id=chat_id2, text=summary[:4000], parse_mode=ParseMode.MARKDOWN)
                         except Exception:
                             pass
+                        # V2: verify-gate — do NOT auto-send if 0/low VERIFIED
+                        from agents.monitoring.jobsearch_filters import decide_send_gate as _gate
+                        _gate_decision = _gate(_limit, _verified_count, final_list)
+                        if _gate_decision["action"] == "ASK_USER":
+                            try:
+                                self._last_jobsearch[chat_id2] = final_list
+                                from telegram import InlineKeyboardButton as _Bg, InlineKeyboardMarkup as _Mg
+                                _kb = _Mg([[
+                                    _Bg("📨 Gửi luôn (chưa verify)", callback_data="jobsearch_send_unconfirmed"),
+                                    _Bg("🔍 Mở rộng nguồn", callback_data="jobsearch_expand"),
+                                    _Bg("❌ Hủy", callback_data="jobsearch_cancel"),
+                                ]])
+                                await context.bot.send_message(
+                                    chat_id=chat_id2,
+                                    text=(
+                                        f"⚠️ Hệ thống chỉ verify được {_verified_count}/{_limit} vị trí (lý do: {_gate_decision['reason']}). "
+                                        "Theo cam kết 'xác minh trước khi gửi', mình CHƯA gửi email. Bạn muốn:"
+                                    ),
+                                    reply_markup=_kb,
+                                )
+                            except Exception:
+                                pass
+                            return
+                        # SEND path (only when gate allows)
                         try:
                             from integrations.google_client import gmail_send
                             from packages.config.settings import get_settings
@@ -1410,7 +1508,7 @@ class MonitoringBot:
                             if target_mail.lower() not in [a.lower() for a in allowed]:
                                 await context.bot.send_message(chat_id=chat_id2, text=f"⚠️ {target_mail} chưa trong allowlist ({', '.join(allowed)}). Dùng /menu → ⚙️ Setup Mail → ➕ Thêm mail trước.")
                             else:
-                                _tag = "VERIFIED" if _has_verified else "CHUA XAC NHAN"
+                                _tag = "VERIFIED" if _verified_count else "CHUA XAC NHAN"
                                 _res = gmail_send(to=target_mail, subject=f"[Business Ops] TOP {len(final_list[:5])} JobSearch {_tag} — {now[:10]}", body=email_body)
                                 if _res.get("mode") == "DRY_RUN":
                                     await context.bot.send_message(chat_id=chat_id2, text=f"⚠️ Gmail DRY_RUN, chưa gửi thật tới {target_mail}")
