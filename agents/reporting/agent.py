@@ -109,6 +109,7 @@ class ReportingAgent:
             capabilities=frozenset({"report.generate"}),
         )
         self._llm = llm or MockLLMProvider()
+        self._last_org_id: Any = None  # last organization_id seen, for isolation tests
 
     @property
     def llm(self) -> LLMProvider:
@@ -160,13 +161,24 @@ class ReportingAgent:
                 # Sheet logging is best-effort; don't fail the report
                 pass
 
+        # Tenant-isolation: carry the originating org (if any) onto the result so
+        # downstream storage / Sheets logging can scope the report to its tenant.
+        # ReportingAgent must never mix data across organizations.
+        org_id = request.context.organization_id
+        if org_id is not None:
+            result["organization_id"] = str(org_id)
+            self._last_org_id = org_id
+
         return AgentResponse(
             task_id=request.task_id,
             agent=self.descriptor.qualified_name,
             status=AgentResponseStatus.SUCCESS,
             result=result,
             confidence=0.85,
-            metadata={"steps_completed": 5},
+            metadata={
+                "steps_completed": 5,
+                "organization_id": str(org_id) if org_id is not None else None,
+            },
         )
 
     async def _execute_chain(
