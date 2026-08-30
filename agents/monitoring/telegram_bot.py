@@ -320,6 +320,58 @@ class MonitoringBot:
         except Exception as e:
             await update.message.reply_text(f"Error generating report: {str(e)}")
     
+    # --- i18n: follow the user's Telegram app language (vi/en) ---
+    _TR = {
+        "connecting": {
+            "vi": "⏳ Đang kết nối...",
+            "en": "⏳ Connecting...",
+        },
+        "typing": {
+            "vi": "✍️ Đang nhập...",
+            "en": "✍️ Typing...",
+        },
+        "researching": {
+            "vi": "🔍 Đang nghiên cứu: *{query}*\n\nVui lòng đợi một lát...",
+            "en": "🔍 Researching: *{query}*\n\nThis may take a moment...",
+        },
+        "ops_digest": {
+            "vi": "📥 Đang tổng hợp Business Ops Hub (Gmail chưa đọc + Calendar + tasks)...",
+            "en": "📥 Compiling Business Ops Hub digest (unread Gmail + Calendar + tasks)...",
+        },
+        "research_failed": {
+            "vi": "❌ Nghiên cứu thất bại: {err}",
+            "en": "❌ Research failed: {err}",
+        },
+        "research_error": {
+            "vi": "❌ Lỗi nghiên cứu: {err}",
+            "en": "❌ Research error: {err}",
+        },
+        "truncated": {
+            "vi": "\n*... bị cắt bớt ...*",
+            "en": "\n*... truncated ...*",
+        },
+        "welcome_new": {
+            "vi": "🎯 *Target is ready!*\\nXin chào Mai Nguyễn Bình Tân — Bot đã sẵn sàng.",
+            "en": "🎯 *Target is ready!*\\nHello Mai — the bot is ready.",
+        },
+        "welcome_back": {
+            "vi": "Chào lại Mai!",
+            "en": "Welcome back, Mai!",
+        },
+    }
+
+    def _lang(self, update) -> str:
+        """Return 'vi' or 'en' based on the user's Telegram app language setting."""
+        user = getattr(update, "effective_user", None)
+        code = (getattr(user, "language_code", "") or "").lower()
+        return "vi" if code.startswith("vi") else "en"
+
+    def _tr(self, update, key: str, **kw) -> str:
+        """Localized string for a status/message key."""
+        entry = self._TR.get(key, {})
+        txt = entry.get(self._lang(update)) or entry.get("en") or key
+        return txt.format(**kw) if kw else txt
+
     async def _start_typing(self, chat_id: int):
         """Start a keep-typing loop; returns a task to cancel when done."""
         async def _keep():
@@ -354,12 +406,16 @@ class MonitoringBot:
             )
             return
         
-        # Acknowledge + keep "typing..." while researching
-        await update.message.reply_text(
-            f"🔍 Researching: *{query}*\n\nThis may take a moment...",
-            parse_mode=ParseMode.MARKDOWN,
-        )
+        # Localized status: "connecting..." -> edits itself to "researching..."
+        status = await update.message.reply_text(self._tr(update, "connecting"))
         typing = await self._start_typing(update.effective_chat.id)
+        try:
+            await status.edit_text(
+                self._tr(update, "researching", query=query),
+                parse_mode=ParseMode.MARKDOWN,
+            )
+        except Exception:
+            pass
         
         # Run research in background
         try:
@@ -376,22 +432,28 @@ class MonitoringBot:
             if result.get("status") == "success":
                 report = result.get("report", "")
                 if len(report) > 4000:
-                    report = report[:3900] + "\n*... truncated ...*"
+                    report = report[:3900] + self._tr(update, "truncated")
                 await update.message.reply_text(_tg_escape_md(report), parse_mode=ParseMode.MARKDOWN)
             else:
-                await update.message.reply_text(f"❌ Research failed: {result.get('error', 'unknown')}")
+                await update.message.reply_text(
+                    self._tr(update, "research_failed", err=result.get("error", "unknown"))
+                )
         except Exception as e:
-            await update.message.reply_text(f"❌ Research error: {str(e)}")
+            await update.message.reply_text(self._tr(update, "research_error", err=str(e)))
         finally:
             await self._stop_typing(locals().get("typing"))
     
     async def _ops_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Handle /ops — Business Ops Hub daily digest (Task 2)."""
+        status = await update.message.reply_text(self._tr(update, "connecting"))
         typing = await self._start_typing(update.effective_chat.id)
-        await update.message.reply_text(
-            "📥 Đang tổng hợp Business Ops Hub (Gmail chưa đọc + Calendar + tasks)...",
-            parse_mode=ParseMode.MARKDOWN,
-        )
+        try:
+            await status.edit_text(
+                self._tr(update, "ops_digest"),
+                parse_mode=ParseMode.MARKDOWN,
+            )
+        except Exception:
+            pass
         try:
             from agents.monitoring.scheduler import _format_ops_digest
 
@@ -756,9 +818,9 @@ class MonitoringBot:
         if chat_id:
             self._seen_chats.add(chat_id)
         if is_new:
-            txt = "🎯 *Target is ready!*\\nXin chào Mai Nguyễn Bình Tân — Bot đã sẵn sàng."
+            txt = self._tr(update, "welcome_new")
         else:
-            txt = "Chào lại Mai!"
+            txt = self._tr(update, "welcome_back")
         from telegram import InlineKeyboardButton as _B, InlineKeyboardMarkup as _M
         kb = _M([[ _B("📋 Mở menu", callback_data="open_menu") ]])
         await update.message.reply_text(txt, parse_mode=ParseMode.MARKDOWN, reply_markup=kb)
@@ -1495,15 +1557,19 @@ class MonitoringBot:
         # "tìm hiểu ..." (research) as a hiring request.
         _is_research_phrase = ("tìm hiểu" in low) or ("tìm ra" in low) or ("research" in low)
         is_jobsearch = (
-            ("job" in low or "intern" in low or "thực tập" in low or "thuc tap" in low
+            ("job" in low or "intern" in low or "thực tập" in low or "tuc tap" in low
              or "tuyển dụng" in low or "tuyen dung" in low or "tuyển" in low or "tuyen" in low
              or "ai/ml intern" in low or "machine learning intern" in low)
             or (
                 ("tìm" in low or "tim" in low or "search" in low)
-                and ("job" in low or "việc" in low or "viec" in low)
+                and ("job" in low or "việc" in low or "viec" in low or "tuyển" in low or "apply" in low)
                 and not _is_research_phrase
             )
-        ) or ("ai intern" in low) or ("job search agent" in low)
+            # "tìm <ngành> <địa điểm> còn apply được / đang tuyển" = clearly job hunting
+            or (("tìm" in low or "tim" in low) and ("còn apply" in low or "đang tuyển" in low or "còn tuyển" in low))
+            or ("apply được" in low and ("tìm" in low or "tim" in low or "có" in low))
+            or ("ai intern" in low) or ("job search agent" in low)
+        )
         # Job Search - hỏi trước khi làm (không tự chạy)
         if is_jobsearch:
             try:
