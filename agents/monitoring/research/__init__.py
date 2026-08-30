@@ -13,6 +13,8 @@ State flow:
 from __future__ import annotations
 
 import logging
+
+logger = logging.getLogger(__name__)
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any
@@ -141,26 +143,38 @@ class ResearchAgentBase:
         # Try LLM synthesis (local, free) when a provider is configured.
         try:
             from packages.llm import get_llm_provider
+            from packages.config.settings import get_settings
 
-            llm = get_llm_provider()
-            ctx = "\n\n".join(
-                f"[{e['title']}] {e['content'][:1500]}" for e in clean[:5]
-            )
-            prompt = (
-                f"Tóm tắt ngắn gọn (3-5 gạch đầu dòng, tiếng Việt) cho câu hỏi: {query}\n\n"
-                f"Nguồn:\n{ctx}"
-            )
-            answer = await llm.generate(
-                prompt,
-                system="Bạn là trợ lý nghiên cứu. Chỉ dùng thông tin trong nguồn. "
-                "Ngắn gọn, tiếng Việt, không bịa.",
-                temperature=0.2,
-            )
+            llm = get_llm_provider(get_settings())
+
+            has_real_info = any(len(e["content"].strip()) > 15 for e in clean)
+            if has_real_info:
+                ctx = "\n\n".join(
+                    f"[{e['title']}] {e['content'][:1500]}" for e in clean[:5]
+                )
+                system = (
+                    "Bạn là trợ lý nghiên cứu. Chỉ dùng thông tin trong nguồn. "
+                    "Ngắn gọn, tiếng Việt, không bịa."
+                )
+                prompt = (
+                    f"Tóm tắt ngắn gọn (3-5 gạch đầu dòng, tiếng Việt) cho câu hỏi: {query}\n\n"
+                    f"Nguồn:\n{ctx}"
+                )
+            else:
+                # Web sources were blocked / returned empty snippets -> answer from
+                # the model's own knowledge instead of echoing the (useless) snippets.
+                system = (
+                    "Bạn là trợ lý nghiên cứu. Dùng kiến thức của bạn, ngắn gọn, "
+                    "tiếng Việt, không bịa."
+                )
+                prompt = f"Trả lời ngắn gọn (tiếng Việt) cho câu hỏi: {query}"
+
+            answer = await llm.generate(prompt, system=system, temperature=0.2)
             if answer and len(answer.strip()) > 30 and not answer.lstrip().startswith("["):
                 return answer.strip()
-        except Exception:
+        except Exception as e:
             # LLM unavailable -> fall through to clean concatenation
-            pass
+            logger.warning("research summarize LLM failed: %s", e)
 
         # Fallback: clean concatenation (no raw HTML reaches here)
         parts = [f"**{e['title']}**: {e['content'][:400]}" for e in clean]

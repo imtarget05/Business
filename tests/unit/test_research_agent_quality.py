@@ -107,7 +107,7 @@ async def test_summarize_uses_llm_when_available(monkeypatch):
 
     import packages.llm as llm_mod
 
-    monkeypatch.setattr(llm_mod, "get_llm_provider", lambda: FakeLLM())
+    monkeypatch.setattr(llm_mod, "get_llm_provider", lambda settings: FakeLLM())
     agent = WebSearchAgent()
     extracted = [{"title": "S", "content": "LangGraph là thư viện stateful agent."}]
     out = await agent.summarize(extracted, "LangGraph là gì?")
@@ -124,7 +124,7 @@ async def test_summarize_says_when_all_sources_blocked(monkeypatch):
 
     import packages.llm as llm_mod
 
-    monkeypatch.setattr(llm_mod, "get_llm_provider", lambda: FakeLLM())
+    monkeypatch.setattr(llm_mod, "get_llm_provider", lambda settings: FakeLLM())
     agent = WebSearchAgent()
     out = await agent.summarize([], "LangGraph là gì?")
     assert "Không thu thập được" in out
