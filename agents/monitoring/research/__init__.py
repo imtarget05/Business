@@ -38,6 +38,17 @@ async def _call_web_extract(urls: list[str], char_limit: int = 5000) -> dict[str
     return await _tools.web_extract(urls=urls[:3], char_limit=char_limit)
 
 
+def _looks_like_html(text: str) -> bool:
+    """Heuristic: True if the text is raw HTML rather than readable content."""
+    if not text:
+        return False
+    head = text.lstrip()[:200].lower()
+    return head.startswith("<!doctype") or head.startswith("<html") or "<script" in head[:500]
+
+
+
+
+
 # ---------------------------------------------------------------------------
 # Research State
 # ---------------------------------------------------------------------------
@@ -100,14 +111,46 @@ class ResearchAgentBase:
         raise NotImplementedError
     
     async def summarize(self, extracted: list[dict[str, Any]], query: str) -> str:
-        """Generate summary from extracted content."""
-        # Simple concatenation-based summary for now
-        parts = []
-        for item in extracted:
-            title = item.get("title", "untitled")
-            content = item.get("content", "")
-            if content:
-                parts.append(f"**{title}**: {content[:500]}")
+        """Synthesize a clean answer from extracted content.
+
+        Uses the local LLM when available (qwen2.5); falls back to a clean
+        concatenation of non-empty snippets. If every source was blocked/unreadable,
+        says so plainly instead of dumping raw HTML.
+        """
+        clean = [e for e in extracted if e.get("content")]
+        if not clean:
+            return (
+                f"Không thu thập được nội dung hữu ích cho '{query}'. "
+                "Các nguồn được tìm thấy bị chặn (403/blocked) hoặc không trả về "
+                "văn bản. Hãy thử từ khóa khác hoặc nguồn chính thức."
+            )
+
+        # Try LLM synthesis (local, free) when a provider is configured.
+        try:
+            from packages.llm import get_llm_provider
+
+            llm = get_llm_provider()
+            ctx = "\n\n".join(
+                f"[{e['title']}] {e['content'][:1500]}" for e in clean[:5]
+            )
+            prompt = (
+                f"Tóm tắt ngắn gọn (3-5 gạch đầu dòng, tiếng Việt) cho câu hỏi: {query}\n\n"
+                f"Nguồn:\n{ctx}"
+            )
+            answer = await llm.generate(
+                prompt,
+                system="Bạn là trợ lý nghiên cứu. Chỉ dùng thông tin trong nguồn. "
+                "Ngắn gọn, tiếng Việt, không bịa.",
+                temperature=0.2,
+            )
+            if answer and len(answer.strip()) > 30 and not answer.lstrip().startswith("["):
+                return answer.strip()
+        except Exception:
+            # LLM unavailable -> fall through to clean concatenation
+            pass
+
+        # Fallback: clean concatenation (no raw HTML reaches here)
+        parts = [f"**{e['title']}**: {e['content'][:400]}" for e in clean]
         return "\n\n".join(parts) if parts else f"No content extracted for query: {query}"
     
     async def generate_report(self, summary: str, query: str, domain: str) -> str:
@@ -142,25 +185,44 @@ class WebSearchAgent(ResearchAgentBase):
         return result.get("data", {}).get("web", [])
     
     async def extract(self, results: list[dict[str, Any]], char_limit: int = 5000) -> list[dict[str, Any]]:
-        """Extract content from web results."""
+        """Extract content from web results, discarding blocked/raw-HTML entries."""
         urls = [r.get("url") for r in results if r.get("url")]
-        
+
         if not urls:
-            return [{"title": r.get("title", ""), "content": r.get("description", ""), "url": r.get("url", "")} for r in results]
-        
+            # No URLs (e.g. search snippets only): keep any non-HTML description.
+            out = []
+            for r in results:
+                desc = r.get("description") or r.get("content") or ""
+                if not _looks_like_html(desc):
+                    out.append({
+                        "title": r.get("title", ""),
+                        "content": desc,
+                        "url": r.get("url", ""),
+                    })
+            return out
+
         # Extract top 3 results
         extracted = []
         extract_result = await _call_web_extract(urls=urls[:3], char_limit=char_limit)
         results_data = extract_result.get("results", [])
-        
+
         for r in results_data:
+            if r.get("error"):
+                # 403 / blocked / extract failure -> skip, do not dump into report
+                continue
+            content = r.get("content") or ""
+            if _looks_like_html(content):
+                # Raw HTML returned instead of article text -> skip
+                continue
+            if not content and r.get("title"):
+                content = r.get("title")
             extracted.append({
                 "title": r.get("title", ""),
-                "content": r.get("content", ""),
+                "content": content,
                 "url": r.get("url", ""),
-                "error": r.get("error"),
+                "error": None,
             })
-        
+
         return extracted
 
 
