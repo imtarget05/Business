@@ -54,6 +54,27 @@ async def test_extract_no_urls_keeps_clean_description():
     assert "LangGraph" in extracted[0]["content"]
 
 
+async def test_extract_drops_error_text_content(monkeypatch):
+    """web_extract returns '[extract error: 403 ...]' as content (no error key) -> drop it."""
+    async def fake_extract(urls, char_limit=5000):
+        return {
+            "results": [
+                {
+                    "title": "Blocked page",
+                    "url": "https://sider.ai/x",
+                    "content": "[extract error: Client error '403 Forbidden' for url 'https://sider.ai/x']",
+                },
+                {"title": "Good", "url": "https://z.com/c", "content": "LangGraph là thư viện stateful."},
+            ]
+        }
+
+    monkeypatch.setattr(research_mod, "_call_web_extract", fake_extract)
+    agent = WebSearchAgent()
+    extracted = await agent.extract([{"title": "Blocked page", "url": "https://sider.ai/x"}, {"title": "Good", "url": "https://z.com/c"}])
+    assert len(extracted) == 1
+    assert extracted[0]["title"] == "Good"
+
+
 async def test_summarize_uses_llm_when_available(monkeypatch):
     """summarize() should call the LLM and return its synthesized answer."""
 

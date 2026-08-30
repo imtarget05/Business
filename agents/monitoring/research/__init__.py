@@ -46,6 +46,19 @@ def _looks_like_html(text: str) -> bool:
     return head.startswith("<!doctype") or head.startswith("<html") or "<script" in head[:500]
 
 
+def _looks_like_error_text(text: str) -> bool:
+    """True if the 'content' is actually an extract/HTTP error message, not article text."""
+    if not text:
+        return False
+    low = text.lower()
+    return (
+        "[extract error" in low
+        or "client error" in low
+        or "forbidden" in low
+        or "403" in low[:60]
+    )
+
+
 
 
 
@@ -213,6 +226,9 @@ class WebSearchAgent(ResearchAgentBase):
             content = r.get("content") or ""
             if _looks_like_html(content):
                 # Raw HTML returned instead of article text -> skip
+                continue
+            if _looks_like_error_text(content):
+                # web_extract returned "[extract error: 403 ...]" as content -> skip
                 continue
             if not content and r.get("title"):
                 content = r.get("title")
