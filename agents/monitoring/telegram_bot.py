@@ -17,6 +17,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import re
+import unicodedata
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Callable, Optional
@@ -32,6 +33,47 @@ def _tg_escape_md(text: str) -> str:
     if not text:
         return text
     return _TG_MD_ESCAPE.sub(r"\\\1", text)
+
+
+# Questions that need real-world / up-to-date data — must NOT be answered
+# from a small local LLM's memory (it hallucinates). Route them to research.
+_WEB_LOOKUP_RE = re.compile(
+    r"(ở đâu|nơi nào|địa chỉ|quán nào|nhà hàng|món ăn|ẩm thực|tin tức|tin mới|"
+    r"mới nhất|danh sách|xếp hạng|top \d+|kết quả (trận|bóng)|giá (hiện tại|bao nhiêu)|"
+    r"thời tiết|tỷ giá|công bố|vinh danh|giải thưởng|sao michelin|michelin|năm 20\d\d)",
+    re.I,
+)
+
+
+def _needs_web_lookup(text: str) -> bool:
+    """True if the question needs web data instead of LLM memory."""
+    return bool(text) and bool(_WEB_LOOKUP_RE.search(text))
+
+
+def _sanitize_text(text: str) -> str:
+    """Clean AI-generated text before sending to Telegram.
+
+    - NFC-normalizes (fixes composed Vietnamese diacritics)
+    - Drops control chars, lone surrogates and unassigned code points
+      (the usual source of "broken icon" boxes from small LLMs)
+    - Strips variation selectors that render as tofu on some clients
+    """
+    if not text:
+        return text
+    t = unicodedata.normalize("NFC", text)
+    t = t.replace("\ufe0e", "").replace("\ufe0f", "").replace("\ufffd", "")
+    out = []
+    for ch in t:
+        cat = unicodedata.category(ch)
+        code = ord(ch)
+        if 0xD800 <= code <= 0xDFFF:      # lone surrogate
+            continue
+        if cat == "Cn":                    # unassigned
+            continue
+        if cat.startswith("C") and ch not in ("\n", "\t"):  # other controls
+            continue
+        out.append(ch)
+    return "".join(out)
 
 
 def _md_to_telegram_html(md: str) -> str:
@@ -465,7 +507,9 @@ class MonitoringBot:
                 report = result.get("report", "")
                 if len(report) > 4000:
                     report = report[:3900] + self._tr(update, "truncated")
-                await update.message.reply_text(_md_to_telegram_html(report), parse_mode=ParseMode.HTML)
+                await update.message.reply_text(
+                    _md_to_telegram_html(_sanitize_text(report)), parse_mode=ParseMode.HTML
+                )
             else:
                 await update.message.reply_text(
                     self._tr(update, "research_failed", err=result.get("error", "unknown"))
@@ -493,7 +537,7 @@ class MonitoringBot:
             text = _format_ops_digest(digest_dict)
             if len(text) > 4000:
                 text = text[:3900] + "\n*... (đã rút gọn) ...*"
-            await update.message.reply_text(_md_to_telegram_html(text), parse_mode=ParseMode.HTML)
+            await update.message.reply_text(_md_to_telegram_html(_sanitize_text(text)), parse_mode=ParseMode.HTML)
         except Exception as e:
             await update.message.reply_text(f"❌ Lỗi Ops Hub: {e}")
         finally:
@@ -1214,7 +1258,7 @@ class MonitoringBot:
                     if target_mail.lower() not in [a.lower() for a in allowed]:
                         await context.bot.send_message(chat_id=chat_id2, text=f"⚠️ {target_mail} chưa trong allowlist. Dùng /menu → ⚙️ Setup Mail → ➕ Thêm mail trước.")
                     else:
-                        _res = gmail_send(to=target_mail, subject=f"[Business Ops] TOP {len(_final)} JobSearch CHUA XAC NHAN (user yêu cầu gửi) — {_dt2.datetime.now(_dt2.timezone.utc).isoformat()[:10]}", body=_body)
+                        _res = gmail_send(to=target_mail, subject=f"[Business Ops] TOP {len(_final)} JobSearch CHUA XAC NHAN (user yêu cầu gửi) — {datetime.now(timezone.utc).isoformat()[:10]}", body=_body)
                         if _res.get("mode") == "DRY_RUN":
                             await context.bot.send_message(chat_id=chat_id2, text=f"⚠️ Gmail DRY_RUN, chưa gửi thật tới {target_mail}")
                         else:
@@ -1843,12 +1887,46 @@ class MonitoringBot:
                         return
                     if typing_task: typing_task.cancel()
                     kb = self._feedback_keyboard(str(req.task_id))
-                    await update.message.reply_text(reply[:4000], reply_markup=kb)
+                    await update.message.reply_text(_sanitize_text(reply)[:4000], reply_markup=kb)
                     return
                 except Exception:
                     pass
             except Exception:
                 pass
+            # Factual / real-world lookup -> research pipeline (web-verified),
+            # NOT the bare LLM (it hallucinates on facts it cannot know).
+            if _needs_web_lookup(text):
+                try:
+                    from agents.monitoring.research import ResearchOrchestrator
+                    from uuid import uuid4 as _u4
+                    orch = ResearchOrchestrator()
+                    res = await orch.execute(task_id=_u4(), query=text, domain="web")
+                    if typing_task:
+                        typing_task.cancel()
+                        typing_task = None
+                    if res.get("status") == "success" and len(res.get("report", "").strip()) > 200:
+                        rep = res["report"]
+                        if len(rep) > 4000:
+                            rep = rep[:3900] + self._tr(update, "truncated")
+                        await update.message.reply_text(
+                            _md_to_telegram_html(_sanitize_text(rep)),
+                            parse_mode=ParseMode.HTML,
+                            reply_markup=self._feedback_keyboard(str(res.get("task_id", "web"))),
+                        )
+                        return
+                except Exception:
+                    pass
+                if typing_task:
+                    typing_task.cancel()
+                    typing_task = None
+                try:
+                    await update.message.reply_text(
+                        "⚠️ Mình không tra được web cho câu này nên sẽ KHÔNG bịa. "
+                        "Bạn thử lại sau hoặc dùng /research <câu hỏi> nhé."
+                    )
+                except Exception:
+                    pass
+                return
             from packages.config.settings import get_settings
             from packages.llm.factory import get_llm_provider
             llm = get_llm_provider(get_settings())
@@ -1857,20 +1935,23 @@ class MonitoringBot:
                 system=(
                     "Bạn là trợ lý Business Ops của Mai Nguyễn Bình Tân (trả lời tiếng Việt).\n"
                     "QUY TẮC BẮT BUỘC:\n"
-                    "1. Không bao giờ bịa dữ liệu.\n"
+                    "1. KHÔNG BAO GIỜ bịa dữ liệu, địa chỉ, tên quán, con số hay danh sách. "
+                    "Nếu bạn không chắc chắn THẬT SỰ, trả lời đúng 1 câu: "
+                    "'Mình không có dữ liệu thời gian thực — gõ /research <câu hỏi> để mình tra web.'\n"
                     "2. Khi được yêu cầu 'viết code', chỉ trả ĐÚNG 1 đoạn code đơn giản nhất "
                     "(mặc định Python) trừ khi người dùng chỉ rõ ngôn ngữ khác.\n"
                     "3. KHÔNG liệt kê nhiều ngôn ngữ, KHÔNG lặp lại nội dung, KHÔNG giải thích dài dòng.\n"
-                    "4. TÓM TẮT TRỌNG TÂM: trả lời ngắn gọn, đúng ý hỏi, tối đa 5 dòng. "
-                    "Nếu hỏi 'nghề nào layoff nhiều' thì chỉ liệt kê tên nghề + 1 câu nguyên nhân, không bài luận.\n"
-                    "5. Cần dữ liệu thật (mail, calendar, research) thì nói rõ chưa có tool, không tự tạo."
+                    "4. TÓM TẮT TRỌNG TÂM: trả lời ngắn gọn, đúng ý hỏi, tối đa 5 dòng.\n"
+                    "5. Cần dữ liệu thật (mail, calendar, tin tức) thì nói rõ chưa có tool, không tự tạo.\n"
+                    "6. CHỈ dùng emoji phổ thông (📧 📅 ✅ ❌ 🔍 ⚠️ 💡 📌 • —) để trang trí, "
+                    "KHÔNG dùng ký tự đặc biệt lạ, icon hiếm hay ký tự trang trí unicode khác."
                 ),
                 max_tokens=400,
                 temperature=0.3,
             )
             reply = answer if isinstance(answer, str) else str(answer)
             if typing_task: typing_task.cancel()
-            await update.message.reply_text(reply[:4000])
+            await update.message.reply_text(_sanitize_text(reply)[:4000])
         except Exception as e:
             if typing_task:
                 try: typing_task.cancel()
