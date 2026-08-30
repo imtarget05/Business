@@ -89,8 +89,8 @@ async def test_extract_falls_back_to_search_snippets_when_all_blocked(monkeypatc
     monkeypatch.setattr(research_mod, "_call_web_extract", fake_extract)
     agent = WebSearchAgent()
     search_results = [
-        {"title": "Sider", "url": "https://sider.ai/x", "description": "LangGraph là framework xây dựng agent."},
-        {"title": "Viblo", "url": "https://viblo.asia/y", "description": "Dùng graph để quản lý state."},
+        {"title": "Sider", "url": "https://sider.ai/x", "snippet": "LangGraph là framework xây dựng agent."},
+        {"title": "Viblo", "url": "https://viblo.asia/y", "snippet": "Dùng graph để quản lý state."},
     ]
     extracted = await agent.extract(search_results)
     assert len(extracted) == 2

@@ -205,7 +205,7 @@ class WebSearchAgent(ResearchAgentBase):
             # No URLs (e.g. search snippets only): keep any non-HTML description.
             out = []
             for r in results:
-                desc = r.get("description") or r.get("content") or ""
+                desc = r.get("snippet") or r.get("description") or r.get("content") or ""
                 if not _looks_like_html(desc):
                     out.append({
                         "title": r.get("title", ""),
@@ -241,10 +241,10 @@ class WebSearchAgent(ResearchAgentBase):
 
         if not extracted:
             # Every web extract failed/blocked (403 etc.) -> fall back to the
-            # search snippets (description) so the report still has real content
-            # to synthesize from instead of coming back empty.
+            # search snippets (snippet/description) so the report still has real
+            # content to synthesize from instead of coming back empty.
             for r in results:
-                desc = r.get("description") or ""
+                desc = r.get("snippet") or r.get("description") or ""
                 if desc and not _looks_like_html(desc) and not _looks_like_error_text(desc):
                     extracted.append({
                         "title": r.get("title", ""),
