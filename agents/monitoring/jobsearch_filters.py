@@ -148,6 +148,7 @@ _STOPWORDS = (
     "tảng", "đang", "nhiều", "cho", "tôi", "với", "các", "những", "để",
     "nhận", "báo", "cáo", "tại", "vị", "trí", "làm", "tim", "viec", "tuyen",
     "tìm kiếm", "search", "agent", "gần đây", "gần", "đây", "các bạn", "cho tôi",
+    "còn", "apply", "được", "có", "thể", "những", "đâu", "nào", "gì",
 )
 
 

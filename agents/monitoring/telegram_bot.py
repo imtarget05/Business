@@ -1112,7 +1112,7 @@ class MonitoringBot:
                     return
                 target_mail = pending.get("target_mail", "binhtan5734@gmail.com")
                 from agents.monitoring.jobsearch_filters import parse_job_count as _parse_n
-                _n_job = parse_job_count(pending.get("text", "")) or 8
+                _n_job = _parse_n(pending.get("text", "")) or 8
                 # Hỏi clarifying nếu brief chưa rõ vị trí cụ thể
                 _brief_l = (pending.get("text", "") or "").lower()
                 _stop = ["tìm","job","việc","tuyển","gửi","về","mail","trên","mọi","nền","tảng","đang","nhiều","ai intern","intern","ai/ml","5","5 job","cho","tôi","help","trợ giúp"]
@@ -1143,11 +1143,11 @@ class MonitoringBot:
                         # Chỉ giữ URL thuộc trang tuyển dụng uy tín (loại google/mail/accounts spam)
                         from agents.monitoring.jobsearch_filters import is_job_url as _is_job_url
                         # Tạo queries từ brief user (không tự thêm "AI" nếu user không nói)
-                        _brief = (pending.get("text", "") or "").lower()
-                        _kw = _brief
-                        for _w in ["tìm", "job", "việc", "tuyển", "gửi", "về", "mail", "trên", "mọi", "nền", "tảng", "đang", "nhiều", "ai intern", "intern", "ai/ml"]:
-                            _kw = _kw.replace(_w, " ")
-                        _kw = " ".join(_kw.split()).strip() or "thực tập sinh"
+                        _brief = (pending.get("text", "") or "")
+                        # Use the tested keyword extractor (strips hiring verbs + stopwords)
+                        from agents.monitoring.jobsearch_filters import extract_job_keywords
+                        _kw = extract_job_keywords(_brief).lower()
+                        _kw = _kw or "thực tập sinh"
                         _kw_cap = _kw[:40].title()
                         # Feature 4: boost relevance from org context memory.
                         try:
@@ -1163,7 +1163,7 @@ class MonitoringBot:
                             if _ctx_items:
                                 from agents.monitoring.jobsearch_filters import context_job_keywords as _ctx_jw
                                 _ctx_k = _ctx_jw(_ctx_items)
-                                if _ctx_k and _ctx_k != _kw:
+                                if _ctx_k and _ctx_k not in _kw:
                                     _kw = f"{_kw} {_ctx_k}".strip()
                                     _kw_cap = _kw[:40].title()
                         except Exception:
@@ -1171,21 +1171,21 @@ class MonitoringBot:
                         # Target the REAL location the user stated (Feature 2).
                         from agents.monitoring.jobsearch_filters import extract_location as _ext_loc
                         _loc = _ext_loc(pending.get("text", ""))
+                        _job_q = f"{_kw_cap} tuyển dụng"
                         if _loc and _loc != "Remote":
-                            # one focused query on the stated city, plus a
-                            # Vietnam-wide query to catch other local boards.
+                            # focused city query + Vietnam-wide, no site: operator
+                            # (Bing RSS often returns 0 with site: filters)
                             queries = [
-                                f"{_kw_cap} {_loc} Vietnam",
-                                f"{_kw_cap} {_loc}",
+                                f"{_job_q} {_loc} Vietnam",
+                                f"{_job_q} {_loc}",
+                                f"việc làm {_kw_cap} tại {_loc}",
                             ]
                         elif _loc == "Remote":
-                            queries = [f"{_kw_cap} Remote Vietnam", f"{_kw_cap} Remote"]
+                            queries = [f"{_job_q} Remote Vietnam", f"{_job_q} Remote"]
                         else:
-                            # no location stated -> city-agnostic, not HCMC-biased
                             queries = [
-                                f"{_kw_cap} Vietnam TopCV",
-                                f"{_kw_cap} Vietnam ITviec",
-                                f"{_kw_cap} Vietnam VietnamWorks",
+                                f"{_job_q} Vietnam",
+                                f"tuyển dụng {_kw_cap}",
                             ]
                         all_items: list[dict] = []
                         for _q in queries:
@@ -1279,7 +1279,8 @@ class MonitoringBot:
                         # Feature 3: merge VERIFIED (ranked first) + UNCERTAIN into a
                         # single de-duplicated, match-ranked candidate list.
                         from agents.monitoring.jobsearch_filters import select_candidates as _select
-                        _limit = parse_job_count(pending.get("text", "")) or 8
+                        from agents.monitoring.jobsearch_filters import parse_job_count as _pjc
+                        _limit = _pjc(pending.get("text", "")) or 8
                         final_list = _select(verified, candidates, limit=_limit)
                         try:
                             _base = _pl2.Path("D:/Business Ops Agent Swarm") if _pl2.Path("D:/Business Ops Agent Swarm/job_search_results.json").parent.exists() else _pl2.Path(".")
