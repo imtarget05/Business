@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+﻿#!/usr/bin/env python
 """Seed demo data for local development and Docker environments.
 
 Creates (idempotent):
@@ -19,24 +19,20 @@ from __future__ import annotations
 
 import asyncio
 import sys
-from uuid import UUID, uuid4
+from uuid import UUID
 
 from packages.config.settings import get_settings
 from packages.database.models import (
     Conversation,
-    ConversationStatus,
     Customer,
     Document,
     DocumentStatus,
-    Message,
     MessageRole,
     Organization,
-    User,
 )
 from packages.database.repositories.conversations import ConversationRepository
 from packages.database.repositories.documents import KnowledgeRepository, new_document
-from packages.database.session import get_engine, get_session_factory, session_scope
-
+from packages.database.session import get_session_factory, session_scope
 
 PILOT_ORG_NAME = "Pilot Org"
 PILOT_ORG_SLUG = "pilot-org"
@@ -71,9 +67,13 @@ CONVERSATION_SUBJECT = "Demo: Refund inquiry"
 CONVERSATION_CHANNEL = "web"
 DEMO_MESSAGES = [
     ("user", "Hi, what is your refund policy for digital licenses?"),
-    ("assistant", "Our refund policy for digital licenses allows refunds within 14 days of purchase. "
-     "Please provide your order number and I can check eligibility. "
-     "Refunds are processed to the original payment method within 5-10 business days."),
+    (
+        "assistant",
+        "Our refund policy for digital licenses allows refunds "
+        "within 14 days of purchase. Please provide your order "
+        "number and I can check eligibility. Refunds are processed "
+        "to the original payment method within 5-10 business days.",
+    ),
 ]
 
 
@@ -82,6 +82,7 @@ async def get_or_create_org() -> Organization:
     async with session_scope() as session:
         # Check by slug first (unique constraint)
         from sqlalchemy import select
+
         stmt = select(Organization).where(Organization.slug == PILOT_ORG_SLUG)
         result = await session.execute(stmt)
         org = result.scalars().first()
@@ -105,6 +106,7 @@ async def get_or_create_customer(org_id: UUID) -> Customer:
     """Get or create the demo customer."""
     async with session_scope() as session:
         from sqlalchemy import select
+
         stmt = select(Customer).where(
             Customer.organization_id == org_id,
             Customer.email == DEMO_CUSTOMER_EMAIL,
@@ -148,6 +150,7 @@ async def get_or_create_document(org_id: UUID) -> Document:
 
         # Add a single chunk with mock embedding
         from packages.database.models import DocumentChunk
+
         chunk = DocumentChunk(
             document_id=doc.id,
             chunk_index=0,
@@ -169,6 +172,7 @@ async def get_or_create_conversation(org_id: UUID) -> Conversation:
 
         # Look for existing conversation with same subject
         from sqlalchemy import select
+
         stmt = select(Conversation).where(
             Conversation.organization_id == org_id,
             Conversation.subject == CONVERSATION_SUBJECT,
@@ -217,6 +221,7 @@ async def main() -> int:
 
     # Verify database connectivity
     from packages.database.session import check_database
+
     if not await check_database():
         print("✗ Database connection failed. Check DATABASE_URL in .env")
         print("  For Docker: docker compose up -d db")
@@ -255,10 +260,12 @@ async def main() -> int:
     except Exception as e:
         print(f"✗ Error: {e}", file=sys.stderr)
         import traceback
+
         traceback.print_exc()
         return 1
     finally:
         from packages.database.session import dispose_engine
+
         await dispose_engine()
 
 
