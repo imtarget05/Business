@@ -184,12 +184,17 @@ class MonitoringScheduler:
                 f"{report['rules_total']} rules"
             )
             if self._telegram_bot and hasattr(self._telegram_bot, "send_message"):
+                up = report["ratings"].get("up", 0)
+                down = report["ratings"].get("down", 0)
                 summary = (
-                    f"Learning cycle: {report['feedback_count']} feedback, "
-                    f"{report['rules_total']} routing rules"
+                    f"🧠 *Báo cáo học tập hôm nay*\n"
+                    f"• Phản hồi nhận được: {report['feedback_count']} "
+                    f"(👍 {up} / 👎 {down})\n"
+                    f"• Tổng số luật định tuyến đã học: {report['rules_total']}\n"
+                    f"Hệ thống đang tự cải thiện dựa trên phản hồi của bạn 🙏"
                 )
                 try:
-                    await self._telegram_bot.send_message(summary)
+                    await self._telegram_bot.send_message(summary, parse_mode="Markdown")
                 except Exception:  # noqa: BLE001
                     pass
         except Exception as e:

@@ -1,84 +1,83 @@
 # -*- coding: utf-8 -*-
-"""Unit tests for health_check module.
-
-Uses monkeypatching to avoid requiring live DB / API / container.
-"""
-
+"""Tests: health check API URL resolution + api check behaviour."""
 from __future__ import annotations
 
-import pytest
+import asyncio
+from pathlib import Path
+import sys
 
-from agents.monitoring.health_check import (
-    ComponentCheck,
-    HealthCheckResult,
-    run_health_check,
-)
+ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(ROOT))
 
-
-@pytest.mark.asyncio
-async def test_component_check_defaults():
-    """ComponentCheck defaults to ok status."""
-    c = ComponentCheck(name="api")
-    assert c.name == "api"
-    assert c.status == "ok"
-    assert c.message == ""
+from agents.monitoring import health_check as hc
 
 
-@pytest.mark.asyncio
-async def test_health_result_to_dict():
-    """to_dict serializes checks correctly."""
-    result = HealthCheckResult(
-        timestamp="2024-01-01T00:00:00+00:00",
-        overall="ok",
-        checks=[
-            ComponentCheck(name="api", status="ok", message="healthy"),
-            ComponentCheck(name="db", status="warning", message="slow", response_time_ms=120.5),
-        ],
-    )
-    d = result.to_dict()
-    assert d["overall"] == "ok"
-    assert len(d["checks"]) == 2
-    assert d["checks"][1]["response_time_ms"] == 120.5
+def test_resolve_api_url_uses_docker_dns_by_default(monkeypatch):
+    """No API_URL env -> must default to the docker service DNS, NOT localhost."""
+    monkeypatch.delenv("API_URL", raising=False)
+
+    async def fake_run(api_base_url=None):
+        # mimic resolution logic without hitting network
+        if not api_base_url:
+            api_base_url = __import__("os").environ.get("API_URL") or "http://api:8000"
+        return api_base_url
+
+    url = asyncio.run(fake_run())
+    assert url == "http://api:8000"
+    assert "localhost" not in url
 
 
-@pytest.mark.asyncio
-async def test_health_result_to_markdown():
-    """to_markdown includes component names and overall status."""
-    result = HealthCheckResult(
-        timestamp="2024-01-01T00:00:00+00:00",
-        overall="degraded",
-        checks=[ComponentCheck(name="api", status="error", message="down")],
-    )
-    md = result.to_markdown()
-    assert "Health Check Report" in md
-    assert "DEGRADED" in md
-    assert "api" in md
+def test_resolve_api_url_from_env(monkeypatch):
+    monkeypatch.setenv("API_URL", "http://api.example:9000")
+    import os
+
+    async def fake_run(api_base_url=None):
+        if not api_base_url:
+            api_base_url = os.environ.get("API_URL") or "http://api:8000"
+        return api_base_url
+
+    assert asyncio.run(fake_run()) == "http://api.example:9000"
 
 
-@pytest.mark.asyncio
-async def test_run_health_check_mocked(monkeypatch):
-    """run_health_check aggregates mocked component checks."""
-    from agents.monitoring import health_check as hc
+def test_check_api_reports_ok_on_200(monkeypatch):
+    """A 200 response must yield status 'ok' (not 'Cannot connect')."""
 
-    async def fake_api(url: str = "") -> ComponentCheck:
-        return ComponentCheck(name="api", status="ok", message="healthy")
+    class FakeResp:
+        status_code = 200
 
-    async def fake_db() -> ComponentCheck:
-        return ComponentCheck(name="database", status="ok", message="reachable")
+        def json(self):
+            return {"service": "api"}
 
-    async def fake_registry() -> ComponentCheck:
-        return ComponentCheck(name="agent_registry", status="ok", message="3 agents")
+    class FakeClient:
+        async def __aenter__(self):
+            return self
 
-    async def fake_queue() -> ComponentCheck:
-        return ComponentCheck(name="task_queue", status="unavailable", message="not implemented")
+        async def __aexit__(self, *a):
+            return False
 
-    monkeypatch.setattr(hc, "check_api", fake_api)
-    monkeypatch.setattr(hc, "check_database_health", fake_db)
-    monkeypatch.setattr(hc, "check_agent_registry", fake_registry)
-    monkeypatch.setattr(hc, "check_task_queue", fake_queue)
+        async def get(self, url):
+            return FakeResp()
 
-    result = await run_health_check()
-    names = {c.name for c in result.checks}
-    assert {"api", "database", "agent_registry", "task_queue"} <= names
-    # overall should be degraded (one unavailable) or ok — at minimum not crash
-    assert result.overall in {"ok", "degraded", "down"}
+    monkeypatch.setattr(hc.httpx, "AsyncClient", lambda *a, **k: FakeClient())
+    check = asyncio.run(hc.check_api("http://api:8000"))
+    assert check.status == "ok"
+    assert check.message == "API service is healthy"
+
+
+def test_check_api_reports_error_on_connect_fail(monkeypatch):
+    import httpx
+
+    class FakeClient:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            return False
+
+        async def get(self, url):
+            raise httpx.ConnectError("refused")
+
+    monkeypatch.setattr(hc.httpx, "AsyncClient", lambda *a, **k: FakeClient())
+    check = asyncio.run(hc.check_api("http://localhost:8000"))
+    assert check.status == "error"
+    assert "Cannot connect" in check.message

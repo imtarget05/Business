@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any
@@ -171,7 +172,7 @@ async def check_task_queue() -> ComponentCheck:
 
 
 async def run_health_check(
-    api_base_url: str = "http://localhost:8000",
+    api_base_url: str | None = None,
 ) -> HealthCheckResult:
     """Run all health checks and return aggregated result.
 
@@ -179,6 +180,12 @@ async def run_health_check(
     is configured via TRACING_BACKEND, so this never adds overhead or failures.
     """
     from packages.core.tracing import get_tracer
+
+    # Resolve API base URL: explicit arg > API_URL env > Docker service DNS.
+    # The api runs as a separate container, so 'localhost' from the bot container
+    # is wrong; use the compose service name 'api' (or API_URL) instead.
+    if not api_base_url:
+        api_base_url = os.environ.get("API_URL") or "http://api:8000"
 
     tracer = get_tracer()
     with tracer.span("health_check") as _sid:
