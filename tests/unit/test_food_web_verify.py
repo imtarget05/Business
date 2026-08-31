@@ -128,9 +128,11 @@ def test_feedback_callback_keeps_original_message(monkeypatch):
     assert "text" in replied, "thanks should be a NEW reply, not overwrite"
 
 
-def test_summarize_food_rejects_invented_counts(monkeypatch):
+def test_summarize_food_rejects_invented_counts(monkeypatch, tmp_path):
     """LLM must not invent aggregate counts (7 one-star, 58 Bib...) not in snippet."""
     import asyncio
+    import packages.core.llm_cost as lc
+    monkeypatch.setattr(lc, "_CACHE_DIR", tmp_path / "cache")
     captured = {}
 
     class FakeLLM:
@@ -149,6 +151,18 @@ def test_summarize_food_rejects_invented_counts(monkeypatch):
     # The strict rules must be present in the system prompt.
     assert "TUYỆT ĐỐI KHÔNG" in captured["system"]
     assert "7 one-star" in captured["system"] or "58 Bib" in captured["system"]
+
+
+def test_food_safety_rejects_invented_distinction():
+    """_food_summary_is_safe must reject '7 one-star' when snippet lacks it."""
+    from agents.monitoring.telegram_bot import _food_summary_is_safe
+    results = [{"title": "Michelin VN", "snippet": "Michelin Guide 2026 có 193 cơ sở"}]
+    good = "1. Nhà hàng A (link)\n2. Nhà hàng B (link)"
+    bad = "Có 7 nhà hàng 1 sao và 58 Bib Gourmand được vinh danh."
+    assert _food_summary_is_safe(good, results) is True
+    assert _food_summary_is_safe(bad, results) is False
+    # Generic count present in snippet is allowed.
+    assert _food_summary_is_safe("193 cơ sở được vinh danh", results) is True
 
 
 def test_summarize_food_falls_back_on_error():

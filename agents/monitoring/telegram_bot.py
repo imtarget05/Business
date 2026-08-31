@@ -128,8 +128,37 @@ _FOOD_SUMMARY_SYSTEM = (
     "'Nguồn ghi khoảng {số} cơ sở — xem chi tiết tại link' và trích link, "
     "KHÔNG tự bịa danh sách tên.\n"
     "4. Mỗi mục phải đi kèm link nguồn.\n"
-    "5. Viết tiếng Việt, ngắn gọn, mỗi mục 1 dòng."
+    "5. Viết tiếng Việt, ngắn gọn, mỗi mục 1 dòng.\n"
+    "6. TUYỆT ĐỐI CẤM đưa số lượng nhà hàng theo danh hiệu (vd '7 one-star', "
+    "'58 Bib Gourmand', '99 Selected') nếu snippet KHÔNG ghi rõ từng tên tương ứng — "
+    "nếu chỉ có số tổng quát (vd '193 cơ sở') thì chỉ được lặp lại đúng con số đó kèm link."
 )
+
+
+_FOOD_INVENTED_RE = re.compile(
+    r"(\d{1,3})\s*(nhà hàng|quán|restaurant|saos?|stars?|"
+    r"bib(?:[ -]?gourmand)?|selected|michelin stars?)\b",
+    re.I,
+)
+
+
+def _food_summary_is_safe(summary: str, results: list[dict]) -> bool:
+    """Reject summaries that invent counted Michelin distinctions.
+
+    Allowed only if the exact "<number> <distinction>" phrase also appears in the
+    real snippets. Generic counts like "193 cơ sở" are fine when present in source.
+    """
+    if not summary:
+        return True
+    _blob = " ".join(
+        f"{r.get('title', '')} {r.get('snippet', '')}" for r in results
+    ).lower()
+    for _m in _FOOD_INVENTED_RE.finditer(summary.lower()):
+        _num = _m.group(1)
+        _kw = _m.group(2).lower()
+        if _num not in _blob and f"{_num} {_kw}" not in _blob:
+            return False
+    return True
 
 
 async def _summarize_food(llm, question: str, results: list[dict]) -> str:
@@ -177,6 +206,16 @@ async def _summarize_food(llm, question: str, results: list[dict]) -> str:
         )
         _ans = (_ans if isinstance(_ans, str) else str(_ans)).strip()
         _dt = time.time() - _t0
+        # C1: reject invented counted distinctions (e.g. "7 one-star", "58 Bib
+        # Gourmand") that are NOT present in the real snippets -> fall back to raw links.
+        if not _food_summary_is_safe(_ans, results):
+            try:
+                from packages.core.llm_cost import log_llm_usage
+                _model = getattr(llm, "name", "unknown")
+                log_llm_usage(_model, _prompt, _ans, _dt, cache_hit=False, tag="food_summary_rejected")
+            except Exception:
+                pass
+            return ""
         try:
             from packages.core.llm_cost import log_llm_usage
             _model = getattr(llm, "name", "unknown")
