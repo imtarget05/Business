@@ -149,6 +149,17 @@ class TaskFeedback(BaseModel):
     created_at: datetime | None = None
 
 
+class Report(BaseModel):
+    """A trace/report record for stamping into payloads."""
+
+    trace_id: str
+    name: str
+    summary: str = ""
+    severity: str = "info"
+    status: str = "pending"
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
 __all__ = [
     "AgentDescriptor",
     "AgentResponse",
@@ -156,5 +167,6 @@ __all__ = [
     "ErrorDetail",
     "TaskContext",
     "TaskFeedback",
+    "Report",
     "TaskRequest",
 ]

@@ -38,13 +38,15 @@ SUMMARIZATION_PROMPT = (
 )
 
 
-async def call_ollama(prompt: str) -> dict:
+async def call_ollama(
+    prompt: str, model: str = OLLAMA_MODEL
+) -> dict:
     """Call Ollama API with a prompt and return the response."""
     async with httpx.AsyncClient(timeout=30.0) as client:
         response = await client.post(
             f"{OLLAMA_URL}/api/generate",
             json={
-                "model": OLLAMA_MODEL,
+                "model": model,
                 "prompt": prompt,
                 "stream": False,
             },
@@ -53,7 +55,9 @@ async def call_ollama(prompt: str) -> dict:
         return response.json()
 
 
-def classify_content(text: str) -> dict:
+async def classify_content(
+    text: str, model: str = OLLAMA_MODEL
+) -> dict:
     """Use Ollama to classify content into categories.
 
     Returns:
@@ -61,9 +65,7 @@ def classify_content(text: str) -> dict:
     """
     prompt = CLASSIFICATION_PROMPT.format(text=text)
     try:
-        result = asyncio.get_event_loop().run_until_complete(
-            call_ollama(prompt)
-        )
+        result = await call_ollama(prompt, model=model)
         raw = result.get("response", "").strip().lower()
 
         category = "general"
@@ -83,7 +85,9 @@ def classify_content(text: str) -> dict:
         }
 
 
-def summarize_content(text: str) -> str:
+async def summarize_content(
+    text: str, model: str = OLLAMA_MODEL
+) -> str:
     """Use Ollama to generate a summary.
 
     Returns:
@@ -91,9 +95,7 @@ def summarize_content(text: str) -> str:
     """
     prompt = SUMMARIZATION_PROMPT.format(text=text)
     try:
-        result = asyncio.get_event_loop().run_until_complete(
-            call_ollama(prompt)
-        )
+        result = await call_ollama(prompt, model=model)
         return result.get("response", "").strip()
     except httpx.HTTPError as e:
         return f"Error generating summary: {e}"
@@ -119,14 +121,16 @@ def route_by_classification(classification: dict) -> str:
     )
 
 
-def process_document(text: str) -> dict:
+async def process_document(
+    text: str, model: str = OLLAMA_MODEL
+) -> dict:
     """Full pipeline: classify -> summarize -> route.
 
     Returns:
         dict with classification, summary, and action.
     """
-    classification = classify_content(text)
-    summary = summarize_content(text)
+    classification = await classify_content(text, model=model)
+    summary = await summarize_content(text, model=model)
     action = route_by_classification(classification)
 
     return {
@@ -158,14 +162,12 @@ async def main() -> int:
         help=f"Ollama model to use (default: {OLLAMA_MODEL})",
     )
     args = parser.parse_args()
-
-    global OLLAMA_MODEL
-    OLLAMA_MODEL = args.model
+    model = args.model
 
     if args.text:
         text = args.text
         print(f"Processing custom text ({len(text)} chars)...")
-        result = process_document(text)
+        result = await process_document(text, model=model)
         print(json.dumps(result, indent=2))
         return 0
 
@@ -174,7 +176,7 @@ async def main() -> int:
             with open(args.file, encoding="utf-8") as f:
                 text = f.read()
             print(f"Processing file: {args.file} ({len(text)} chars)...")
-            result = process_document(text)
+            result = await process_document(text, model=model)
             print(json.dumps(result, indent=2))
             return 0
         except FileNotFoundError:
@@ -224,7 +226,7 @@ async def main() -> int:
     print("=" * 60)
     print("AI Workflow Automation Demo")
     print(f"Ollama URL: {OLLAMA_URL}")
-    print(f"Model: {OLLAMA_MODEL}")
+    print(f"Model: {model}")
     print("=" * 60)
     print()
 
@@ -238,7 +240,7 @@ async def main() -> int:
         )
         print("  1. Install Ollama: https://ollama.com", file=sys.stderr)
         print(
-            f"  2. Pull model: ollama pull {OLLAMA_MODEL}",
+            f"  2. Pull model: ollama pull {model}",
             file=sys.stderr,
         )
         print("  3. Start Ollama: ollama serve", file=sys.stderr)
@@ -250,7 +252,7 @@ async def main() -> int:
         print(f"Expected: {sample['expected']}")
         print()
 
-        result = process_document(sample["text"])
+        result = await process_document(sample["text"], model=model)
 
         print(f"Classification: {result['classification']}")
         print(f"Summary: {result['summary'][:120]}...")

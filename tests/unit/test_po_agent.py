@@ -365,7 +365,7 @@ async def test_llm_parse_fallback_to_rule_based(po_agent_with_llm):
         vendor: str = Field(default="Fallback Test Corp")
         vendor_email: str | None = Field(default=None)
         date: str | None = Field(default=None)
-        items: list[dict] = Field(default=[])
+        items: list[dict] = Field(default_factory=list)
         total: float = Field(default=300.0)
 
     po_agent_with_llm._llm.generate_structured = AsyncMock(

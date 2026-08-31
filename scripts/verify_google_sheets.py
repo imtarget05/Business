@@ -1,4 +1,4 @@
-"""One-off local verification: Google Sheets access via service account.
+﻿"""One-off local verification: Google Sheets access via service account.
 
 Reads the sheet metadata and appends one test row to prove write access.
 Run: .venv/Scripts/python.exe scripts/verify_google_sheets.py
@@ -7,7 +7,7 @@ Run: .venv/Scripts/python.exe scripts/verify_google_sheets.py
 from __future__ import annotations
 
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from google.oauth2 import service_account
@@ -30,10 +30,12 @@ def main() -> int:
     print("Title:", meta.get("properties", {}).get("title"))
     for s in meta.get("sheets", []):
         props = s["properties"]
-        print(f"  tab: {props['title']} (gid={props['sheetId']}, {props['gridProperties'].get('rowCount')}x{props['gridProperties'].get('columnCount')})")
+        row_count = props["gridProperties"].get("rowCount")
+        col_count = props["gridProperties"].get("columnCount")
+        print(f"  tab: {props['title']} (gid={props['sheetId']}, {row_count}x{col_count})")
 
     tab = meta["sheets"][0]["properties"]["title"]
-    now = datetime.now(timezone.utc).astimezone().isoformat(timespec="seconds")
+    now = datetime.now(UTC).astimezone().isoformat(timespec="seconds")
     result = (
         svc.spreadsheets()
         .values()

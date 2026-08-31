@@ -1,5 +1,4 @@
-# -*- coding: utf-8 -*-
-"""LLM cost report (AI-Engineer point 3 observability).
+﻿"""LLM cost report (AI-Engineer point 3 observability).
 
 Reads the JSONL usage ledger produced by packages.core.llm_cost and prints a
 human-readable summary: totals, cache-hit rate, per-model breakdown, top tags.
@@ -46,7 +45,9 @@ def main() -> int:
     cost = sum(r.get("est_cost_usd", 0.0) for r in rows)
     lat = sum(r.get("latency_s", 0.0) for r in rows)
 
-    by_model = defaultdict(lambda: {"calls": 0, "hit": 0, "in": 0, "out": 0, "cost": 0.0, "lat": 0.0})
+    by_model = defaultdict(
+        lambda: {"calls": 0, "hit": 0, "in": 0, "out": 0, "cost": 0.0, "lat": 0.0}
+    )
     by_tag = defaultdict(lambda: {"calls": 0, "hit": 0})
     for r in rows:
         m = by_model[r.get("model", "unknown")]
@@ -68,12 +69,17 @@ def main() -> int:
     print(f"Cache hits   : {cache_hits} ({100*cache_hits/max(1,total_calls):.1f}%)")
     print(f"Tokens in/out: {in_tok:,} / {out_tok:,}")
     print(f"Est. cost    : ${cost:.4f}")
-    print(f"Total latency: {lat:.1f}s (saved {100*cache_hits/max(1,total_calls):.1f}% via cache)")
+    print(
+        f"Total latency: {lat:.1f}s "
+        f"(saved {100*cache_hits/max(1,total_calls):.1f}% via cache)"
+    )
     print("-" * 60)
     print("Per model:")
     for m, d in sorted(by_model.items(), key=lambda kv: -kv[1]["cost"]):
-        print(f"  {m:<22} calls={d['calls']:>4} hit={d['hit']:>3} "
-              f"tok={d['in']+d['out']:>7,} ${d['cost']:.4f}")
+        print(
+            f"  {m:<22} calls={d['calls']:>4} hit={d['hit']:>3} "
+            f"tok={d['in']+d['out']:>7,} ${d['cost']:.4f}"
+        )
     print("-" * 60)
     print("Per tag:")
     for t, d in sorted(by_tag.items(), key=lambda kv: -kv[1]["calls"]):

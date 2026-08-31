@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+﻿#!/usr/bin/env python
 """Seed API keys for all organizations (Task 5.3).
 
 Usage:
@@ -18,7 +18,7 @@ from uuid import UUID
 
 from packages.config.settings import get_settings
 from packages.database.repositories.api_keys import ApiKeyRepository
-from packages.database.session import get_engine, get_session_factory, session_scope
+from packages.database.session import get_session_factory, session_scope
 
 
 async def create_key_for_org(org_id: UUID, name: str) -> tuple[str, str]:
