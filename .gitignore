@@ -39,6 +39,17 @@ secrets/
 tools/
 
 # --- Runtime output files (root) ---
+# --- Runtime output files (root) ---
+*.log
+pytest_out.txt
+job_audit_log.json
+job_search_results.json
+verified_jobs.json
+contacts_backup.json
+
+# --- Internal working notes / agent-generated reports ---
+task-*-report.md
+implementation_plan.md
 pytest_out.txt
 job_audit_log.json
 job_search_results.json

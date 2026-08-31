@@ -173,6 +173,6 @@ GET  /v1/feedback/stats
   LLM analysis over Audit events + Metrics — evidence-first, refuses to guess without
   data. Registered only after audit+metrics layers exist.
 
-> 25 of the original 60 target roles (SWE/testing/cloud) are intentionally **not**
-> implemented as LLM agents — see `docs/audit/ARCHITECTURE_AUDIT.md`. In a
-> business-ops platform they remain deterministic services or deferred (pure debt).
+## Roadmap
+
+See [TODO.md](TODO.md) for the current work plan and known follow-ups.
