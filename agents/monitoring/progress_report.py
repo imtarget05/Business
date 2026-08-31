@@ -11,9 +11,11 @@ Generates markdown report with summary statistics.
 
 from __future__ import annotations
 
+import json
 import logging
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from typing import Any
 
 from sqlalchemy import select
@@ -25,6 +27,85 @@ from packages.database.session import get_session_factory
 from packages.database.task_store import _task_to_dict
 
 logger = logging.getLogger(__name__)
+
+
+async def get_rag_stats() -> dict[str, Any]:
+    """Count verified Michelin facts cached in the local RAG store (pgvector/FTS)."""
+    try:
+        from packages.database.session import get_session_factory
+        from packages.config.settings import get_settings
+        from sqlalchemy import text
+
+        s = get_settings()
+        factory = get_session_factory(s)
+        async with factory() as session:
+            total = (await session.execute(text("SELECT count(*) FROM michelin_facts"))).scalar() or 0
+            recent_rows = (
+                await session.execute(
+                    text(
+                        "SELECT question, created_at FROM michelin_facts "
+                        "ORDER BY created_at DESC LIMIT 5"
+                    )
+                )
+            ).all()
+            recent = [
+                {"question": r[0], "created_at": r[1].isoformat() if r[1] else ""}
+                for r in recent_rows
+            ]
+            return {"total": int(total), "recent": recent}
+    except Exception as e:  # pragma: no cover - DB optional
+        logger.warning("RAG stats unavailable: %s", e)
+        return {"total": 0, "recent": []}
+
+
+def get_llm_cost_summary() -> dict[str, Any]:
+    """Aggregate the LLM usage ledger if present (no DB needed)."""
+    import os
+
+    from packages.core import llm_cost
+
+    path = os.environ.get("LLM_USAGE_LEDGER") or llm_cost._LEDGER
+    p = Path(path) if not isinstance(path, Path) else path
+    if not p.exists():
+        return {"present": False, "calls": 0, "cache_hits": 0, "est_cost_usd": 0.0}
+    calls = 0
+    cache_hits = 0
+    cost = 0.0
+    try:
+        for line in p.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            row = json.loads(line)
+            calls += 1
+            if row.get("cache_hit"):
+                cache_hits += 1
+            cost += float(row.get("est_cost_usd", 0.0) or 0.0)
+    except Exception as e:  # pragma: no cover
+        logger.warning("LLM ledger parse failed: %s", e)
+        return {"present": True, "calls": calls, "cache_hits": cache_hits, "est_cost_usd": cost}
+    return {
+        "present": True,
+        "calls": calls,
+        "cache_hits": cache_hits,
+        "est_cost_usd": round(cost, 6),
+    }
+
+
+async def get_health_snapshot() -> dict[str, Any]:
+    """Lightweight health snapshot for the report (no network ping)."""
+    try:
+        from agents.monitoring.health_check import run_health_check
+
+        h = await run_health_check()
+        d = h.to_dict()
+        return {
+            "overall": d.get("overall", "unknown"),
+            "components": d.get("checks", []),
+        }
+    except Exception as e:  # pragma: no cover
+        logger.warning("Health snapshot unavailable: %s", e)
+        return {"overall": "unknown", "components": []}
 
 
 @dataclass
@@ -47,6 +128,20 @@ class DailyReport:
 
     # Recent task list (for report)
     recent_tasks: list[dict[str, Any]] = field(default_factory=list)
+
+    # Knowledge / RAG cache stats
+    rag_facts: int = 0
+    rag_recent: list[dict[str, Any]] = field(default_factory=list)
+
+    # LLM cost summary
+    llm_calls: int = 0
+    llm_cache_hits: int = 0
+    llm_est_cost_usd: float = 0.0
+    llm_ledger_present: bool = False
+
+    # Health snapshot
+    health_overall: str = "unknown"
+    health_components: list[dict[str, Any]] = field(default_factory=list)
 
     # Raw data for serialization
     raw_data: dict[str, Any] = field(default_factory=dict)
@@ -93,6 +188,40 @@ class DailyReport:
                 status = task.get("status", "unknown")
                 lines.append(f"| {time} | {action} | {status} |")
             lines.append("")
+
+        # Knowledge / RAG cache (real verified facts)
+        lines.append("## 🧠 Knowledge Cache (RAG)")
+        lines.append("")
+        lines.append(f"- **Verified Michelin facts cached**: {self.rag_facts}")
+        if self.rag_recent:
+            lines.append("")
+            lines.append("Recent:")
+            for f in self.rag_recent[:5]:
+                q = (f.get("question") or "")[:60]
+                lines.append(f"  - {q}")
+        lines.append("")
+
+        # LLM cost (real ledger)
+        lines.append("## 💰 LLM Cost")
+        lines.append("")
+        if self.llm_ledger_present:
+            _hit_rate = (self.llm_cache_hits / self.llm_calls * 100) if self.llm_calls else 0.0
+            lines.append(f"- **Calls**: {self.llm_calls}")
+            lines.append(f"- **Cache hits**: {self.llm_cache_hits} ({_hit_rate:.1f}%)")
+            lines.append(f"- **Est. cost**: ${self.llm_est_cost_usd:.6f}")
+        else:
+            lines.append("- *No usage recorded yet (ledger empty)*")
+        lines.append("")
+
+        # Health snapshot
+        lines.append("## 🏥 Health")
+        lines.append("")
+        lines.append(f"- **Overall**: {self.health_overall}")
+        if self.health_components:
+            lines.append("")
+            for c in self.health_components:
+                lines.append(f"  - {c.get('name')}: {c.get('status')} — {c.get('message')}")
+        lines.append("")
 
         lines.append("---")
         lines.append("*Generated by Monitoring Agent*")
@@ -215,6 +344,30 @@ async def generate_daily_report(
 
         # Get agent stats
         report.agent_stats = await get_agent_stats()
+
+        # Get real system activity: RAG cache, LLM cost ledger, health
+        try:
+            _rag = await get_rag_stats()
+            report.rag_facts = _rag["total"]
+            report.rag_recent = _rag["recent"]
+        except Exception as e:  # pragma: no cover
+            logger.warning("RAG stats failed: %s", e)
+
+        try:
+            _cost = get_llm_cost_summary()
+            report.llm_ledger_present = _cost["present"]
+            report.llm_calls = _cost["calls"]
+            report.llm_cache_hits = _cost["cache_hits"]
+            report.llm_est_cost_usd = _cost["est_cost_usd"]
+        except Exception as e:  # pragma: no cover
+            logger.warning("LLM cost summary failed: %s", e)
+
+        try:
+            _health = await get_health_snapshot()
+            report.health_overall = _health["overall"]
+            report.health_components = _health["components"]
+        except Exception as e:  # pragma: no cover
+            logger.warning("Health snapshot failed: %s", e)
 
     except Exception as e:
         logger.error(f"Error generating daily report: {e}")

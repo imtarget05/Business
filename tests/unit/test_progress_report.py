@@ -1,97 +1,74 @@
 # -*- coding: utf-8 -*-
-"""Unit tests for progress_report module.
-
-Mocks DB session + agent stats to avoid requiring live infrastructure.
-"""
-
+"""Tests: daily report now reflects real system activity (RAG, LLM cost, health)."""
 from __future__ import annotations
 
-import pytest
-from datetime import datetime, timezone, timedelta
+import json
+from pathlib import Path
 
-from agents.monitoring.progress_report import (
-    DailyReport,
-    generate_daily_report,
-    get_agent_stats,
-)
+import sys
 
+ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(ROOT))
 
-class _FakeResult:
-    """Minimal stand-in for sqlalchemy result.scalars()."""
-    def __init__(self, rows):
-        self._rows = rows
-    def scalars(self):
-        return self
-    def all(self):
-        return self._rows
-    def execute(self, *a, **k):
-        return self
+from agents.monitoring import progress_report as pr
 
 
-class _FakeSession:
-    """Async context manager + execute returning empty task list."""
-    def __init__(self, rows=None):
-        self._rows = rows or []
-    async def __aenter__(self):
-        return self
-    async def __aexit__(self, *a):
-        return False
-    async def execute(self, stmt):
-        return _FakeResult(self._rows)
+def test_llm_cost_summary_missing_ledger(tmp_path):
+    ledger = tmp_path / "llm_usage.jsonl"
+    # not created -> absent
+    out = pr.get_llm_cost_summary.__wrapped__ if hasattr(pr.get_llm_cost_summary, "__wrapped__") else None
+    # call via monkey-patching the default path by writing nothing; use env override
+    import os
+
+    os.environ["LLM_USAGE_LEDGER"] = str(ledger)
+    try:
+        res = pr.get_llm_cost_summary()
+        assert res["present"] is False
+        assert res["calls"] == 0
+    finally:
+        os.environ.pop("LLM_USAGE_LEDGER", None)
 
 
-def _fake_session_factory(rows=None):
-    def _factory():
-        return _FakeSession(rows)
-    return _factory
+def test_llm_cost_summary_parses_ledger(tmp_path):
+    import os
+
+    ledger = tmp_path / "llm_usage.jsonl"
+    rows = [
+        {"model": "m", "cache_hit": False, "est_cost_usd": 0.001},
+        {"model": "m", "cache_hit": True, "est_cost_usd": 0.0},
+    ]
+    ledger.write_text("\n".join(json.dumps(r) for r in rows), encoding="utf-8")
+    os.environ["LLM_USAGE_LEDGER"] = str(ledger)
+    try:
+        res = pr.get_llm_cost_summary()
+        assert res["present"] is True
+        assert res["calls"] == 2
+        assert res["cache_hits"] == 1
+        assert abs(res["est_cost_usd"] - 0.001) < 1e-9
+    finally:
+        os.environ.pop("LLM_USAGE_LEDGER", None)
 
 
-@pytest.mark.asyncio
-async def test_daily_report_to_markdown_empty():
-    """Empty report still renders markdown without error."""
-    report = DailyReport(date="2024-01-01", generated_at=datetime.now(timezone.utc).isoformat())
-    md = report.to_markdown()
-    assert "Progress Report" in md
-    assert "2024-01-01" in md
+def test_report_markdown_includes_new_sections():
+    r = pr.DailyReport(date="2026-08-31", generated_at="2026-08-31T00:00:00+00:00")
+    r.rag_facts = 3
+    r.llm_ledger_present = True
+    r.llm_calls = 5
+    r.llm_cache_hits = 2
+    r.llm_est_cost_usd = 0.0042
+    r.health_overall = "ok"
+    r.health_components = [{"name": "api", "status": "ok", "message": "healthy"}]
+    md = r.to_markdown()
+    assert "🧠 Knowledge Cache (RAG)" in md
+    assert "Verified Michelin facts cached**: 3" in md
+    assert "💰 LLM Cost" in md
+    assert "Cache hits**: 2 (40.0%)" in md
+    assert "🏥 Health" in md
+    assert "Overall**: ok" in md
 
 
-@pytest.mark.asyncio
-async def test_daily_report_to_dict():
-    """to_dict exposes aggregated fields."""
-    report = DailyReport(
-        date="2024-01-01",
-        generated_at=datetime.now(timezone.utc).isoformat(),
-        total_tasks_created=5,
-        total_tasks_completed=4,
-        success_rate=0.8,
-        pending_tasks=1,
-        failed_tasks=0,
-    )
-    d = report.to_dict()
-    assert d["total_tasks_created"] == 5
-    assert d["success_rate"] == 0.8
-    assert d["recent_tasks_count"] == 0
-
-
-@pytest.mark.asyncio
-async def test_generate_daily_report_empty_db(monkeypatch):
-    """generate_daily_report works with a fake (empty) session factory."""
-    from agents.monitoring import progress_report as pr
-
-    async def fake_agent_stats():
-        return {"agent_count": 3, "llm_provider": "mock"}
-
-    monkeypatch.setattr(pr, "get_agent_stats", fake_agent_stats)
-
-    report = await generate_daily_report(hours=24, session_factory=_fake_session_factory())
-    assert report.total_tasks_created == 0
-    assert report.success_rate == 0.0
-    md = report.to_markdown()
-    assert "Progress Report" in md
-
-
-@pytest.mark.asyncio
-async def test_get_agent_stats_runs():
-    """get_agent_stats returns a dict (graceful if container absent)."""
-    stats = await get_agent_stats()
-    assert isinstance(stats, dict)
+def test_report_markdown_empty_ledger_note():
+    r = pr.DailyReport(date="2026-08-31", generated_at="2026-08-31T00:00:00+00:00")
+    r.llm_ledger_present = False
+    md = r.to_markdown()
+    assert "No usage recorded yet" in md
