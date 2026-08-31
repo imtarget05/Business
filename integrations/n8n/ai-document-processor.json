@@ -1,0 +1,493 @@
+{
+  "name": "Business Ops — AI Document Processor",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "ai-document-processor",
+        "responseMode": "lastNode"
+      },
+      "id": "webhook-trigger",
+      "name": "Webhook Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        250,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={ $env.OLLAMA_URL || 'http://host.docker.internal:11434' }/api/generate",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={ JSON.stringify({ model: $env.OLLAMA_MODEL || 'qwen2.5:3b', prompt: 'Classify the following document into exactly one category: support, sales, urgent, or general. Respond with only the category name, nothing else.\\n\\nDocument: ' + $json.text + '\\n\\nCategory:', stream: false }) }",
+        "options": {}
+      },
+      "id": "ollama-classify",
+      "name": "Ollama AI Classification",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        500,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.response }}",
+              "operation": "isNotEmpty"
+            }
+          ]
+        }
+      },
+      "id": "check-classify-response",
+      "name": "Valid Classification?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        750,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={ $env.OLLAMA_URL || 'http://host.docker.internal:11434' }/api/generate",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={ JSON.stringify({ model: $env.OLLAMA_MODEL || 'qwen2.5:3b', prompt: 'Summarize the following document in 2-3 sentences. Focus on key actions needed.\\n\\nDocument: ' + $json.text + '\\n\\nSummary:', stream: false }) }",
+        "options": {}
+      },
+      "id": "ollama-summarize",
+      "name": "Ollama AI Summarization",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        1000,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "rules": [
+            {
+              "outputIndex": 0,
+              "conditions": {
+                "string": [
+                  {
+                    "value1": "={{ $json.classification || $json.response?.toLowerCase() }}",
+                    "operation": "contains",
+                    "value2": "support"
+                  }
+                ]
+              }
+            },
+            {
+              "outputIndex": 1,
+              "conditions": {
+                "string": [
+                  {
+                    "value1": "={{ $json.classification || $json.response?.toLowerCase() }}",
+                    "operation": "contains",
+                    "value2": "sales"
+                  }
+                ]
+              }
+            },
+            {
+              "outputIndex": 2,
+              "conditions": {
+                "string": [
+                  {
+                    "value1": "={{ $json.classification || $json.response?.toLowerCase() }}",
+                    "operation": "contains",
+                    "value2": "urgent"
+                  }
+                ]
+              }
+            },
+            {
+              "outputIndex": 3,
+              "conditions": {
+                "string": [
+                  {
+                    "value1": "={{ $json.classification || $json.response?.toLowerCase() }}",
+                    "operation": "contains",
+                    "value2": "general"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      "id": "route-by-classification",
+      "name": "Route by AI Decision",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 1,
+      "position": [
+        1250,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={ $env.API_BASE_URL || 'http://host.docker.internal:8000' }/v1/conversations",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-API-Key",
+              "value": "={{ $env.API_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "X-Request-ID",
+              "value": "={{ $executionId }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ channel: 'ai-processor', subject: 'Support: ' + ($json.summary || $json.text?.substring(0, 50)) }) }}",
+        "options": {}
+      },
+      "id": "create-support-ticket",
+      "name": "Create Support Ticket",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        1500,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={ $env.API_BASE_URL || 'http://host.docker.internal:8000' }/v1/tasks",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-API-Key",
+              "value": "={{ $env.API_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "X-Request-ID",
+              "value": "={{ $executionId }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ domain: 'sales', action: 'create_lead', payload: { summary: $json.summary, source: $json.source || 'ai-processor' } }) }}",
+        "options": {}
+      },
+      "id": "create-sales-task",
+      "name": "Create Sales Task",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        1500,
+        250
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SLACK_WEBHOOK_URL }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ text: '🚨 URGENT document requires immediate attention!\\nSummary: ' + ($json.summary || 'N/A') + '\\nDashboard: ' + ($env.DASHBOARD_URL || 'http://localhost:3000') }) }}",
+        "options": {}
+      },
+      "id": "send-urgent-notification",
+      "name": "Send Urgent Notification",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        1500,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={ $env.API_BASE_URL || 'http://host.docker.internal:8000' }/v1/tasks",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-API-Key",
+              "value": "={{ $env.API_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "X-Request-ID",
+              "value": "={{ $executionId }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ domain: 'general', action: 'archive', payload: { summary: $json.summary, classification: 'general' } }) }}",
+        "options": {}
+      },
+      "id": "save-to-database",
+      "name": "Save to Database",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        1500,
+        550
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={ $env.API_BASE_URL || 'http://host.docker.internal:8000' }/v1/tasks",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-API-Key",
+              "value": "={{ $env.API_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "X-Request-ID",
+              "value": "={{ $executionId }}-log"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ domain: 'audit', action: 'log_ai_decision', payload: { classification: $json.classification || $json.response, summary: $json.summary, source: $json.source || 'ai-processor', timestamp: new Date().toISOString() } }) }}",
+        "options": {}
+      },
+      "id": "log-result",
+      "name": "Log AI Decision",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        1750,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## 📋 AI Document Processor Setup (Tiếng Việt)\n\n### 1. Cài đặt Ollama\n1. Tải Ollama: https://ollama.com\n2. Pull model: `ollama pull qwen2.5:3b`\n3. Kiểm tra: `curl http://localhost:11434/api/generate -d {\"model\":\"qwen2.5:3b\",\"prompt\":\"hello\"}`\n\n### 2. Cấu hình Environment Variables (n8n Settings → Variables)\n| Variable | Mô tả | Ví dụ |\n|---|---|---|\n| `OLLAMA_URL` | URL của Ollama API | `http://host.docker.internal:11434` |\n| `OLLAMA_MODEL` | Model sử dụng | `qwen2.5:3b` |\n| `API_BASE_URL` | Base URL của Business Ops API | `http://host.docker.internal:8000` |\n| `API_KEY` | Giá trị header `X-API-Key` | `sk-live-xxxxx` |\n| `SLACK_WEBHOOK_URL` | Slack webhook cho urgent notifications | `https://hooks.slack.com/...` |\n| `DASHBOARD_URL` | Dashboard URL cho deep links | `http://localhost:3000` |\n\n### 3. Import & Activate\n1. n8n UI → Workflows → Import from File → Chọn `ai-document-processor.json`\n2. Set Environment Variables (bước 2)\n3. Click **Activate**\n\n### 4. Test Payload\n```bash\ncurl -X POST http://localhost:5678/webhook/ai-document-processor \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"text\":\"Customer complaint about delayed delivery\",\"source\":\"email\"}'\n```",
+        "height": 400,
+        "width": 500
+      },
+      "id": "sticky-setup-vi",
+      "name": "📋 Setup Guide (Vietnamese)",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        250,
+        50
+      ],
+      "color": 4
+    },
+    {
+      "parameters": {
+        "content": "## 🗂 Flow Logic\n\n```\nWebhook Trigger (POST /ai-document-processor)\n        ↓\nOllama AI Classification\n  → POST {OLLAMA_URL}/api/generate\n  → Returns: category (support/sales/urgent/general)\n        ↓\nValid Classification? (IF node)\n  ↔ NO → End (error)\n  ↔ YES ↓\n        ↓\nOllama AI Summarization\n  → POST {OLLAMA_URL}/api/generate\n  → Returns: summary text\n        ↓\nRoute by AI Decision (Switch node)\n  ↔ support → POST /v1/conversations (create support ticket)\n  ↔ sales   → POST /v1/tasks (create sales task)\n  ↔ urgent  → POST Slack webhook (send notification)\n  ↔ general → POST /v1/tasks (save to database)\n        ↓\nLog AI Decision → POST /v1/tasks (audit log)\n```\n\n**AI Prompts:**\n- Classification: `Classify into: support, sales, urgent, or general`\n- Summarization: `Summarize in 2-3 sentences, focus on actions needed`",
+        "height": 400,
+        "width": 500
+      },
+      "id": "sticky-flow-logic",
+      "name": "🗂 Flow Logic & AI Prompts",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        1000,
+        500
+      ],
+      "color": 3
+    },
+    {
+      "parameters": {
+        "content": "## ⚠️ Error Handling\n\n- **Valid Classification?**: IF node checks if Ollama returned a response\n- **HTTP Error Codes**: n8n auto-retries on 429/5xx (configure in node options)\n- **Timeout**: Set 30s timeout for Ollama calls (local inference < 2s typical)\n- **Fallback**: If classification is unclear, defaults to 'general' route",
+        "height": 200,
+        "width": 400
+      },
+      "id": "sticky-error-handling",
+      "name": "⚠️ Error Handling Notes",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        500,
+        500
+      ],
+      "color": 1
+    }
+  ],
+  "connections": {
+    "Webhook Trigger": {
+      "main": [
+        [
+          {
+            "node": "Ollama AI Classification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ollama AI Classification": {
+      "main": [
+        [
+          {
+            "node": "Valid Classification?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Valid Classification?": {
+      "main": [
+        [
+          {
+            "node": "Ollama AI Summarization",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "Ollama AI Summarization": {
+      "main": [
+        [
+          {
+            "node": "Route by AI Decision",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route by AI Decision": {
+      "main": [
+        [
+          {
+            "node": "Create Support Ticket",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Create Sales Task",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send Urgent Notification",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Save to Database",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Support Ticket": {
+      "main": [
+        [
+          {
+            "node": "Log AI Decision",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Sales Task": {
+      "main": [
+        [
+          {
+            "node": "Log AI Decision",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Urgent Notification": {
+      "main": [
+        [
+          {
+            "node": "Log AI Decision",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save to Database": {
+      "main": [
+        [
+          {
+            "node": "Log AI Decision",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "meta": {
+    "description": "AI Document Processor: Webhook -> Ollama classify -> Ollama summarize -> Route by classification -> Action -> Log. Uses local Ollama LLM for intelligent document processing and decision-making."
+  }
+}
