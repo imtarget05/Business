@@ -118,10 +118,16 @@ async def _real_web_search(query: str) -> list[dict]:
 
 _FOOD_SUMMARY_SYSTEM = (
     "Bạn là trợ lý tổng hợp ẩm thực Michelin Việt Nam. Bạn NHẬN được các đoạn trích (snippet) "
-    "web THẬT từ Michelin Guide và báo chính thức. NHIỆM VỤ: chỉ trích xuất những TÊN nhà hàng / "
-    "món ăn CÓ XUẤT HIỆN trong snippet — KHÔNG được tự bịa thêm bất kỳ tên, địa chỉ hay mô tả nào "
-    "không có trong snippet. Mỗi mục ghi kèm link nguồn. Nếu snippet không có tên cụ thể, hãy ghi "
-    "rõ 'nguồn chưa liệt kê tên cụ thể'. Viết tiếng Việt, ngắn gọn, định dạng mỗi mục 1 dòng."
+    "web THẬT từ Michelin Guide và báo chính thức.\n"
+    "QUY TẮC BẮT BUỘC (vi phạm = bịa):\n"
+    "1. CHỈ được liệt kê những TÊN nhà hàng / món ăn CÓ XUẤT HIỆN NGUYÊN VĂN trong snippet.\n"
+    "2. TUYỆT ĐỐI KHÔNG tự suy luận, tổng hợp hay đưa ra số lượng tổng quát "
+    "(vd '7 one-star', '58 Bib Gourmand', '99 Selected') nếu snippet KHÔNG ghi rõ từng tên tương ứng.\n"
+    "3. Nếu snippet CHỈ có con số tổng quát (không có tên cụ thể), hãy ghi trung thực: "
+    "'Nguồn ghi khoảng {số} cơ sở — xem chi tiết tại link' và trích link, "
+    "KHÔNG tự bịa danh sách tên.\n"
+    "4. Mỗi mục phải đi kèm link nguồn.\n"
+    "5. Viết tiếng Việt, ngắn gọn, mỗi mục 1 dòng."
 )
 
 
@@ -1078,10 +1084,13 @@ class MonitoringBot:
                     await q.edit_message_reply_markup(reply_markup=None)
                 except Exception:
                     pass
-                if update.message:
-                    await update.message.reply_text(thanks, parse_mode=ParseMode.MARKDOWN)
-                else:
-                    await q.edit_message_text(thanks, parse_mode=ParseMode.MARKDOWN)
+                # Reply in a NEW message so the original content is NOT overwritten.
+                # Use the callback query's own message (update.message is None for
+                # inline callbacks), never edit_message_text on the source post.
+                try:
+                    await q.message.reply_text(thanks, parse_mode=ParseMode.MARKDOWN)
+                except Exception:
+                    pass
             except Exception as e:
                 logger.error("feedback callback failed: %s", e)
             return

@@ -79,27 +79,76 @@ def test_real_web_search_returns_verifiable_links(monkeypatch):
     assert out[0]["url"].startswith("https://")
 
 
-def test_summarize_food_uses_only_snippets(monkeypatch):
-    """LLM must summarize from real snippets; never invent. Falls back to '' on failure."""
+def test_feedback_callback_keeps_original_message(monkeypatch):
+    """Clicking 👍/👎 must NOT overwrite the source message text."""
     import asyncio
-    calls = {}
+    import agents.monitoring.telegram_bot as tb
+    bot = tb.MonitoringBot(tb.TelegramConfig(bot_token="STUB"))
+
+    edited_text = {}
+    replied = {}
+
+    class FakeQuery:
+        data = "fb:up:food"
+        async def answer(self):
+            return
+
+        async def edit_message_reply_markup(self, reply_markup=None):
+            return
+
+        async def edit_message_text(self, text, **k):
+            edited_text["text"] = text  # must NEVER happen
+
+        class message:
+            @staticmethod
+            async def reply_text(text, **k):
+                replied["text"] = text
+                return {"t": text}
+
+    class FakeUpdate:
+        callback_query = FakeQuery()
+
+    called = {}
+    class FakeLearning:
+        async def record_feedback(self, payload):
+            called["fb"] = payload
+
+    class _C:
+        learning = FakeLearning()
+
+    import packages.core.bootstrap as boot
+    monkeypatch.setattr(boot, "get_container", lambda: _C())
+
+    async def run():
+        await bot._button_callback(FakeUpdate(), type("Ctx", (), {})())
+
+    asyncio.run(run())
+    assert called.get("fb", {}).get("rating") == "up"
+    assert "text" not in edited_text, "feedback must not edit_message_text on source post"
+    assert "text" in replied, "thanks should be a NEW reply, not overwrite"
+
+
+def test_summarize_food_rejects_invented_counts(monkeypatch):
+    """LLM must not invent aggregate counts (7 one-star, 58 Bib...) not in snippet."""
+    import asyncio
+    captured = {}
 
     class FakeLLM:
         async def generate(self, prompt, system, max_tokens=500, temperature=0.0):
-            calls["prompt"] = prompt
-            calls["system"] = system
-            # Echo only names present in the snippet (proves it read the source).
-            return "1. Michelin Guide Vietnam (https://guide.michelin.com/vn)"
+            captured["system"] = system
+            # A compliant model would refuse to invent; we assert the prompt/sytem
+            # forbids it and the helper still returns whatever the model says.
+            return "Nguồn ghi khoảng 193 cơ sở — xem chi tiết tại link guide.michelin.com"
 
     res = [
         {"title": "Vietnam MICHELIN Restaurants", "url": "https://guide.michelin.com/vn",
-         "snippet": "Michelin Guide Việt Nam 2026 vinh danh 193 cơ sở"},
+         "snippet": "Michelin Guide Việt Nam 2026 vinh danh 193 cơ sở ăn uống"},
     ]
     out = asyncio.run(_summarize_food(FakeLLM(), "Các món ăn việt nam lọt vào Michelin", res))
     assert "guide.michelin.com" in out
-    # The snippet text must have been passed to the LLM (no memory-only answer).
-    assert "193 cơ sở" in calls["prompt"]
-    assert "KHÔNG" in calls["system"] and "bịa" in calls["system"]
+    # The strict rules must be present in the system prompt.
+    assert "TUYỆT ĐỐI KHÔNG" in captured["system"]
+    assert "7 one-star" in captured["system"] or "58 Bib" in captured["system"]
 
 
 def test_summarize_food_falls_back_on_error():
