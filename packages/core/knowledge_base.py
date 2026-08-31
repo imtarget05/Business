@@ -1,25 +1,27 @@
-"""Full-text Knowledge Base (Second Brain) — offline, no embedding model.
+﻿"""Full-text + semantic Knowledge Base (Second Brain).
 
 Task 1 deliverable: a centralized knowledge store (SOPs, docs, personal
-files) answering natural-language questions ("ASK ANYTHING").
+files) answering natural-language questions. Feature 1 adds semantic (vector)
+retrieval alongside the original full-text search, using a hybrid approach.
 
-Design decisions (per SDD ruling):
-- **Full-text**, not semantic vectors. PostgreSQL uses a ``tsvector`` GIN index
-  (``to_tsvector`` / ``plainto_tsquery`` / ``ts_rank``); SQLite (tests, local
-  dev) falls back to in-Python token-overlap scoring. Both paths share the same
-  chunking + ranking contract.
-- **No embedding model required** — runs fully offline. Semantic search can be
-  layered on later without changing the public API.
-- Documents are loaded from ``data/kb/`` (``.md`` / ``.txt`` / ``.pdf``),
-  chunked at ~500 words, and stored in the ``kb_chunks`` table.
+Design decisions:
+- Full-text uses a ``tsvector`` GIN index (PostgreSQL) or in-Python
+  token-overlap scoring (SQLite / tests).
+- Semantic search stores a vector embedding per chunk (via EmbeddingProvider)
+  and ranks by cosine similarity. On PostgreSQL it uses the native pgvector
+  ``<=>`` operator when available; on SQLite (and as a safety net everywhere)
+  it falls back to in-Python cosine over the stored vector.
+- The FTS path is fully preserved — this is additive, not a replacement.
 
-The table is created by migration ``0009_kb_chunks`` in production; tests and
-local dev create it on first use via :meth:`init` / lazy ``_ensure_schema``.
+The table is created by migration ``0009_kb_chunks`` in production (extended by
+``0011_add_vector_embedding``); tests and local dev create it on first use via
+:meth:`init` / lazy ``_ensure_schema``.
 """
 
 from __future__ import annotations
 
 import asyncio
+import json
 import re
 import uuid
 from pathlib import Path
@@ -27,6 +29,8 @@ from typing import Any
 
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import async_sessionmaker
+
+from packages.llm.embeddings import _parse_vector, _vector_to_pg, cosine_similarity
 
 # ---------------------------------------------------------------------------
 # Chunking + tokenization
@@ -75,12 +79,19 @@ def _score_query(tokens: list[str], content: str) -> int:
     if not ct:
         return 0
     ct_set = set(ct)
-    # Reward distinct matches and raw frequency.
     distinct = sum(1 for t in tokens if t in ct_set)
     if distinct == 0:
         return 0
     freq = sum(ct.count(t) for t in tokens)
     return freq
+
+
+def _default_embedding_provider():
+    """Lazily resolve the configured embedding provider (avoids import cycles)."""
+    from packages.config.settings import get_settings
+    from packages.llm.factory import get_embedding_provider
+
+    return get_embedding_provider(get_settings())
 
 
 # ---------------------------------------------------------------------------
@@ -89,7 +100,7 @@ def _score_query(tokens: list[str], content: str) -> int:
 
 
 class KnowledgeBase:
-    """Full-text document store + retriever.
+    """Full-text + semantic document store and retriever.
 
     Parameters
     ----------
@@ -98,6 +109,9 @@ class KnowledgeBase:
         production, SQLite in tests / local dev).
     chunk_size / overlap:
         Chunking parameters (words).
+    embedding_provider:
+        Optional EmbeddingProvider. When omitted, the configured provider is
+        resolved lazily (MockEmbeddingProvider for ``mock`` settings).
     """
 
     def __init__(
@@ -106,10 +120,12 @@ class KnowledgeBase:
         *,
         chunk_size: int = DEFAULT_CHUNK_SIZE,
         overlap: int = DEFAULT_CHUNK_OVERLAP,
+        embedding_provider: Any = None,
     ) -> None:
         self._factory = session_factory
         self._chunk_size = chunk_size
         self._overlap = overlap
+        self._embedding_provider = embedding_provider
         self._schema_ready = False
         self._lock: asyncio.Lock | None = None
 
@@ -140,6 +156,7 @@ class KnowledgeBase:
                                 title TEXT NOT NULL,
                                 chunk_index INTEGER NOT NULL,
                                 content TEXT NOT NULL,
+                                embedding vector(768),
                                 search_vector tsvector
                                     GENERATED ALWAYS AS (to_tsvector('english', content)) STORED,
                                 created_at TIMESTAMP NOT NULL DEFAULT now()
@@ -164,11 +181,31 @@ class KnowledgeBase:
                                 title TEXT NOT NULL,
                                 chunk_index INTEGER NOT NULL,
                                 content TEXT NOT NULL,
+                                embedding TEXT,
                                 created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
                             )
                             """
                         )
                     )
+                # Migration safety: ensure the embedding column exists even when
+                # the table was created by an older migration lacking it.
+                try:
+                    if dialect == "postgresql":
+                        await session.execute(
+                            text(
+                                "ALTER TABLE kb_chunks ADD COLUMN IF NOT EXISTS "
+                                "embedding vector(768)"
+                            )
+                        )
+                    else:
+                        await session.execute(
+                            text(
+                                "ALTER TABLE kb_chunks ADD COLUMN IF NOT EXISTS "
+                                "embedding TEXT"
+                            )
+                        )
+                except Exception:
+                    pass
                 await session.commit()
             self._schema_ready = True
 
@@ -176,6 +213,9 @@ class KnowledgeBase:
 
     async def add_document(self, path: str | Path) -> dict[str, Any]:
         """Load a ``.md`` / ``.txt`` / ``.pdf`` file, chunk it, and store chunks.
+
+        Each chunk is embedded (via the embedding provider) and the vector is
+        stored alongside the content and tsvector.
 
         Returns a stats dict: ``{doc_id, title, source_path, chunks}``.
         """
@@ -185,23 +225,36 @@ class KnowledgeBase:
         doc_id = uuid.uuid4()
         pieces = chunk_text(content, self._chunk_size, self._overlap)
 
+        # Embed every chunk in one batch call (embedding provider is async).
+        embeddings: list[list[float]] = []
+        try:
+            provider = self._embedding_provider or _default_embedding_provider()
+            embeddings = await provider.embed(pieces)
+        except Exception:
+            embeddings = []
+
         await self._ensure_schema()
         async with self._factory() as session:
             # Idempotent re-index: drop any chunks previously stored for this
-            # exact source *before* (re)inserting. Without this, calling
-            # index_directory / POST /v1/knowledge/index repeatedly duplicates
-            # every chunk for the same file. Dedupe is keyed on the resolved
-            # source_path so re-indexing an updated file replaces its chunks.
+            # exact source *before* (re)inserting.
             await session.execute(
                 text("DELETE FROM kb_chunks WHERE source_path = :sp"),
                 {"sp": str(p.resolve())},
             )
             for idx, piece in enumerate(pieces):
+                emb = embeddings[idx] if idx < len(embeddings) else None
+                emb_sql = (
+                    "CAST(:embedding AS vector)"
+                    if session.bind.dialect.name == "postgresql"
+                    else ":embedding"
+                )
                 await session.execute(
                     text(
                         "INSERT INTO kb_chunks "
-                        "(id, doc_id, source_path, title, chunk_index, content, created_at) "
-                        "VALUES (:id, :doc_id, :source_path, :title, :chunk_index, :content, CURRENT_TIMESTAMP)"
+                        "(id, doc_id, source_path, title, chunk_index, content, embedding, created_at) "
+                        "VALUES (:id, :doc_id, :source_path, :title, :chunk_index, :content, "
+                        + emb_sql
+                        + ", CURRENT_TIMESTAMP)"
                     ),
                     {
                         "id": str(uuid.uuid4()),
@@ -210,6 +263,7 @@ class KnowledgeBase:
                         "title": title,
                         "chunk_index": idx,
                         "content": piece,
+                        "embedding": _vector_to_pg(emb) if emb else None,
                     },
                 )
             await session.commit()
@@ -222,10 +276,7 @@ class KnowledgeBase:
         }
 
     async def index_directory(self, path: str | Path) -> int:
-        """Index every ``.md`` / ``.txt`` / ``.pdf`` file under ``path``.
-
-        Returns the number of documents indexed.
-        """
+        """Index every ``.md`` / ``.txt`` / ``.pdf`` file under ``path``."""
         base = Path(path)
         if not base.exists():
             return 0
@@ -239,7 +290,7 @@ class KnowledgeBase:
     # -- retrieval ----------------------------------------------------------
 
     async def query(self, query_text: str, k: int = 5) -> list[str]:
-        """Return the ``k`` most relevant chunk contents for ``text``.
+        """Return the ``k`` most relevant chunk contents for ``text`` (full-text).
 
         PostgreSQL uses tsvector full-text ranking; SQLite uses in-Python
         token-overlap scoring. Returns ``[]`` when nothing matches.
@@ -268,14 +319,68 @@ class KnowledgeBase:
                     if rows:
                         return [r[0] for r in rows]
                 except Exception:
-                    # Fall through to portable scoring if tsvector is unavailable.
                     pass
             contents = (await session.execute(text("SELECT content FROM kb_chunks"))).scalars().all()
 
-        scored = [( _score_query(q_tokens, c), c) for c in contents]
+        scored = [(_score_query(q_tokens, c), c) for c in contents]
         scored = [(s, c) for s, c in scored if s > 0]
         scored.sort(key=lambda x: x[0], reverse=True)
         return [c for _, c in scored[:k]]
+
+    async def query_vector(self, query_text: str, top_k: int = 5) -> list[str]:
+        """Return the ``top_k`` most semantically similar chunk contents.
+
+        On PostgreSQL it uses the native pgvector ``<=>`` (cosine distance)
+        operator when an embedding column is present; otherwise (and as a
+        safety net on every dialect) it computes cosine similarity in Python
+        over the stored vector. Returns ``[]`` when nothing is embedded or
+        embedding fails.
+        """
+        await self._ensure_schema()
+        try:
+            provider = self._embedding_provider or _default_embedding_provider()
+            qvec = (await provider.embed([query_text]))[0]
+        except Exception:
+            return []
+
+        async with self._factory() as session:
+            dialect = session.bind.dialect.name
+            if dialect == "postgresql":
+                try:
+                    rows = (
+                        await session.execute(
+                            text(
+                                "SELECT content FROM kb_chunks "
+                                "ORDER BY embedding <=> CAST(:q AS vector) LIMIT :k"
+                            ),
+                            {"q": _vector_to_pg(qvec), "k": top_k},
+                        )
+                    ).all()
+                    if rows:
+                        return [r[0] for r in rows]
+                except Exception:
+                    pass
+            # The PostgreSQL path may have left the session in an aborted
+            # (invalidated) transaction; roll it back before the in-Python
+            # fallback so the SELECT below still executes.
+            try:
+                await session.rollback()
+            except Exception:
+                pass
+            rows = (
+                await session.execute(
+                    text("SELECT content, embedding FROM kb_chunks")
+                )
+            ).all()
+
+        scored = []
+        for content, emb in rows:
+            vec = _parse_vector(emb)
+            if vec is None:
+                continue
+            scored.append((cosine_similarity(qvec, vec), content))
+        scored.sort(key=lambda x: x[0], reverse=True)
+        return [c for _, c in scored[:top_k]]
 
     # -- helpers ------------------------------------------------------------
 
@@ -284,7 +389,6 @@ class KnowledgeBase:
         suffix = path.suffix.lower()
         if suffix == ".pdf":
             return _read_pdf(path)
-        # .md / .txt and anything else: treat as plain text.
         try:
             return path.read_text(encoding="utf-8", errors="replace")
         except OSError:

@@ -1,0 +1,80 @@
+# Business Ops Agent Swarm — local observability stack (Feature 3)
+#
+# Prometheus scrapes the API /metrics endpoint (exposed by
+# prometheus-fastapi-instrumentator) and Grafana renders the provisioned
+# "Agent Swarm Observability" dashboard.
+#
+# Usage
+#   # 1) together with the app stack (api reachable as `api:8000`)
+#   docker compose -f docker-compose.yml -f docker-compose.observability.yml up -d prometheus grafana
+#
+#   # 2) standalone, API running on the host via uvicorn
+#   docker compose -f docker-compose.observability.yml up -d
+#   # then enable the `boas-api-host` job in monitoring/prometheus.yml
+#
+# Endpoints
+#   Prometheus  -> http://localhost:9090   (targets: /targets)
+#   Grafana     -> http://127.0.0.1:3001   (admin user; GRAFANA_ADMIN_PASSWORD must be set)
+#   API metrics -> http://localhost:8000/metrics
+#
+# The API works without this stack: /metrics is plain text served in-process.
+
+services:
+  prometheus:
+    image: prom/prometheus:v2.53.1
+    container_name: boas-prometheus
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=15d
+      - --web.enable-lifecycle
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    ports:
+      - "9090:9090"
+    extra_hosts:
+      # Lets prometheus scrape an API running directly on the Docker host.
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:9090/-/healthy || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:11.1.0
+    container_name: boas-grafana
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      # No fallback: GRAFANA_ADMIN_PASSWORD must be provided (D4).
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+      # Land on the provisioned swarm dashboard straight after login.
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /var/lib/grafana/dashboards/agent_swarm.json
+      GF_LOG_LEVEL: warn
+    volumes:
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana_data:/var/lib/grafana
+    ports:
+      # Bound to localhost: the dashboard must not be exposed on 0.0.0.0 (D4).
+      # 3000 is taken by the web app in docker-compose.yml.
+      - "127.0.0.1:3001:3000"
+    depends_on:
+      prometheus:
+        condition: service_started
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:3000/api/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    restart: unless-stopped
+
+volumes:
+  prometheus_data:
+  grafana_data:

@@ -33,6 +33,7 @@ from agents.supply_chain.reporting_guardrails import ReportingGuardrails
 from agents.supply_chain.inventory_guardrails import InventoryGuardrails
 from agents.supply_chain.approval_guardrails import ApprovalGuardrails
 from packages.config.settings import Settings, get_settings
+from packages.core.checkpoint import get_checkpointer
 from packages.contracts.models import TaskContext, TaskRequest
 
 logger = logging.getLogger(__name__)
@@ -538,19 +539,24 @@ def after_reporting(state: SupplyChainGraphState) -> str:
 # Graph builder
 # ---------------------------------------------------------------------------
 
-def _build_checkpointer(settings: Settings) -> InMemorySaver:
-    """Build an InMemorySaver checkpointer.
+def _build_checkpointer(settings: Settings) -> Any:
+    """Build a checkpointer from settings.
 
-    Uses InMemorySaver for simplicity. For production with SQLite persistence,
-    swap to a different checkpointer implementation when available.
+    Delegates to :func:`get_checkpointer`: returns a ``PostgresSaver`` when
+    ``settings.langgraph_checkpoint_url`` is set, otherwise an in-memory
+    ``InMemorySaver`` (default, keeps tests green without a database).
     """
-    return InMemorySaver()
+    return get_checkpointer(settings)
 
 
-def _build_supply_chain_graph(settings: Settings | None = None) -> Any:
+def _build_supply_chain_graph(
+    settings: Settings | None = None, checkpointer: Any | None = None
+) -> Any:
     """Build and compile the supply chain LangGraph workflow.
 
-    Returns compiled graph ready for ainvoke().
+    Returns compiled graph ready for ainvoke(). A persistent ``checkpointer``
+    (PostgresSaver) is used when provided / configured; otherwise an in-memory
+    checkpointer is selected via :func:`get_checkpointer`.
     """
     s = settings or get_settings()
 
@@ -602,9 +608,9 @@ def _build_supply_chain_graph(settings: Settings | None = None) -> Any:
     graph.add_edge("n8n_export", END)
     graph.add_edge("error", END)
 
-    # Compile with checkpoint
-    checkpointer = _build_checkpointer(s)
-    return graph.compile(checkpointer=checkpointer)
+    # Compile with checkpoint (persistent when configured, else in-memory)
+    cp = checkpointer or _build_checkpointer(s)
+    return graph.compile(checkpointer=cp)
 
 
 # ---------------------------------------------------------------------------
@@ -618,9 +624,13 @@ class SupplyChainGraphOrchestrator:
         execute(request) -> dict  — runs the full supply chain graph
     """
 
-    def __init__(self, settings: Settings | None = None) -> None:
+    def __init__(
+        self,
+        settings: Settings | None = None,
+        checkpointer: Any | None = None,
+    ) -> None:
         self._settings = settings or get_settings()
-        self._graph = _build_supply_chain_graph(self._settings)
+        self._graph = _build_supply_chain_graph(self._settings, checkpointer=checkpointer)
 
     async def execute(self, task_id: UUID, payload: dict[str, Any], context: dict[str, Any] | None = None) -> dict[str, Any]:
         """Execute the supply chain graph for a single PO inbound request.

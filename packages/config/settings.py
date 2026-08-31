@@ -77,6 +77,7 @@ class Settings(BaseSettings):
     embedding_api_key: str | None = None
     embedding_model: str | None = None
     embedding_dimensions: int = 768
+    embedding_dim: int = 768  # convenience alias for embedding_dimensions
     embedding_request_timeout_seconds: float = 30.0
     embedding_max_retries: int = 2
     embedding_retry_backoff_seconds: float = 0.25
@@ -106,6 +107,10 @@ class Settings(BaseSettings):
     # --- LangGraph -----------------------------------------------------------
     langgraph_enabled: bool = False
     langgraph_checkpointer_db: str = "checkpoints.sqlite"
+    # Postgres DSN for the LangGraph checkpointer (Feature 2: persistent
+    # checkpointing). When None (default) the orchestrator uses an in-memory
+    # checkpointer so the suite stays green without a database.
+    langgraph_checkpoint_url: str | None = None
 
     # --- Supply Chain ---------------------------------------------------------
     po_approval_thresholds: dict[str, float] = {"manager_a": 500.0, "manager_b": 5000.0}

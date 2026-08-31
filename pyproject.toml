@@ -15,10 +15,18 @@ dependencies = [
     "pgvector>=0.3,<0.5",
     "psycopg[binary]>=3.1,<4.0",
     "langgraph>=0.2,<1.0",
+    # Feature 2: persistent checkpointing. Pinned to the 2.0.x line: it depends on
+    # langgraph-checkpoint only (no langgraph pin), so it stays compatible with the
+    # `langgraph<1.0` pin above. A wider range (e.g. <3.0) can resolve a future 2.x/3.x
+    # release that requires langgraph>=1.0 and breaks that pin.
+    "langgraph-checkpoint-postgres>=2.0,<2.1",
     "langchain-core>=0.3,<1.0",
     "python-telegram-bot>=22.0",
     "httpx>=0.27",
     "reportlab>=4.0,<6.0",  # Task 4: offline PDF branding (Ruling: reportlab, not weasyprint)
+    # Feature 3: Prometheus /metrics endpoint + boas_* business counters
+    "prometheus-client>=0.20",
+    "prometheus-fastapi-instrumentator>=7.0.0",
 ]
 
 [project.optional-dependencies]
@@ -33,6 +41,7 @@ dev = [
 google = [
     "google-api-python-client>=2.199.0",
     "google-auth>=2.57.0",
+    "gspread>=6.0",
 ]
 
 # ---------------------------------------------------------------------------
@@ -49,6 +58,10 @@ namespaces = false
 testpaths = ["tests"]
 addopts = "-q"
 asyncio_mode = "auto"
+
+markers = [
+    "e2e: true end-to-end tests exercising the full offline path (Telegram -> API -> Orchestrator -> LLM -> Knowledge Base/RAG -> Telegram reply) with mock LLM + mock embedding + SQLite.",
+]
 
 [tool.ruff]
 line-length = 100

@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+﻿# -*- coding: utf-8 -*-
 """Telegram bot for monitoring agent — listens for commands + pushes reports.
 
 Commands:
@@ -27,6 +27,12 @@ from typing import Any, Callable, Optional
 # API raises "Can't parse entities". External content (web/LLM research reports,
 # ops digests) is NOT safe markdown, so we escape it before sending.
 _TG_MD_ESCAPE = re.compile(r"([_*`\[\]()~>#+\-=|{}])")
+
+_JOB_DOMAINS = (
+    "TopCV", "ITviec", "VietnamWorks", "LinkedIn",
+    "CareerBuilder", "TimViecNhanh",
+)
+
 
 
 def _tg_escape_md(text: str) -> str:
@@ -313,7 +319,14 @@ def _md_to_telegram_html(md: str) -> str:
 
 # Optional telegram import — make it graceful if not installed
 try:
-    from telegram import Update, Bot, InlineKeyboardButton, InlineKeyboardMarkup
+    from telegram import (
+        Bot,
+        InlineKeyboardButton,
+        InlineKeyboardMarkup,
+        KeyboardButton,
+        ReplyKeyboardMarkup,
+        Update,
+    )
     from telegram.constants import ParseMode
     from telegram.ext import (
         Application,
@@ -341,6 +354,9 @@ except ImportError:
                 self.token = token
             async def send_message(self, chat_id: int, text: str, parse_mode: str = "Markdown") -> dict:
                 return {"chat_id": chat_id, "text": text}
+            async def send_chat_action(self, chat_id: int, action: str = "typing") -> dict:
+                # Feature 5: typing indicator must also work offline/in tests.
+                return {"chat_id": chat_id, "action": action}
     
         class _StubParseMode:
             MARKDOWN = "Markdown"
@@ -385,6 +401,25 @@ except ImportError:
             TEXT = None
             COMMAND = None
     
+        class _StubInlineKeyboardButton:
+            def __init__(self, text: str, callback_data: Any = None, **kw: Any) -> None:
+                self.text = text
+                self.callback_data = callback_data
+
+        class _StubInlineKeyboardMarkup:
+            def __init__(self, inline_keyboard: Any = None, **kw: Any) -> None:
+                self.inline_keyboard = inline_keyboard or []
+
+        class _StubKeyboardButton:
+            def __init__(self, text: str, **kw: Any) -> None:
+                self.text = text
+
+        class _StubReplyKeyboardMarkup:
+            def __init__(self, keyboard: Any = None, **kw: Any) -> None:
+                self.keyboard = keyboard or []
+                self.resize_keyboard = bool(kw.get("resize_keyboard", False))
+                self.one_time_keyboard = bool(kw.get("one_time_keyboard", False))
+
         # Assign stubs
         Update = _StubUpdate
         Bot = _StubBot
@@ -395,11 +430,79 @@ except ImportError:
         ContextTypes = _StubContextTypes
         MessageHandler = _StubMessageHandler
         filters = _StubFilters
+        InlineKeyboardButton = _StubInlineKeyboardButton
+        InlineKeyboardMarkup = _StubInlineKeyboardMarkup
+        KeyboardButton = _StubKeyboardButton
+        ReplyKeyboardMarkup = _StubReplyKeyboardMarkup
 
 from agents.monitoring.health_check import run_health_check
 from agents.monitoring.progress_report import generate_daily_report
 
+# Feature 5 (Telegram UX): per-user conversation context + offline Vietnamese
+# intent rules. Both are pure stdlib, so importing the bot never pulls an NLP
+# dependency and the unit tests keep running offline.
+from packages.telegram.nlp import (
+    CAP_HEALTH,
+    CAP_KNOWLEDGE,
+    CAP_REPORTING,
+    CAP_SUPPORT,
+    classify_vietnamese_intent,
+    normalize_vietnamese_query,
+)
+from packages.telegram.session import SessionStore
+from packages.observability.metrics import record_handoff, record_rag_cache
+
 logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# Feature 5 — UX constants: quick-reply keyboard + pagination
+# ---------------------------------------------------------------------------
+
+QUICK_REPLY_FOOD = "🔍 Tìm món ăn"
+QUICK_REPLY_REPORT = "📊 Báo cáo"
+QUICK_REPLY_SUPPORT = "❓ Hỗ trợ"
+QUICK_REPLY_HEALTH = "🩺 Sức khỏe hệ thống"
+
+# Bàn phím trả lời nhanh (2x2) — user chỉ cần bấm, không cần nhớ lệnh.
+QUICK_REPLY_ROWS: tuple[tuple[str, ...], ...] = (
+    (QUICK_REPLY_FOOD, QUICK_REPLY_REPORT),
+    (QUICK_REPLY_SUPPORT, QUICK_REPLY_HEALTH),
+)
+
+# Nhãn nút -> capability (map thẳng sang các lệnh/luồng đã có).
+QUICK_REPLY_ACTIONS: dict[str, str] = {
+    QUICK_REPLY_FOOD: CAP_KNOWLEDGE,
+    QUICK_REPLY_REPORT: CAP_REPORTING,
+    QUICK_REPLY_SUPPORT: CAP_SUPPORT,
+    QUICK_REPLY_HEALTH: CAP_HEALTH,
+}
+
+# Pagination: 5 mục/trang là vừa một màn hình Telegram trên điện thoại.
+PAGE_SIZE = 5
+PAGE_PREV_LABEL = "◀️ Trước"
+PAGE_NEXT_LABEL = "Tiếp ▶️"
+PAGE_CALLBACK_PREFIX = "pg"
+PAGE_HEADER = (
+    "🔍 Kết quả tra web cho: {query}\n"
+    "(mình chỉ trích dẫn nguồn thật, KHÔNG tự bịa)"
+)
+
+# Session marker: đã bấm "Tìm món ăn" và đang chờ user gõ món/quán cụ thể.
+AWAITING_FOOD_QUERY = "awaiting.food_query"
+
+# Câu hỏi kiểu "tìm quán ăn / món ngon" -> phải tra web (KB không có dữ liệu này).
+_FOOD_DISCOVERY_RE = re.compile(
+    r"(quán ăn|quan an|chỗ ăn|cho an|đồ ăn|do an|món ngon|mon ngon|ăn gì|an gi|"
+    r"ăn ở đâu|an o dau|quán nào|quan nao|nhà hàng|nha hang|món ăn|mon an|"
+    r"ẩm thực|am thuc|michelin|thực đơn|thuc don|review quán|review quan)",
+    re.I,
+)
+
+
+def _is_food_discovery(text: str) -> bool:
+    """True nếu là câu hỏi tìm quán/món ăn (cần web, không dùng LLM memory)."""
+    return bool(text) and bool(_FOOD_DISCOVERY_RE.search(text))
 
 
 # ---------------------------------------------------------------------------
@@ -434,6 +537,8 @@ class MonitoringBot:
         self._pending_jobsearch: dict[int, dict] = {}  # chat_id -> {target_mail, text}
         self._last_jobsearch: dict[int, list[dict]] = {}  # chat_id -> final_list from last run (for send-unconfirmed)
         self._pending_youtube: dict[int, dict] = {}  # chat_id -> {target_mail, text}
+        # Feature 5: ngữ cảnh hội thoại theo telegram_user_id (TTL 30 phút).
+        self.sessions = SessionStore()
     
     async def initialize(self) -> None:
         """Initialize bot application."""
@@ -452,6 +557,11 @@ class MonitoringBot:
         self.app.add_handler(CommandHandler("compete", self._compete_command))
         self.app.add_handler(CommandHandler("help", self._help_command))
         
+        # Feature 5: pagination callbacks ("pg:<page>:<query-token>") first, so
+        # the generic menu handler never swallows them.
+        self.app.add_handler(
+            CallbackQueryHandler(self._pagination_callback, pattern=r"^pg:")
+        )
         # Callback query handler for inline menu
         self.app.add_handler(CallbackQueryHandler(self._button_callback))
         
@@ -544,7 +654,8 @@ class MonitoringBot:
             "• 📚 Tra cứu — nhắn \"/kb <câu hỏi>\"\n\n"
             "Gõ /help để xem đầy đủ lệnh."
         )
-        await update.message.reply_text(text)
+        # Feature 5: kèm bàn phím gợi ý để user bấm thay vì phải nhớ lệnh.
+        await self._reply(update, text, reply_markup=self._quick_reply_keyboard())
 
     async def _friendly_error(self, update: Update, err: Exception) -> None:
         """Lỗi hệ thống -> thông báo nhẹ nhàng, không dump traceback thô."""
@@ -557,6 +668,404 @@ class MonitoringBot:
         """Ghi đè GMAIL_ALLOWED_RECIPIENTS vào os.environ (docker-safe, không động file .env)."""
         import os as _os, json as _json
         _os.environ["GMAIL_ALLOWED_RECIPIENTS"] = _json.dumps(allowed)
+
+    # ------------------------------------------------------------------
+    # Feature 5 — UX: typing indicator, quick replies, pagination, session
+    # ------------------------------------------------------------------
+
+    def _session_user_id(self, update: Any) -> int:
+        """Khóa session = telegram_user_id (fallback chat_id nếu thiếu user)."""
+        user = getattr(update, "effective_user", None)
+        uid = getattr(user, "id", None)
+        if uid is None:
+            chat = getattr(update, "effective_chat", None)
+            uid = getattr(chat, "id", None)
+        if uid is None:
+            msg = getattr(update, "message", None)
+            uid = getattr(msg, "chat_id", None)
+        try:
+            return int(uid)
+        except (TypeError, ValueError):
+            return 0
+
+    def _callback_user_id(self, query: Any) -> int:
+        """Cùng khóa session như _session_user_id, nhưng từ một callback query."""
+        uid = getattr(getattr(query, "from_user", None), "id", None)
+        if uid is None:
+            msg = getattr(query, "message", None)
+            uid = getattr(getattr(msg, "chat", None), "id", None) or getattr(
+                msg, "chat_id", None
+            )
+        try:
+            return int(uid)
+        except (TypeError, ValueError):
+            return 0
+
+    def _track_message(self, update: Any, text: str) -> Any:
+        """Lưu câu hỏi + lịch sử vào session để lượt sau còn ngữ cảnh.
+
+        Never raises: mất ngữ cảnh chỉ làm UX kém hơn, không được làm chết handler.
+        """
+        try:
+            uid = self._session_user_id(update)
+            session = self.sessions.get_or_create(uid)
+            # F11: the first incoming message after the "🔍 Tìm món ăn" prompt consumes
+            # the awaiting-food marker so a stale flag can never hijack an unrelated
+            # follow-up. Cleared here for EVERY message, regardless of which branch
+            # later handles it.
+            if getattr(session, "last_capability", None) == AWAITING_FOOD_QUERY:
+                session.remember(text)
+                return self.sessions.update(
+                    uid, last_query=text, history=session.history, last_capability=None
+                )
+            session.remember(text)
+            return self.sessions.update(uid, last_query=text, history=session.history)
+        except Exception:
+            return None
+
+    async def _reply(
+        self,
+        update: Any,
+        text: str,
+        *,
+        parse_mode: Any = None,
+        reply_markup: Any = None,
+    ) -> Any:
+        """reply_text chịu lỗi: tự bỏ kwarg mà client/mock không hỗ trợ.
+
+        Giữ được bàn phím gợi ý trên Telegram thật nhưng vẫn trả lời bình thường
+        với các mock cũ chỉ nhận (text, parse_mode).
+        """
+        message = getattr(update, "message", None)
+        if message is None:
+            query = getattr(update, "callback_query", None)
+            message = getattr(query, "message", None) if query is not None else None
+        if message is None:
+            return None
+        kwargs: dict[str, Any] = {}
+        if parse_mode is not None:
+            kwargs["parse_mode"] = parse_mode
+        if reply_markup is not None:
+            kwargs["reply_markup"] = reply_markup
+        try:
+            return await message.reply_text(text, **kwargs)
+        except TypeError:
+            pass
+        if parse_mode is not None:
+            try:
+                return await message.reply_text(text, parse_mode=parse_mode)
+            except TypeError:
+                pass
+        return await message.reply_text(text)
+
+    async def _typing(self, chat_id: Any, bot: Any = None) -> bool:
+        """Gửi trạng thái "đang nhập…" TRƯỚC mỗi lần gọi LLM/web.
+
+        Thứ tự tìm bot: bot truyền vào (context.bot) -> app.bot -> self.bot, nên
+        helper hoạt động với python-telegram-bot thật, với stub offline và với
+        mock bot trong test. Never raises (UX không được làm vỡ handler).
+
+        Returns:
+            True nếu đã gửi được chat action, False nếu không có bot nào hỗ trợ.
+        """
+        if chat_id is None:
+            return False
+        candidates: list[Any] = []
+        if bot is not None:
+            candidates.append(bot)
+        app_bot = getattr(getattr(self, "app", None), "bot", None)
+        if app_bot is not None:
+            candidates.append(app_bot)
+        if getattr(self, "bot", None) is not None:
+            candidates.append(self.bot)
+        for candidate in candidates:
+            action = getattr(candidate, "send_chat_action", None)
+            if action is None:
+                continue
+            try:
+                await action(chat_id=chat_id, action="typing")
+                return True
+            except TypeError:
+                try:
+                    await action(chat_id, "typing")
+                    return True
+                except Exception:
+                    continue
+            except Exception:
+                continue
+        return False
+
+    def _quick_reply_keyboard(self) -> Any:
+        """Bàn phím trả lời nhanh 2x2 (ReplyKeyboardMarkup) cho user Việt."""
+        try:
+            rows = [[KeyboardButton(label) for label in row] for row in QUICK_REPLY_ROWS]
+            return ReplyKeyboardMarkup(
+                rows, resize_keyboard=True, one_time_keyboard=False
+            )
+        except Exception:
+            return None
+
+    async def _handle_quick_reply(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE, capability: str
+    ) -> None:
+        """Nút gợi ý -> luồng đã có (report/health/support) hoặc hỏi lại món ăn."""
+        uid = self._session_user_id(update)
+        try:
+            self.sessions.update(uid, last_capability=capability)
+        except Exception:
+            pass
+        if capability == CAP_REPORTING:
+            await self._report_command(update, context)
+            return
+        if capability == CAP_HEALTH:
+            await self._health_command(update, context)
+            return
+        if capability == CAP_SUPPORT:
+            await self._support_reply(update)
+            return
+        # CAP_KNOWLEDGE: hỏi lại món/quán rồi chờ câu tiếp theo (ngữ cảnh session).
+        try:
+            self.sessions.update(
+                uid, last_capability=AWAITING_FOOD_QUERY, page=0, results=[]
+            )
+        except Exception:
+            pass
+        await self._reply(
+            update,
+            "🔍 Bạn muốn tìm món gì, hoặc quán ở khu vực nào?\n\n"
+            "Ví dụ: “bún bò Huế ở Hà Nội”, “nhà hàng Michelin Sài Gòn”, "
+            "“quán ăn ngon Đà Nẵng”.\n"
+            "Mình sẽ tra web thật rồi gửi danh sách 5 mục mỗi trang.",
+            reply_markup=self._quick_reply_keyboard(),
+        )
+
+    async def _support_reply(self, update: Update) -> None:
+        """Ý định hỗ trợ/khiếu nại (support.triage) — hướng dẫn ngắn + nút gợi ý."""
+        await self._reply(
+            update,
+            "🤝 Mình đã ghi nhận yêu cầu hỗ trợ của bạn.\n\n"
+            "Để xử lý nhanh, bạn mô tả giúp mình:\n"
+            "• Vấn đề gặp phải (vd: hoàn tiền, đơn chưa tới, hệ thống báo lỗi)\n"
+            "• Mã đơn / thời điểm xảy ra\n"
+            "• Kết quả bạn mong muốn\n\n"
+            "Lối đi nhanh:\n"
+            "• 📚 Tra chính sách: /kb <câu hỏi>\n"
+            "• 🩺 Kiểm tra hệ thống: /health\n"
+            "• ❓ Xem toàn bộ lệnh: /help",
+            reply_markup=self._quick_reply_keyboard(),
+        )
+
+    @staticmethod
+    def _page_token(query: str) -> str:
+        """Token ngắn đại diện cho query trong callback_data.
+
+        Telegram giới hạn callback_data 64 byte nên không nhét được câu hỏi tiếng
+        Việt vào đó; ta encode "pg:<page>:<token>" với token = 8 ký tự hash của
+        query đã chuẩn hóa, còn nội dung đầy đủ đọc lại từ SessionStore.
+        """
+        import hashlib
+
+        normalized = normalize_vietnamese_query(query or "", strip_accents=True)
+        return hashlib.sha1(normalized.encode("utf-8")).hexdigest()[:8]
+
+    @staticmethod
+    def _total_pages(items: Any, page_size: int | None = None) -> int:
+        size = page_size or PAGE_SIZE
+        count = len(items or [])
+        return max(1, -(-count // size))
+
+    def _pagination_keyboard(self, page: int, total_pages: int, token: str) -> Any:
+        """Inline keyboard "◀️ Trước" / "Tiếp ▶️" (None nếu chỉ có 1 trang)."""
+        if total_pages <= 1:
+            return None
+        row: list[Any] = []
+        try:
+            if page > 0:
+                row.append(
+                    InlineKeyboardButton(
+                        PAGE_PREV_LABEL,
+                        callback_data=f"{PAGE_CALLBACK_PREFIX}:{page - 1}:{token}",
+                    )
+                )
+            if page < total_pages - 1:
+                row.append(
+                    InlineKeyboardButton(
+                        PAGE_NEXT_LABEL,
+                        callback_data=f"{PAGE_CALLBACK_PREFIX}:{page + 1}:{token}",
+                    )
+                )
+            if not row:
+                return None
+            return InlineKeyboardMarkup([row])
+        except Exception:
+            return None
+
+    def _format_page(
+        self,
+        items: Any,
+        page: int,
+        *,
+        header: str = "",
+        page_size: int | None = None,
+    ) -> str:
+        """Render một trang kết quả (đánh số liên tục + chân trang "Trang x/y")."""
+        size = page_size or PAGE_SIZE
+        items = list(items or [])
+        total_pages = self._total_pages(items, size)
+        page = max(0, min(int(page or 0), total_pages - 1))
+        start = page * size
+        chunk = items[start : start + size]
+        lines: list[str] = []
+        for offset, item in enumerate(chunk, start=start + 1):
+            if isinstance(item, dict):
+                title = item.get("title") or item.get("name") or "(không có tiêu đề)"
+                entry = f"{offset}. {_sanitize_text(str(title)).strip()}"
+                snippet = item.get("snippet") or item.get("description") or ""
+                if snippet:
+                    entry += f"\n   {_sanitize_text(str(snippet)).strip()[:200]}"
+                url = item.get("url") or item.get("link") or ""
+                if url:
+                    entry += f"\n   🔗 {url}"
+            else:
+                entry = f"{offset}. {_sanitize_text(str(item)).strip()}"
+            lines.append(entry)
+        body = "\n\n".join(lines) or "(trang trống)"
+        footer = f"\n\n📄 Trang {page + 1}/{total_pages} • {len(items)} kết quả"
+        if total_pages > 1:
+            footer += "\n👉 Dùng nút bên dưới để xem thêm."
+        prefix = f"{header}\n\n" if header else ""
+        return prefix + body + footer
+
+    async def _send_paginated(
+        self,
+        update: Any,
+        items: Any,
+        *,
+        query: str,
+        header: str = "",
+        page_size: int | None = None,
+    ) -> Any:
+        """Gửi trang đầu; nếu > PAGE_SIZE mục thì kèm nút "◀️ Trước / Tiếp ▶️".
+
+        Danh sách được cache trong session nên bấm sang trang KHÔNG gọi lại web/LLM.
+        """
+        size = page_size or PAGE_SIZE
+        items = list(items or [])
+        uid = self._session_user_id(update)
+        try:
+            self.sessions.update(uid, results=items, last_query=query, page=0)
+        except Exception:
+            pass
+        total_pages = self._total_pages(items, size)
+        text = self._format_page(items, 0, header=header, page_size=size)
+        markup = self._pagination_keyboard(0, total_pages, self._page_token(query))
+        return await self._reply(update, text, reply_markup=markup)
+
+    async def _edit_callback_text(
+        self, query: Any, text: str, reply_markup: Any = None
+    ) -> Any:
+        """edit_message_text chịu lỗi (mock cũ / "Message is not modified")."""
+        edit = getattr(query, "edit_message_text", None)
+        if edit is None:
+            return None
+        try:
+            if reply_markup is not None:
+                return await edit(text, reply_markup=reply_markup)
+            return await edit(text)
+        except TypeError:
+            try:
+                return await edit(text)
+            except Exception as exc:  # pragma: no cover - defensive
+                logger.debug("edit_message_text failed: %s", exc)
+                return None
+        except Exception as exc:
+            if "not modified" not in str(exc).lower():
+                logger.debug("edit_message_text failed: %s", exc)
+            return None
+
+    async def _pagination_callback(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
+        """Xử lý nút phân trang: đọc session, lát đúng trang, cập nhật keyboard."""
+        query_obj = getattr(update, "callback_query", None)
+        if query_obj is None:
+            return
+        try:
+            await query_obj.answer()
+        except Exception:
+            pass
+        data = getattr(query_obj, "data", "") or ""
+        parts = data.split(":")
+        if len(parts) < 2 or parts[0] != PAGE_CALLBACK_PREFIX:
+            return
+        try:
+            page = int(parts[1])
+        except (TypeError, ValueError):
+            page = 0
+        token = parts[2] if len(parts) > 2 else ""
+        uid = self._callback_user_id(query_obj)
+        session = self.sessions.get(uid)
+        items = list(getattr(session, "results", None) or []) if session else []
+        if not items:
+            await self._edit_callback_text(
+                query_obj,
+                "⌛ Danh sách này đã hết hạn (30 phút). Bạn gửi lại câu hỏi để "
+                "mình tra lại nhé.",
+            )
+            return
+        total_pages = self._total_pages(items)
+        page = max(0, min(page, total_pages - 1))
+        try:
+            self.sessions.update(uid, page=page)
+        except Exception:
+            pass
+        last_query = getattr(session, "last_query", "") or ""
+        text = self._format_page(
+            items, page, header=PAGE_HEADER.format(query=last_query)
+        )
+        markup = self._pagination_keyboard(
+            page, total_pages, token or self._page_token(last_query)
+        )
+        await self._edit_callback_text(query_obj, text, reply_markup=markup)
+
+    async def _send_food_search(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE, query: str
+    ) -> None:
+        """Tìm quán ăn / món ngon: tra web THẬT rồi phân trang (không bịa).
+
+        Cùng nguyên tắc verify-before-answer như luồng Michelin: không có nguồn
+        thì nói thẳng là không có, tuyệt đối không dựng danh sách từ LLM memory.
+        """
+        chat_id = getattr(getattr(update, "effective_chat", None), "id", None)
+        # Typing indicator TRƯỚC khi gọi web/LLM.
+        await self._typing(chat_id, getattr(context, "bot", None))
+        web_query = _food_query(query) if _is_food_lookup(query) else query
+        try:
+            results = await _real_web_search(web_query)
+        except Exception:
+            results = []
+        if not results:
+            await self._reply(
+                update,
+                "⚠️ Mình đã tra web thật nhưng chưa thấy nguồn nào cho “"
+                + query
+                + "”, nên sẽ KHÔNG bịa danh sách.\n"
+                "Bạn thử cụ thể hơn nhé (vd: “quán bún bò ngon quận 1 TP.HCM”).",
+                reply_markup=self._quick_reply_keyboard(),
+            )
+            return
+        items = [
+            {
+                "title": (item.get("title") or "").strip() or "(không có tiêu đề)",
+                "snippet": (item.get("snippet") or "").strip(),
+                "url": (item.get("url") or "").strip(),
+            }
+            for item in results
+            if isinstance(item, dict)
+        ]
+        await self._send_paginated(
+            update, items, query=query, header=PAGE_HEADER.format(query=query)
+        )
 
     # ------------------------------------------------------------------
     # Command handlers
@@ -652,18 +1161,18 @@ class MonitoringBot:
         return txt.format(**kw) if kw else txt
 
     async def _start_typing(self, chat_id: int):
-        """Start a keep-typing loop; returns a task to cancel when done."""
+        """Start a keep-typing loop; returns a task to cancel when done.
+
+        Feature 5: goes through `_typing` so it also works with the offline stub
+        and the mock bot used in tests (Telegram clears the indicator after ~5s,
+        hence the 4s refresh).
+        """
         async def _keep():
             while True:
-                try:
-                    await self.app.bot.send_chat_action(chat_id=chat_id, action="typing")
-                except Exception:
+                if not await self._typing(chat_id):
                     return
                 await asyncio.sleep(4)
-        try:
-            await self.app.bot.send_chat_action(chat_id=chat_id, action="typing")
-        except Exception:
-            pass
+        await self._typing(chat_id)
         return asyncio.create_task(_keep())
 
     async def _stop_typing(self, task) -> None:
@@ -1079,7 +1588,12 @@ class MonitoringBot:
         if hasattr(update, "callback_query") and update.callback_query:
             await update.callback_query.edit_message_text(help_text, parse_mode=ParseMode.MARKDOWN, reply_markup=self._main_menu_keyboard())
         else:
-            await update.message.reply_text(help_text, parse_mode=ParseMode.MARKDOWN)
+            await self._reply(
+                update,
+                help_text,
+                parse_mode=ParseMode.MARKDOWN,
+                reply_markup=self._quick_reply_keyboard(),
+            )
 
     def _main_menu_keyboard(self):
         from telegram import InlineKeyboardButton, InlineKeyboardMarkup
@@ -1124,6 +1638,11 @@ class MonitoringBot:
         q = update.callback_query
         await q.answer()
         d = q.data
+        # Feature 5: pagination buttons ("◀️ Trước" / "Tiếp ▶️") carry
+        # "pg:<page>:<query-token>" — the page content is sliced from the session.
+        if d and d.startswith(PAGE_CALLBACK_PREFIX + ":"):
+            await self._pagination_callback(update, context)
+            return
         # Inline feedback buttons (👍/👎) — route into the learning loop so the
         # system visibly improves from user ratings (friendly feedback loop).
         if d and d.startswith("fb:"):
@@ -1791,10 +2310,7 @@ class MonitoringBot:
     async def _message_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         chat_id = update.effective_chat.id
         # 0) Hiện "đang nhập..." ngay khi nhận tin nhắn để user thấy trạng thái xử lý
-        try:
-            await context.bot.send_chat_action(chat_id=chat_id, action="typing")
-        except Exception:
-            pass
+        await self._typing(chat_id, getattr(context, "bot", None))
         # 1) Awaiting add/del mail (không tự thêm)
         if chat_id in self._awaiting_add_mail:
             self._awaiting_add_mail.discard(chat_id)
@@ -1852,6 +2368,22 @@ class MonitoringBot:
         # 0) Normalize: collapse repeated whitespace for robust keyword matching
         import re as _re_norm
         text = _re_norm.sub(r"\s+", " ", text).strip()
+        # 0-F5a) Ngữ cảnh hội thoại: nhớ câu hỏi + lịch sử theo telegram_user_id
+        # để các lượt sau (vd "còn quán nào nữa?") vẫn hiểu user đang nói gì.
+        _uid = self._session_user_id(update)
+        # F11: capture the awaiting-food marker BEFORE _track_message consumes it so
+        # the routing block can still honor an explicit food follow-up.
+        _sess_probe = self.sessions.get_or_create(_uid)
+        _awaiting_food = bool(
+            _sess_probe is not None
+            and getattr(_sess_probe, "last_capability", None) == AWAITING_FOOD_QUERY
+        )
+        _sess = self._track_message(update, text)
+        # 0-F5b) Nút bàn phím gợi ý -> map thẳng sang lệnh/luồng đã có.
+        _quick_cap = QUICK_REPLY_ACTIONS.get(text)
+        if _quick_cap:
+            await self._handle_quick_reply(update, context, _quick_cap)
+            return
         # 0b) Persist to PostgreSQL (conversations/messages/customers) — non-blocking
         if not text.startswith("/"):
             try:
@@ -1873,6 +2405,9 @@ class MonitoringBot:
             return
         # 2) Quick route for email intent -> use gmail agent (limit hallucination) - CHAT: gui loi chao moi gui
         low = text.lower()
+        # F12/F13: per-message flag so a reply already sent by an intent route can
+        # suppress the fall-through generic LLM answer (prevents double-answers).
+        self._replied = False
         # Nếu đang ở bước clarifying JobSearch mà user gửi text -> cập nhật brief + hỏi xác nhận lại
         if chat_id in self._pending_jobsearch and not text.startswith("/"):
             try:
@@ -2076,18 +2611,78 @@ class MonitoringBot:
                 return
         except Exception:
             pass
+        # 2f-F5) Định tuyến ý định tiếng Việt (thuần Python, 0đ, ~0ms).
+        # Chạy SAU các fast-path chuyên biệt (jobsearch / greeting / code /
+        # advisory / sales) để không cướp luồng của chúng, nhưng TRƯỚC khi gọi
+        # LLM để tiết kiệm chi phí và trả lời đúng agent.
         try:
-            await context.bot.send_chat_action(chat_id=chat_id, action="typing")
-        except Exception:
-            pass
+            # F12: questions needing real-world web data must NOT be hijacked into an
+            # internal daily-report (or other) route; skip classification so they
+            # fall through to the verified research path below.
+            if _needs_web_lookup(text):
+                _intent = None
+            else:
+                _intent = classify_vietnamese_intent(text)
+            # F11: only honor the awaiting-food prompt when the user actually sent a
+            # food query (intent None or CAP_KNOWLEDGE); otherwise classify normally so
+            # an unrelated follow-up is never force-routed to food web search. The
+            # awaiting-food marker itself is already consumed in _track_message.
+            if not _is_food_lookup(text) and (
+                (_awaiting_food and (_intent is None or _intent == CAP_KNOWLEDGE))
+                or (_intent == CAP_KNOWLEDGE and _is_food_discovery(text))
+            ):
+                # "tìm quán ăn / gợi ý món ngon" -> tra web thật, phân trang 5 mục.
+                # (Câu có "món ăn/nhà hàng/michelin" vẫn đi luồng verify 2e bên dưới.)
+                await self._send_food_search(update, context, text)
+                return
+            if _intent == CAP_REPORTING:
+                self._replied = True
+                try:
+                    self.sessions.update(_uid, last_capability=CAP_REPORTING)
+                except Exception:
+                    pass
+                await self._report_command(update, context)
+                return
+            if _intent == CAP_HEALTH:
+                self._replied = True
+                try:
+                    self.sessions.update(_uid, last_capability=CAP_HEALTH)
+                except Exception:
+                    pass
+                await self._health_command(update, context)
+                return
+            if _intent == CAP_SUPPORT:
+                self._replied = True
+                try:
+                    self.sessions.update(_uid, last_capability=CAP_SUPPORT)
+                except Exception:
+                    pass
+                await self._support_reply(update)
+                return
+            if (
+                _intent == CAP_KNOWLEDGE
+                and not _is_food_lookup(text)
+                and not _needs_web_lookup(text)
+            ):
+                self._replied = True
+                try:
+                    self.sessions.update(_uid, last_capability=CAP_KNOWLEDGE)
+                except Exception:
+                    pass
+                await self._kb_command(
+                    update, type("__Ctx", (), {"args": text.split()})()
+                )
+                return
+        except Exception as _e_route:
+            # Định tuyến UX không bao giờ được làm vỡ luồng chat chính.
+            logger.debug("intent routing skipped: %s", _e_route)
+        await self._typing(chat_id, getattr(context, "bot", None))
         typing_task = None
         try:
             async def _keep_typing():
                 while True:
                     await asyncio.sleep(4)
-                    try:
-                        await context.bot.send_chat_action(chat_id=chat_id, action="typing")
-                    except Exception:
+                    if not await self._typing(chat_id, getattr(context, "bot", None)):
                         break
             typing_task = asyncio.create_task(_keep_typing())
             # 2e) Food / restaurant / Michelin: MUST web-verify before answering.
@@ -2101,6 +2696,7 @@ class MonitoringBot:
                         from packages.core.rag_cache import rag_get
                         _cached = rag_get(text)
                         if _cached:
+                            record_rag_cache(hit=True)
                             _urls = _cached.get("urls") or []
                             _body = _cached["answer"]
                             if _urls:
@@ -2112,9 +2708,12 @@ class MonitoringBot:
                                 reply_markup=self._feedback_keyboard("food"),
                             )
                             return
+                        record_rag_cache(hit=False)
                     except Exception:
+                        record_rag_cache(hit=False)
                         pass
 
+                    record_handoff("monitoring.telegram", "research.web_search")
                     results = await _real_web_search(_food_query(text))
                     if typing_task:
                         typing_task.cancel()
@@ -2225,6 +2824,7 @@ class MonitoringBot:
                 try:
                     from agents.monitoring.research import ResearchOrchestrator
                     from uuid import uuid4 as _u4
+                    record_handoff("monitoring.telegram", "research")
                     orch = ResearchOrchestrator()
                     res = await orch.execute(task_id=_u4(), query=text, domain="web")
                     if typing_task:
@@ -2252,6 +2852,10 @@ class MonitoringBot:
                     )
                 except Exception:
                     pass
+                return
+            if getattr(self, "_replied", False):
+                if typing_task:
+                    typing_task.cancel()
                 return
             from packages.config.settings import get_settings
             from packages.llm.factory import get_llm_provider

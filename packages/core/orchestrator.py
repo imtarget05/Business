@@ -12,6 +12,7 @@ Phase 4 Task 4.2: Multi-agent handoff chains with depth limit and audit.
 from __future__ import annotations
 
 import asyncio
+import time
 
 from packages.config.settings import get_settings
 from packages.contracts.enums import AgentResponseStatus, TaskStatus
@@ -47,8 +48,48 @@ from packages.core.router import Classification, RouterAgent
 from packages.llm.base import LLMProvider
 from packages.observability.context import get_context
 from packages.observability.logging import get_logger
+from packages.observability.metrics import record_agent_result, record_handoff
 
 logger = get_logger("orchestrator")
+
+
+# ---------------------------------------------------------------------------
+# Business telemetry (Feature 3: boas_* Prometheus counters)
+#
+# The orchestrator is the only component that knows when an AgentResponse
+# becomes final, so it is also the component that feeds the business counters.
+# Both wrappers swallow everything: observability must never change a task
+# outcome (a broken counter must not turn a completed task into a 500).
+# ---------------------------------------------------------------------------
+
+
+def _emit_agent_result(
+    agent: str,
+    domain: object,
+    status: object,
+    *,
+    duration_s: float | None = None,
+) -> None:
+    """Record one finalized AgentResponse in boas_agent_success_total."""
+    try:
+        record_agent_result(
+            agent=str(agent),
+            domain=str(getattr(domain, "value", domain)),
+            status=str(getattr(status, "value", status)).lower(),
+            duration_s=duration_s,
+        )
+    except Exception:  # noqa: BLE001 - telemetry must never break the pipeline
+        logger.debug(
+            "metrics_emit_failed", extra={"metric": "boas_agent_success_total"}
+        )
+
+
+def _emit_handoff(from_agent: str, to_agent: str) -> None:
+    """Record one agent-to-agent delegation in boas_handoff_total."""
+    try:
+        record_handoff(from_agent=str(from_agent), to_agent=str(to_agent))
+    except Exception:  # noqa: BLE001 - telemetry must never break the pipeline
+        logger.debug("metrics_emit_failed", extra={"metric": "boas_handoff_total"})
 
 
 class Orchestrator:
@@ -305,6 +346,11 @@ class Orchestrator:
                 "depth": current_depth + 1,
             },
         )
+        # Business metrics: the delegation itself + the hop's finalized response.
+        _emit_handoff(current_agent, descriptor.qualified_name)
+        _emit_agent_result(
+            handoff_response.agent, descriptor.domain, handoff_response.status
+        )
 
         return handoff_response
 
@@ -343,6 +389,13 @@ class Orchestrator:
             metadata=merged_metadata,
         )
 
+    @staticmethod
+    def _metric_domain(descriptor: AgentDescriptor | None, request: TaskRequest) -> str:
+        """Domain label for metrics: agent descriptor first, request as fallback."""
+        if descriptor is not None:
+            return descriptor.domain.value
+        return request.domain.value
+
     async def _execute_core(
         self,
         request: TaskRequest,
@@ -354,6 +407,8 @@ class Orchestrator:
         sm = TaskStateMachine()
         ctx = get_context()
         ctx.task_id = request.task_id
+        descriptor: AgentDescriptor | None = None
+        started = time.perf_counter()
         try:
             sm.transition(TaskStatus.CLASSIFYING)
             await self._record(recorder, request.task_id, TaskStatus.CLASSIFYING)
@@ -407,6 +462,12 @@ class Orchestrator:
                 "task_completed",
                 extra={"agent": descriptor.qualified_name, "status": response.status.value},
             )
+            _emit_agent_result(
+                response.agent,
+                self._metric_domain(descriptor, request),
+                response.status,
+                duration_s=time.perf_counter() - started,
+            )
             return response
 
         except (HandoffDepthExceededError, HandoffCycleDetectedError) as exc:
@@ -419,6 +480,12 @@ class Orchestrator:
             logger.warning(
                 "task_failed",
                 extra={"error_code": exc.code.value, "state": sm.status.value},
+            )
+            _emit_agent_result(
+                "orchestrator",
+                self._metric_domain(descriptor, request),
+                AgentResponseStatus.FAILED,
+                duration_s=time.perf_counter() - started,
             )
             raise
 
@@ -441,7 +508,7 @@ class Orchestrator:
                 "task_failed",
                 extra={"error_code": exc.code.value, "state": sm.status.value},
             )
-            return AgentResponse(
+            error_response = AgentResponse(
                 task_id=request.task_id,
                 agent="orchestrator",
                 status=(
@@ -451,6 +518,13 @@ class Orchestrator:
                 ),
                 error=ErrorDetail(code=exc.code.value, message=exc.message),
             )
+            _emit_agent_result(
+                error_response.agent,
+                self._metric_domain(descriptor, request),
+                error_response.status,
+                duration_s=time.perf_counter() - started,
+            )
+            return error_response
 
     def _is_transient_error(self, exc: BaseException) -> bool:
         """Check if an error is transient and eligible for retry."""
@@ -486,7 +560,7 @@ class Orchestrator:
                     "input_blocked",
                     extra={"task_id": str(request.task_id), "reason": filtered.block_reason},
                 )
-                return AgentResponse(
+                rejected = AgentResponse(
                     task_id=request.task_id,
                     agent="orchestrator",
                     status=AgentResponseStatus.REJECTED,
@@ -495,6 +569,10 @@ class Orchestrator:
                         message=f"Input rejected by filter: {filtered.block_reason}",
                     ),
                 )
+                _emit_agent_result(
+                    rejected.agent, request.domain, rejected.status
+                )
+                return rejected
 
         await self._audit_emit(
             AuditEvent.TASK_CREATED,
@@ -597,7 +675,7 @@ class Orchestrator:
         )
 
         # Return a FAILED response (API layer will convert to DEAD_LETTERED via store)
-        return AgentResponse(
+        dead_lettered = AgentResponse(
             task_id=request.task_id,
             agent="orchestrator",
             status=AgentResponseStatus.FAILED,
@@ -608,6 +686,8 @@ class Orchestrator:
                 message=str(last_exc) if last_exc else "Task dead-lettered after retries",
             ),
         )
+        _emit_agent_result(dead_lettered.agent, request.domain, dead_lettered.status)
+        return dead_lettered
 
 
 __all__ = [

@@ -100,6 +100,16 @@ class LearningEngine:
         )
         for f in feedback_batch or []:
             await self.record_feedback(f)
+        # Feedback-rate metric so the friendly-feedback loop is measurable.
+        try:
+            from packages.observability.metrics import get_metrics
+
+            metrics = get_metrics()
+            metrics.incr("feedback_total", kind="cycle")
+            for rating_value, count in ratings.items():
+                metrics.incr("feedback_total", value=count, kind="cycle", rating=rating_value)
+        except Exception:  # noqa: BLE001 — metrics must never break learning
+            pass
         return {
             "ran_at": datetime.now(UTC).isoformat(),
             "feedback_count": len(feedback_batch or []),

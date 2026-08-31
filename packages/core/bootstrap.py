@@ -172,7 +172,7 @@ def build_container(
     registry.register(root_cause_agent.descriptor, root_cause_agent)
 
     if s.langgraph_enabled:
-        orchestrator = GraphOrchestrator(registry, llm)
+        orchestrator = GraphOrchestrator(registry, llm, settings=s)
     else:
         router_agent = RouterAgent(llm=llm, registry=registry)
         orchestrator = Orchestrator(registry, llm, router=router_agent)

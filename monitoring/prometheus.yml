@@ -1,0 +1,53 @@
+# Prometheus scrape configuration for the Business Ops Agent Swarm API.
+#
+# Mounted read-only into the prometheus container by
+# docker-compose.observability.yml at /etc/prometheus/prometheus.yml.
+#
+# Two ways to reach the API:
+#   1. Combined stack (recommended):
+#        docker compose -f docker-compose.yml -f docker-compose.observability.yml up
+#      -> the `api` service is resolvable by name on the shared compose network,
+#         so the `boas-api` job below works as-is.
+#   2. API running on the host (uvicorn/pytest, observability stack in Docker):
+#        docker compose -f docker-compose.observability.yml up
+#      -> comment out the `boas-api` job and enable `boas-api-host` instead
+#         (host.docker.internal is wired via extra_hosts in the compose file).
+
+global:
+  scrape_interval: 15s
+  scrape_timeout: 10s
+  evaluation_interval: 15s
+  external_labels:
+    monitor: business-ops-agent-swarm
+
+scrape_configs:
+  # API inside the compose network.
+  - job_name: boas-api
+    metrics_path: /metrics
+    scheme: http
+    static_configs:
+      - targets:
+          - api:8000
+        labels:
+          service: business-ops-api
+          component: api
+
+  # API running on the Docker host (uncomment when not using the app stack).
+  # - job_name: boas-api-host
+  #   metrics_path: /metrics
+  #   scheme: http
+  #   static_configs:
+  #     - targets:
+  #         - host.docker.internal:8000
+  #       labels:
+  #         service: business-ops-api
+  #         component: api
+
+  # Prometheus self-monitoring (cheap, useful when debugging scrapes).
+  - job_name: prometheus
+    metrics_path: /metrics
+    static_configs:
+      - targets:
+          - localhost:9090
+        labels:
+          service: prometheus

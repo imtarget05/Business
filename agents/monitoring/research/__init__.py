@@ -13,6 +13,7 @@ State flow:
 from __future__ import annotations
 
 import logging
+import re
 
 logger = logging.getLogger(__name__)
 from dataclasses import dataclass, field
@@ -32,8 +33,33 @@ _tools = create_web_tools("auto")
 
 # Wrappers (monkeypatchable in tests) — never raise for missing hermes;
 # the factory already degraded to httpx or mock.
+# Ambiguous tech terms that dictionary sites hijack in search results
+# (e.g. "agent là gì" returns "agent = người đại diện" from dictionaries).
+# When one of these appears in the query, add "AI" context to the search.
+_AMBIGUOUS_TECH_TERMS = (
+    "multi-agent", "agent", "llm", "rag", "token", "prompt", "embedding",
+    "transformer", "inference", "fine-tuning", "copilot", "chatbot",
+    "machine learning", "deep learning",
+)
+
+
+def _enrich_search_query(query: str) -> str:
+    """Add AI/tech context to search queries containing ambiguous tech terms."""
+    q = query.strip()
+    if not q:
+        return q
+    low = q.lower()
+    words = set(re.findall(r"[a-z][a-z\-]+", low))
+    if "ai" in words or "artificial intelligence" in low:
+        return q
+    for term in _AMBIGUOUS_TECH_TERMS:
+        if re.search(rf"\b{re.escape(term)}\b", low):
+            return f"{q} AI"
+    return q
+
+
 async def _call_web_search(query: str, limit: int = 5) -> dict[str, Any]:
-    return await _tools.web_search(query=query, limit=limit)
+    return await _tools.web_search(query=_enrich_search_query(query), limit=limit)
 
 
 async def _call_web_extract(urls: list[str], char_limit: int = 5000) -> dict[str, Any]:
@@ -153,12 +179,20 @@ class ResearchAgentBase:
                     f"[{e['title']}] {e['content'][:1500]}" for e in clean[:5]
                 )
                 system = (
-                    "Bạn là trợ lý nghiên cứu. Chỉ dùng thông tin trong nguồn. "
-                    "Ngắn gọn, tiếng Việt, không bịa."
+                    "Bạn là trợ lý nghiên cứu của một trợ lý kinh doanh công nghệ (AI/tech). "
+                    "Chỉ dùng thông tin trong nguồn, không bịa. "
+                    "Nếu thuật ngữ trong câu hỏi có nhiều nghĩa, ưu tiên nghĩa trong "
+                    "công nghệ thông tin/AI (ví dụ 'agent' = tác tử AI, KHÔNG phải "
+                    "'người đại diện' trong từ điển). "
+                    "Tổng hợp ý chính từ các nguồn thay vì sao chép nguyên văn. "
+                    "Trả lời ngắn gọn, 3-5 gạch đầu dòng, tiếng Việt."
                 )
                 prompt = (
-                    f"Tóm tắt ngắn gọn (3-5 gạch đầu dòng, tiếng Việt) cho câu hỏi: {query}\n\n"
-                    f"Nguồn:\n{ctx}"
+                    f"Câu hỏi: {query}\n\n"
+                    f"Nguồn tìm thấy trên web:\n{ctx}\n\n"
+                    "Nếu các nguồn trên chỉ là định nghĩa từ điển thông thường (không "
+                    "liên quan công nghệ/AI), hãy trả lời theo nghĩa công nghệ/AI dựa "
+                    "trên hiểu biết của bạn và ghi rõ điều đó."
                 )
             else:
                 # Web sources were blocked / returned empty snippets -> answer from

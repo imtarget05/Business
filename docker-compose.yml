@@ -34,9 +34,12 @@ services:
       LOG_LEVEL: INFO
       DATABASE_URL: postgresql+psycopg://postgres:postgres@db:5432/business_ops
       LLM_PROVIDER: ollama
-      LLM_MODEL: qwen2.5:3b
+      LLM_MODEL: llama3.2:3b
       OLLAMA_BASE_URL: http://ollama:11434
       EMBEDDING_PROVIDER: mock
+      # Force UTF-8 as Python's default text encoding (preserves emoji in
+      # source/scripts even if a write omits encoding=). Anti-corruption default.
+      PYTHONUTF8: "1"
       PERSISTENCE_ENABLED: ${PERSISTENCE_ENABLED:-true}
       API_KEY: ${API_KEY:-}
       # Tenant keys loaded from .env at runtime
@@ -56,6 +59,7 @@ services:
       GOOGLE_OAUTH_CLIENT_ID: ${GOOGLE_OAUTH_CLIENT_ID:-}
       GOOGLE_OAUTH_CLIENT_SECRET: ${GOOGLE_OAUTH_CLIENT_SECRET:-}
       GOOGLE_SHEET_ID: ${GOOGLE_SHEET_ID:-}
+      GOOGLE_SHEETS_API_KEY: ${GOOGLE_SHEETS_API_KEY:-}
       GMAIL_SEND_ENABLED: ${GMAIL_SEND_ENABLED:-false}
       GMAIL_ALLOWED_RECIPIENTS: ${GMAIL_ALLOWED_RECIPIENTS:-}
       REPORTING_SHEET_LOG_ENABLED: ${REPORTING_SHEET_LOG_ENABLED:-false}
@@ -144,7 +148,7 @@ services:
     environment:
       DATABASE_URL: postgresql+psycopg://postgres:postgres@db:5432/business_ops
       LLM_PROVIDER: ${LLM_PROVIDER:-ollama}
-      LLM_MODEL: ${LLM_MODEL:-qwen2.5:3b}
+      LLM_MODEL: ${LLM_MODEL:-llama3.2:3b}
       OLLAMA_BASE_URL: http://ollama:11434
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
       TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:-}
@@ -155,6 +159,9 @@ services:
       GOOGLE_OAUTH_CLIENT_ID: ${GOOGLE_OAUTH_CLIENT_ID:-}
       GOOGLE_OAUTH_CLIENT_SECRET: ${GOOGLE_OAUTH_CLIENT_SECRET:-}
       GOOGLE_SHEET_ID: ${GOOGLE_SHEET_ID:-}
+      GOOGLE_SHEETS_API_KEY: ${GOOGLE_SHEETS_API_KEY:-}
+      # Same anti-emoji-corruption default as the api service.
+      PYTHONUTF8: "1"
     volumes:
       - ./.env:/app/.env:rw
     depends_on:

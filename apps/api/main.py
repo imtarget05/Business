@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import hmac
+import os
 import time
 from collections import defaultdict
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, Request
+from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
@@ -31,6 +33,7 @@ from packages.observability.context import (
     set_context,
 )
 from packages.observability.logging import configure_logging, get_logger
+from packages.observability.metrics import prometheus_enabled
 
 logger = get_logger("api")
 
@@ -116,6 +119,63 @@ async def _verify_api_key(api_key: str) -> str | None:
     return None
 
 
+def _require_metrics_token(request: Request) -> None:
+    """Gate /metrics when METRICS_TOKEN is configured.
+
+    When METRICS_TOKEN is unset (default) /metrics stays open so local
+    scraping and the hermetic test client work unchanged (D3). When set,
+    the endpoint requires it as a Bearer token or via ``?token=``.
+    """
+    token = os.environ.get("METRICS_TOKEN")
+    if not token:
+        return
+    auth = request.headers.get("Authorization", "")
+    supplied = (
+        auth[7:] if auth.lower().startswith("bearer ") else request.query_params.get("token", "")
+    )
+    if not supplied or not hmac.compare_digest(supplied, token):
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
+
+def _instrument_prometheus(app: FastAPI) -> None:
+    """Attach prometheus-fastapi-instrumentator and expose GET /metrics.
+
+    The import is lazy so the API keeps booting when the optional
+    observability extras are absent; /metrics is then simply not mounted and
+    a structured warning is logged. Serving the endpoint needs no external
+    service: it renders the in-process registry (default HTTP metrics plus
+    the ``boas_*`` business counters) as plain text.
+    """
+    try:
+        from prometheus_fastapi_instrumentator import Instrumentator
+    except ImportError:  # pragma: no cover - optional dependency
+        logger.warning(
+            "prometheus_instrumentation_skipped",
+            extra={"reason": "prometheus_fastapi_instrumentator_not_installed"},
+        )
+        return
+
+    (
+        Instrumentator(
+            should_group_status_codes=False,
+            should_ignore_untemplated=True,
+            excluded_handlers=["/metrics"],
+        )
+        .instrument(app)
+        .expose(
+            app,
+            endpoint="/metrics",
+            include_in_schema=False,
+            tags=["observability"],
+            dependencies=[Depends(_require_metrics_token)],
+        )
+    )
+    logger.info(
+        "prometheus_instrumentation_enabled",
+        extra={"endpoint": "/metrics", "business_metrics": prometheus_enabled()},
+    )
+
+
 def create_app() -> FastAPI:
     app = FastAPI(
         title="Business Ops Agent Swarm API",
@@ -134,6 +194,10 @@ def create_app() -> FastAPI:
     app.include_router(dispatch_router)
     app.include_router(conversations_router)
     app.include_router(feedback_router)
+
+    # Prometheus scrape endpoint + default HTTP metrics (Feature 3).
+    # Business counters live in packages.observability.metrics.
+    _instrument_prometheus(app)
 
     @app.middleware("http")
     async def request_context_middleware(request: Request, call_next):
@@ -222,11 +286,14 @@ def create_app() -> FastAPI:
     @app.exception_handler(RequestValidationError)
     async def validation_error_handler(request: Request, exc: RequestValidationError):
         # Sanitize errors: ctx may hold non-serializable objects (e.g. ValueError)
-        safe_errors = [
-            {k: (str(v) if k == "ctx" and isinstance(v, dict) else v) for k, v in e.items() if k != "ctx"}
-            | ({"ctx": {ck: str(cv) for ck, cv in e["ctx"].items()}} if isinstance(e.get("ctx"), dict) else {})
-            for e in exc.errors()[:10]
-        ]
+        # Sanitize errors: ctx may hold non-serializable objects (e.g. ValueError)
+        safe_errors = []
+        for e in exc.errors()[:10]:
+            clean = {k: v for k, v in e.items() if k != "ctx"}
+            ctx = e.get("ctx")
+            if isinstance(ctx, dict):
+                clean["ctx"] = {ck: str(cv) for ck, cv in ctx.items()}
+            safe_errors.append(clean)
         err = ValidationError(
             "Request validation failed",
             details={"errors": safe_errors},

@@ -22,6 +22,7 @@ from packages.contracts.models import TaskContext, TaskRequest
 from packages.core.bootstrap import get_container
 from packages.core.errors import ValidationError
 from packages.core.persistence import TaskStore
+from packages.core.response_presentation import present
 from packages.core.router import RouterAgent
 from packages.database.session import get_session
 from packages.database.task_store import SqlAlchemyTaskStore
@@ -34,6 +35,8 @@ router = APIRouter(prefix="/v1/router", tags=["router"])
 
 class DispatchRequest(BaseModel):
     text: str = Field(min_length=1, max_length=8000)
+    conversation_id: UUID | None = None
+    parent_message_id: UUID | None = None
 
 
 @router.post("/dispatch")
@@ -54,9 +57,26 @@ async def dispatch(
     classification = await router_agent.classify_text(body.text)
 
     if classification.escalate or classification.capability is None:
+        # Friendly escalation: suggest the top candidate agents instead of a
+        # bare refusal, so the user can pick one quickly (inline buttons on
+        # Telegram consume this field).
+        from packages.core.router import score_candidates
+
+        candidates = score_candidates(body.text, container.registry)[:3]
         return {
             "status": "escalated",
             "reason": "no confident intent classification",
+            "suggested_intents": [
+                {
+                    "agent": agent,
+                    "score": score,
+                    "hint": (
+                        f"Thử yêu cầu liên quan tới "
+                        f"{agent.rsplit('-v', 1)[0].replace('_', ' ')}"
+                    ),
+                }
+                for agent, score in candidates
+            ],
             "classification": {
                 "domain": classification.domain,
                 "action": classification.action,
@@ -70,7 +90,12 @@ async def dispatch(
         domain=domain,
         action=classification.action or "",
         payload={"text": body.text},
-        context=TaskContext(organization_id=org_id),
+        context=TaskContext(
+            organization_id=org_id,
+            conversation_id=body.conversation_id,
+            parent_message_id=body.parent_message_id,
+            channel="api",
+        ),
     )
 
     resolution = await store.resolve(req)
@@ -96,6 +121,7 @@ async def dispatch(
         "result": response.result,
         "citations": [c.model_dump(exclude_none=True) for c in response.citations],
         "error": response.error.model_dump() if response.error else None,
+        "friendly": present(response),
         "classification": {
             "domain": classification.domain,
             "action": classification.action,

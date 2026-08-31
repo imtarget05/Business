@@ -50,6 +50,11 @@ class TaskContext(BaseModel):
     channel: str = "api"  # api | n8n | dashboard | webhook
     locale: str = "en"
     trace_id: str | None = None
+    # Conversation threading: lets responses link back to the chat they belong
+    # to (dashboard timeline / Telegram thread), and lets agents pull prior
+    # context via the context agent.
+    conversation_id: UUID | None = None
+    parent_message_id: UUID | None = None
     # Handoff state for multi-agent chains (Phase 4 Task 4.2)
     handoff_chain: list[str] = Field(default_factory=list)
     handoff_depth: int = 0

@@ -18,6 +18,8 @@ jobs:
         run: pip install -e ".[dev]"
       - name: Lint (ruff)
         run: ruff check .
+      - name: UTF-8 gate (emoji-safe source check)
+        run: python scripts/check_utf8.py
       - name: Tests (pytest)
         run: pytest -q
 

@@ -21,6 +21,11 @@ import os
 import time
 from pathlib import Path
 
+try:  # observability is optional here: this module must stay standalone-usable
+    from packages.observability.metrics import record_llm_cost as _record_llm_cost
+except Exception:  # pragma: no cover - only on partial installs
+    _record_llm_cost = None  # type: ignore[assignment]
+
 # Reference prices (USD per 1K tokens) — conservative public list prices.
 # Update as providers change; values are for observability only.
 _PRICE_PER_1K = {
@@ -84,7 +89,29 @@ def log_llm_usage(
             f.write(json.dumps(rec, ensure_ascii=False) + "\n")
     except Exception:
         pass
+    # Business metric: one ledger row == one boas_llm_cost_usd_total sample.
+    _record_cost_metric(rec, cache_hit)
     return rec
+
+
+def _record_cost_metric(rec: dict, cache_hit: bool) -> None:
+    """Mirror one ledger row into boas_llm_cost_usd_total (Feature 3 panels).
+
+    Called from the same place as the ledger write, so the Grafana spend panel
+    can never drift from the JSONL trail. A cache hit never reached a provider,
+    so it is recorded as $0 spend (the row itself still carries ``cache_hit``
+    for hit-rate maths). Never raises: cost logging must not break the bot.
+    """
+    if _record_llm_cost is None:
+        return
+    try:
+        _record_llm_cost(
+            model=str(rec.get("model") or ""),
+            cost_usd=0.0 if cache_hit else float(rec.get("est_cost_usd") or 0.0),
+            tag=str(rec.get("tag") or ""),
+        )
+    except Exception:
+        pass
 
 
 def prompt_cache_key(prompt: str, system: str = "") -> str:

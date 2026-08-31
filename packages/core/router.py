@@ -51,8 +51,111 @@ def _build_routing_table(registry: _AgentRegistryProtocol | None) -> frozenset[t
     return frozenset(intents)
 
 
-# Keyword rules — checked in order; first match wins. Deterministic fallback
-# used when the LLM is unavailable or its answer is not in ROUTER_INTENTS.
+# ---------------------------------------------------------------------------
+# Single source of truth for Vietnamese free-text intent keywords (Feature 5 UX).
+# The Telegram bot (packages.telegram.nlp) imports and re-uses this exact table,
+# so the bot and the RouterAgent can never drift on intent keyword -> capability
+# mapping. Capability strings are canonical (matching the agent registry /
+# packages.contracts.enums): knowledge.query, support.triage, reporting,
+# monitoring.health.
+# ---------------------------------------------------------------------------
+VIETNAMESE_INTENT_KEYWORDS: dict[str, tuple[str, ...]] = {
+    "knowledge.query": (
+        "tìm quán ăn",
+        "tìm nhà hàng",
+        "tìm chỗ ăn",
+        "tìm món",
+        "quán ăn",
+        "chỗ ăn",
+        "đồ ăn",
+        "món ngon",
+        "món ăn",
+        "gợi ý món",
+        "ăn gì",
+        "ăn ở đâu",
+        "quán nào",
+        "nhà hàng",
+        "đánh giá nhà hàng",
+        "review quán",
+        "ẩm thực",
+        "michelin",
+        "sao michelin",
+        "thực đơn",
+        "chính sách",
+        "quy định",
+        "bảo hành",
+        "đổi trả",
+        "hướng dẫn sử dụng",
+        "faq",
+        "câu hỏi thường gặp",
+        "tra cứu",
+    ),
+    "support.triage": (
+        "hỗ trợ",
+        "cần giúp",
+        "giúp tôi với",
+        "khiếu nại",
+        "phản ánh",
+        "hoàn tiền",
+        "trả hàng",
+        "đổi hàng",
+        "báo lỗi",
+        "bị lỗi",
+        "gặp lỗi",
+        "không hoạt động",
+        "hỏng",
+        "sự cố",
+        "support",
+        "complaint",
+        "refund",
+    ),
+    "reporting": (
+        "báo cáo",
+        "bao cao ngay",
+        "tình hình",
+        "tình hình kinh doanh",
+        "doanh thu",
+        "thống kê",
+        "số liệu",
+        "kết quả kinh doanh",
+        "tiến độ",
+        "report",
+        "dashboard",
+    ),
+    "monitoring.health": (
+        "sức khỏe hệ thống",
+        "tình trạng hệ thống",
+        "hệ thống có ổn",
+        "hệ thống sao",
+        "kiểm tra hệ thống",
+        "check hệ thống",
+        "health check",
+        "system health",
+        "uptime",
+    ),
+}
+
+
+def _vietnamese_intent(text: str) -> tuple[str, str] | None:
+    """Map Vietnamese free text to a canonical (domain, action) via the shared table.
+
+    Returns None when no shared keyword matches, so callers fall through to the
+    existing rule/ops keyword tables. Canonical capability -> (domain, action):
+    knowledge.query -> knowledge.query, support.triage -> support.triage,
+    reporting -> report.summary, monitoring.health -> operations.health.
+    """
+    lowered = text.lower()
+    mapping = {
+        "knowledge.query": ("knowledge", "query"),
+        "support.triage": ("support", "triage"),
+        "reporting": ("report", "summary"),
+        "monitoring.health": ("operations", "health"),
+    }
+    for capability, keywords in VIETNAMESE_INTENT_KEYWORDS.items():
+        if any(k in lowered for k in keywords):
+            return mapping[capability]
+    return None
+
 RULE_FALLBACKS: tuple[tuple[tuple[str, ...], tuple[str, str]], ...] = (
     (("hoàn tiền", "refund", "trả hàng", "return"), ("support", "triage")),
     (("khiếu nại", "complaint", "không hoạt động", "broken", "lỗi"), ("support", "triage")),
@@ -219,6 +322,11 @@ class RouterAgent:
         return Classification(None, None, 0.0, True, "escalated")
 
     def _rule_match(self, text: str) -> tuple[str, str] | None:
+        # Canonical Vietnamese intent table first - shares one definition with
+        # the Telegram bot so the same input yields the same capability.
+        viet = _vietnamese_intent(text)
+        if viet is not None:
+            return viet
         lowered = text.lower()
         for keywords, intent in RULE_FALLBACKS:
             if any(k in lowered for k in keywords):
@@ -260,6 +368,7 @@ __all__ = [
     "ROUTER_INTENTS",
     "RULE_FALLBACKS",
     "CAPABILITY_KEYWORDS",
+    "VIETNAMESE_INTENT_KEYWORDS",
     "score_candidates",
     "DEFAULT_CONFIDENCE_THRESHOLD",
     "_build_routing_table",

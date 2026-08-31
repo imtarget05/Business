@@ -10,7 +10,7 @@ Public API: GraphOrchestrator.execute() matches Orchestrator.execute() exactly.
 from __future__ import annotations
 
 import asyncio
-from typing import TypedDict
+from typing import Any, TypedDict
 
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.config import RunnableConfig
@@ -38,9 +38,14 @@ from packages.core.errors import (
     ToolExecutionError,
 )
 from packages.core.persistence import NoopTaskRecorder, TaskRecorder
+from packages.core.checkpoint import get_checkpointer
 from packages.core.policy import AllowAllPolicy, PolicyChecker
 from packages.core.registry import InMemoryAgentRegistry
 from packages.llm.base import LLMProvider
+from packages.observability.logging import get_logger
+from packages.observability.metrics import record_agent_result, record_handoff
+
+logger = get_logger("graph_orchestrator")
 
 # ---------------------------------------------------------------------------
 # Graph state (internal — not part of the public contract)
@@ -71,6 +76,33 @@ def _is_transient(error_str: str) -> bool:
     Takes error class name as string (serializable).
     """
     return any(t in error_str for t in ("TimeoutError", "ToolExecutionError"))
+
+
+def _emit_agent_result(agent: str, domain: object, status: object) -> None:
+    """Record one finalized AgentResponse in boas_agent_success_total.
+
+    Kept local (mirroring Orchestrator._emit_agent_result) so the graph path has
+    no import-time dependency on the classic orchestrator. Swallows everything:
+    observability must never change a task outcome.
+    """
+    try:
+        record_agent_result(
+            agent=str(agent),
+            domain=str(getattr(domain, "value", domain)),
+            status=str(getattr(status, "value", status)).lower(),
+        )
+    except Exception:  # noqa: BLE001 - telemetry must never break the pipeline
+        logger.debug(
+            "metrics_emit_failed", extra={"metric": "boas_agent_success_total"}
+        )
+
+
+def _emit_handoff(from_agent: str, to_agent: str) -> None:
+    """Record one agent-to-agent delegation in boas_handoff_total."""
+    try:
+        record_handoff(from_agent=str(from_agent), to_agent=str(to_agent))
+    except Exception:  # noqa: BLE001 - telemetry must never break the pipeline
+        logger.debug("metrics_emit_failed", extra={"metric": "boas_handoff_total"})
 
 
 async def _get_recorder(config: RunnableConfig) -> TaskRecorder:
@@ -232,6 +264,12 @@ async def validate_node(
 
     state["current_status"] = TaskStatus.VALIDATING
     await _record(state, config, TaskStatus.VALIDATING)
+    descriptor = state.get("descriptor")
+    _emit_agent_result(
+        response.agent,
+        descriptor.domain if descriptor is not None else state["request"].domain,
+        response.status,
+    )
     return state
 
 
@@ -259,6 +297,7 @@ async def handoff_node(
     # Depth check (guard against None)
     if max_depth is not None and current_depth >= max_depth:
         await _record(state, config, TaskStatus.FAILED)
+        _emit_agent_result("orchestrator", request.domain, TaskStatus.FAILED)
         raise HandoffDepthExceededError(
             f"Handoff depth {current_depth} exceeds maximum {max_depth}",
             task_id=request.task_id,
@@ -270,6 +309,7 @@ async def handoff_node(
     target_agent = target_descriptor.qualified_name
     if target_agent in ctx.handoff_chain:
         await _record(state, config, TaskStatus.FAILED)
+        _emit_agent_result("orchestrator", request.domain, TaskStatus.FAILED)
         raise HandoffCycleDetectedError(
             f"Handoff cycle detected: {' -> '.join(ctx.handoff_chain)} -> {target_agent}",
             task_id=request.task_id,
@@ -348,6 +388,12 @@ async def handoff_node(
     # Record COMPLETED
     await _record(state, config, TaskStatus.COMPLETED)
 
+    # Business metrics: the delegation itself + the hop's finalized response.
+    _emit_handoff(current_agent, descriptor.qualified_name)
+    _emit_agent_result(
+        handoff_response.agent, descriptor.domain, handoff_response.status
+    )
+
     # Merge handoff response
     merged_result = {**response.result}
     if "knowledge" not in merged_result:
@@ -403,6 +449,10 @@ async def dead_letter_node(
         error=ErrorDetail(code=error_code, message=error_message),
     )
 
+    _emit_agent_result(
+        error_response.agent, state["request"].domain, error_response.status
+    )
+
     state["final_response"] = error_response
     state["terminal"] = True
     return state
@@ -447,13 +497,14 @@ _graph_registry: InMemoryAgentRegistry | None = None
 # ---------------------------------------------------------------------------
 
 
-def _build_checkpointer(settings: Settings) -> InMemorySaver:
-    """Build an InMemorySaver checkpointer.
+def _build_checkpointer(settings: Settings) -> Any:
+    """Build a checkpointer from settings.
 
-    Uses InMemorySaver (available in this LangGraph 0.6.11 + langgraph-checkpoint 2.x env).
-    For production with SQLite persistence, swap to SqliteSaver.from_conn_string().
+    Delegates to :func:`get_checkpointer`: returns a ``PostgresSaver`` when
+    ``settings.langgraph_checkpoint_url`` is set, otherwise an in-memory
+    ``InMemorySaver`` (default, keeps tests green without a database).
     """
-    return InMemorySaver()
+    return get_checkpointer(settings)
 
 
 def _build_graph(registry: InMemoryAgentRegistry) -> StateGraph:
@@ -514,15 +565,17 @@ class GraphOrchestrator:
         registry: InMemoryAgentRegistry,
         llm: LLMProvider,
         *,
+        settings: Settings | None = None,
+        checkpointer: Any | None = None,
         default_timeout_ms: int = 30_000,
     ) -> None:
         self._registry = registry
         self._llm = llm
         self._default_timeout_ms = default_timeout_ms
-        self._settings = get_settings()
-        self._graph = _build_graph(registry).compile(
-            checkpointer=_build_checkpointer(self._settings)
-        )
+        self._settings = settings or get_settings()
+        # Persistent checkpointer (PostgresSaver) or in-memory default for dev/test.
+        self._checkpointer = checkpointer or get_checkpointer(self._settings)
+        self._graph = _build_graph(registry).compile(checkpointer=self._checkpointer)
 
     async def execute(
         self,

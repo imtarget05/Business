@@ -41,6 +41,11 @@ class FakeKnowledgeBase:
         self.last_k = k
         return self._chunks[:k]
 
+    async def query_vector(self, question: str, top_k: int = DEFAULT_TOP_K) -> list[str]:
+        self.last_query = question
+        self.last_k = top_k
+        return self._chunks[:top_k]
+
 
 def _request(question, org: UUID | None = None) -> TaskRequest:
     return TaskRequest(

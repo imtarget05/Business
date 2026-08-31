@@ -1,0 +1,17 @@
+# Grafana dashboard provisioning.
+# Mounted at /etc/grafana/provisioning/dashboards/dashboards.yml; the JSON files
+# themselves are mounted read-only at /var/lib/grafana/dashboards.
+apiVersion: 1
+
+providers:
+  - name: business-ops-agent-swarm
+    orgId: 1
+    folder: Business Ops Agent Swarm
+    folderUid: boas
+    type: file
+    disableDeletion: false
+    allowUiUpdates: true
+    updateIntervalSeconds: 30
+    options:
+      path: /var/lib/grafana/dashboards
+      foldersFromFilesStructure: false
