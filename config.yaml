@@ -1,5 +1,5 @@
 # ==============================================================================
-# Business Ops Agent Swarm — Configuration
+# Business Ops Agent Swarm � Configuration
 # ------------------------------------------------------------------------------
 # All secrets are referenced via environment variables (12-factor).
 # Copy values from .env / secret manager; never commit real tokens.
@@ -26,7 +26,7 @@ database:
 monitoring:
   enabled: true
 
-  # Telegram bot (optional — pushes health alerts + daily reports)
+  # Telegram bot (optional � pushes health alerts + daily reports)
   telegram:
     enabled: false
     bot_token: "${TELEGRAM_BOT_TOKEN}"       # never hard-code; inject via env/secret
@@ -52,17 +52,17 @@ monitoring:
     extract_char_limit: 5000
 
 # ------------------------------------------------------------------------------
-# Business Ops Hub (Task 2) — daily digest of Gmail + Calendar + Tasks
+# Business Ops Hub (Task 2) � daily digest of Gmail + Calendar + Tasks
 # ------------------------------------------------------------------------------
 # Operational to-do items aggregated into the /ops digest + 08:00 scheduler job.
 # Real data only (never fabricated). Each task: title (required), due (ISO 8601,
 # optional), priority (low|normal|high, default normal), done (bool, default false).
 ops:
   tasks:
-    - title: "Duyệt báo giá nhà cung cấp A"
+    - title: "Review supplier quotes"
       priority: "high"
-    - title: "Gửi báo cáo tuần cho khách hàng"
-      due: "2026-08-30T17:00:00"
+    - title: "Send weekly report to client"
+      due: "2026-12-31T17:00:00"
       priority: "normal"
 
 # ------------------------------------------------------------------------------

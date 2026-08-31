@@ -11,6 +11,7 @@ __pycache__/
 .env
 .env.local
 .env.*.local
+.env.production
 
 # --- Node / Next.js ---
 node_modules/
@@ -38,24 +39,23 @@ secrets/
 .superpowers/
 tools/
 
-# --- Runtime output files (root) ---
-# --- Runtime output files (root) ---
+# --- Runtime logs ---
 *.log
 pytest_out.txt
-job_audit_log.json
-job_search_results.json
-verified_jobs.json
-contacts_backup.json
 
 # --- Internal working notes / agent-generated reports ---
 task-*-report.md
 implementation_plan.md
-pytest_out.txt
 job_audit_log.json
 job_search_results.json
 verified_jobs.json
 contacts_backup.json
 business_ops.db
+
+# --- Temp files ---
+*.tmp
+*.bak
+*~
 
 # --- Learning loop runtime state ---
 data/

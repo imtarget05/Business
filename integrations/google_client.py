@@ -1,4 +1,4 @@
-"""Google API client utilities (Task 5.2).
+﻿"""Google API client utilities (Task 5.2).
 
 Provides:
 - get_google_credentials(): builds Credentials from GOOGLE_REFRESH_TOKEN +
@@ -6,7 +6,7 @@ Provides:
   google.auth.transport.requests.Request
 - gmail_send(to, subject, body): Gmail API users.messages.send (base64url raw)
 - sheet_log_row(values: list[str]): Sheets API values.append to range
-  'Trang tính1'!A:E
+  'Trang t�nh1'!A:E
 """
 
 from __future__ import annotations
@@ -15,14 +15,19 @@ import base64
 from email.message import EmailMessage
 from typing import Any
 
-from google.auth.transport.requests import Request
-from google.oauth2.credentials import Credentials
-from googleapiclient.discovery import build
-
 from packages.config.settings import get_settings
 
+try:
+    from google.auth.transport.requests import Request
+    from google.oauth2.credentials import Credentials
+    from googleapiclient.discovery import build
+except ImportError:
+    Request = None  # type: ignore
+    Credentials = None  # type: ignore
+    build = None  # type: ignore
 
-def get_google_credentials() -> Credentials:
+
+def get_google_credentials():
     """Build and return Google OAuth2 credentials with auto-refresh.
 
     Uses environment variables:
@@ -101,7 +106,7 @@ def gmail_send(to: str, subject: str, body: str) -> dict[str, Any]:
     message["Subject"] = subject
     message.set_content(body)
 
-    # Encode as base64url (RFC 4648 §5) for Gmail API raw format
+    # Encode as base64url (RFC 4648 5) for Gmail API raw format
     raw_bytes = message.as_bytes()
     raw_base64url = base64.urlsafe_b64encode(raw_bytes).decode("ascii")
 
@@ -132,8 +137,8 @@ def sheet_log_row(values: list[str]) -> dict[str, Any]:
 
     service = _get_sheets_service()
 
-    # Append row to 'Trang tính1'!A:E
-    range_name = "'Trang tính1'!A:E"
+    # Append row to 'Trang t�nh1'!A:E
+    range_name = "'Trang t�nh1'!A:E"
     body = {"values": [values]}
 
     append_request = (

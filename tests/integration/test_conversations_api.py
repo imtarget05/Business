@@ -374,7 +374,7 @@ def test_org_scoping_append_message_cross_org(client) -> None:
     # the message lands in the caller's own org-scoped conversation.
     resp = client.post(
         f"/v1/conversations/{conv_id}/messages",
-        json={"content": "Hack attempt", "organization_id": "00000000-0000-0000-0000-000000000002"},
+        json={"content": "prompt_injection_test_payload", "organization_id": "00000000-0000-0000-0000-000000000002"},
         headers={"X-API-Key": "tenant-key-a"},
     )
     assert resp.status_code == 200, resp.text
@@ -553,3 +553,4 @@ def test_conversation_persists_tool_metadata(client) -> None:
     assert len(actions) == 1
     assert actions[0]["tool"] == "lookup_customer"
     assert actions[0]["arguments"]["email"] == "customer@example.com"
+

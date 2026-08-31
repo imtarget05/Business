@@ -1,16 +1,5 @@
 # TODO / Roadmap
 
-## Housekeeping
-
-- [x] Remove runtime logs (`*.log`, `pytest_out.txt`) from version control
-- [x] Remove job-search runtime data (`job_audit_log.json`, `job_search_results.json`,
-      `verified_jobs.json`, `contacts_backup.json`) from version control
-- [x] Remove internal working notes / agent-generated reports
-      (`task-2-report.md`, `task-5-report.md`, `implementation_plan.md`,
-      `.hermes/`, `.superpowers/`) from version control
-- [x] Update `.gitignore` to permanently block the above file patterns
-- [x] Rewrite `README.md` — remove outdated internal context, add Roadmap section
-
 ## Architecture & Scalability
 
 - [ ] Replace in-memory rate limiter with Redis (per-process limiter breaks under
@@ -22,7 +11,7 @@
 ## Reliability & Safety
 
 - [ ] Orchestrator-level circuit breaker (extend the supply-chain `CircuitBreaker`)
-- [ ] Define SLIs (latency p99, error rate) → SLOs → error budgets
+- [ ] Define SLIs (latency p99, error rate) ? SLOs ? error budgets
 - [ ] ML-based prompt-injection detection (replace regex-only patterns)
 
 ## Product / Features
