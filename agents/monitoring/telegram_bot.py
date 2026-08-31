@@ -2056,6 +2056,26 @@ class MonitoringBot:
             # run a REAL web_search and only echo verifiable links — never invent.
             if _is_food_lookup(text):
                 try:
+                    # (A) Local RAG cache first — serve verified answers instantly
+                    # (no web + no LLM call) for repeat/similar questions.
+                    try:
+                        from packages.core.rag_cache import rag_get
+                        _cached = rag_get(text)
+                        if _cached:
+                            _urls = _cached.get("urls") or []
+                            _body = _cached["answer"]
+                            if _urls:
+                                _body += "\n\n🔗 " + "\n🔗 ".join(_urls)
+                            await update.message.reply_text(
+                                "🔎 (từ bộ nhớ RAG đã xác minh)\n\n"
+                                + _sanitize_text(_body)
+                                + "\n\n⚠️ Nguồn đã lưu kèm link — bấm để xác minh.",
+                                reply_markup=self._feedback_keyboard("food"),
+                            )
+                            return
+                    except Exception:
+                        pass
+
                     results = await _real_web_search(_food_query(text))
                     if typing_task:
                         typing_task.cancel()
@@ -2097,6 +2117,18 @@ class MonitoringBot:
                     except Exception:
                         _summary = ""
                     if _summary:
+                        # Persist verified answer + sources into local RAG store
+                        # so future identical questions skip web+LLM entirely.
+                        try:
+                            from packages.core.rag_cache import rag_store
+                            _src_urls = [
+                                (_r.get("url") or "").strip()
+                                for _r in results[:5]
+                                if _r.get("url")
+                            ]
+                            rag_store(text, _summary, _src_urls)
+                        except Exception:
+                            pass
                         await update.message.reply_text(
                             "🔎 Theo Michelin Guide & báo chính thức (tổng hợp từ nguồn thật, "
                             "KHÔNG tự bịa):\n\n"
