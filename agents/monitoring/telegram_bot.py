@@ -17,6 +17,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import re
+import time
 import unicodedata
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -136,6 +137,9 @@ async def _summarize_food(llm, question: str, results: list[dict]) -> str:
 
     The LLM only sees the verified snippets (never its own memory), so it cannot
     hallucinate. Returns empty string on any failure -> caller falls back to raw links.
+
+    Cost control (AI-Engineer point 3): identical prompts are served from a short
+    TTL cache (Prompt Caching) and every call is logged to the usage ledger.
     """
     if not results or llm is None:
         return ""
@@ -147,6 +151,23 @@ async def _summarize_food(llm, question: str, results: list[dict]) -> str:
         f"Câu hỏi: {question}\n\nCác snippet web thật:\n{_ctx}\n\n"
         "Hãy tổng hợp thành danh sách ngắn (chỉ tên có trong snippet, kèm link)."
     )
+    _key = None
+    try:
+        from packages.core.llm_cost import (
+            log_llm_usage,
+            prompt_cache_get,
+            prompt_cache_key,
+            prompt_cache_set,
+        )
+        _model = getattr(llm, "name", "unknown")
+        _key = prompt_cache_key(_prompt, _FOOD_SUMMARY_SYSTEM)
+        _cached = prompt_cache_get(_key)
+        if _cached:
+            log_llm_usage(_model, _prompt, _cached, 0.0, cache_hit=True, tag="food_summary")
+            return _cached
+    except Exception:
+        _key = None
+    _t0 = time.time()
     try:
         _ans = await llm.generate(
             prompt=_prompt,
@@ -154,7 +175,17 @@ async def _summarize_food(llm, question: str, results: list[dict]) -> str:
             max_tokens=500,
             temperature=0.0,
         )
-        return (_ans if isinstance(_ans, str) else str(_ans)).strip()
+        _ans = (_ans if isinstance(_ans, str) else str(_ans)).strip()
+        _dt = time.time() - _t0
+        try:
+            from packages.core.llm_cost import log_llm_usage
+            _model = getattr(llm, "name", "unknown")
+            log_llm_usage(_model, _prompt, _ans, _dt, cache_hit=False, tag="food_summary")
+            if _key and _ans:
+                prompt_cache_set(_key, _ans)
+        except Exception:
+            pass
+        return _ans
     except Exception:
         return ""
 
