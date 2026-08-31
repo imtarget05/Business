@@ -1,4 +1,4 @@
-﻿"""One-off local verification: Google Sheets access via service account.
+"""One-off local verification: Google Sheets access via service account.
 
 Reads the sheet metadata and appends one test row to prove write access.
 Run: .venv/Scripts/python.exe scripts/verify_google_sheets.py
@@ -19,14 +19,10 @@ SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
 
 
 def main() -> int:
-    creds = service_account.Credentials.from_service_account_file(
-        str(KEY_FILE), scopes=SCOPES
-    )
+    creds = service_account.Credentials.from_service_account_file(str(KEY_FILE), scopes=SCOPES)
     svc = build("sheets", "v4", credentials=creds)
 
-    meta = (
-        svc.spreadsheets().get(spreadsheetId=SHEET_ID).execute()
-    )
+    meta = svc.spreadsheets().get(spreadsheetId=SHEET_ID).execute()
     print("Title:", meta.get("properties", {}).get("title"))
     for s in meta.get("sheets", []):
         props = s["properties"]

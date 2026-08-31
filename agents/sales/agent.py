@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Email-to-Proposal Automation Agent (Task 4).
 
 Reads a customer email, classifies its intent, generates a branded proposal
@@ -49,24 +48,62 @@ BRAND_PATH = DATA_DIR / "brand" / "brand.json"
 # Intent classification keywords (VN + EN). First match wins.
 _INTENT_KEYWORDS: tuple[tuple[str, ...], str] = (
     (
-        "khiếu nại", "khieu nai", "complaint", "phàn nàn", "phan nan",
-        "hoàn tiền", "hoan tien", "refund", "không hài lòng", "khong hai long",
-        "tệ", "toi te", "bad service",
+        "khiếu nại",
+        "khieu nai",
+        "complaint",
+        "phàn nàn",
+        "phan nan",
+        "hoàn tiền",
+        "hoan tien",
+        "refund",
+        "không hài lòng",
+        "khong hai long",
+        "tệ",
+        "toi te",
+        "bad service",
     ),
     "complaint",
 )
 _QUOTE_KEYWORDS: tuple[tuple[str, ...], str] = (
     (
-        "báo giá", "bao gia", "quote", "báo cáo giá", "baogia", "price",
-        "chi phí", "chi phi", "phí", "fee", "cost", "giá", "gia",
+        "báo giá",
+        "bao gia",
+        "quote",
+        "báo cáo giá",
+        "baogia",
+        "price",
+        "chi phí",
+        "chi phi",
+        "phí",
+        "fee",
+        "cost",
+        "giá",
+        "gia",
     ),
     "quote_request",
 )
 _SERVICE_KEYWORDS: tuple[tuple[str, ...], str] = (
     (
-        "dịch vụ", "dich vu", "service", "ra mắt", "ra mat", "launch",
-        "tư vấn", "tu van", "consult", "giúp", "giup", "giới thiệu", "gioi thieu",
-        "offer", "package", "gói", "goi", "proposal", "đề xuất", "de xuat",
+        "dịch vụ",
+        "dich vu",
+        "service",
+        "ra mắt",
+        "ra mat",
+        "launch",
+        "tư vấn",
+        "tu van",
+        "consult",
+        "giúp",
+        "giup",
+        "giới thiệu",
+        "gioi thieu",
+        "offer",
+        "package",
+        "gói",
+        "goi",
+        "proposal",
+        "đề xuất",
+        "de xuat",
     ),
     "service_inquiry",
 )
@@ -79,7 +116,16 @@ _PACKAGE_KEYWORDS: list[tuple[str, tuple[str, ...]]] = [
     ),
     (
         "growth_boost",
-        ("growth", "tăng trưởng", "tang truong", "tối ưu", "toi uu", "optimize", "quảng cáo", "quang cao"),
+        (
+            "growth",
+            "tăng trưởng",
+            "tang truong",
+            "tối ưu",
+            "toi uu",
+            "optimize",
+            "quảng cáo",
+            "quang cao",
+        ),
     ),
     (
         "starter",
@@ -152,7 +198,12 @@ def _extract_client(text: str, brand: dict[str, Any]) -> str:
     # A line that looks like a name (2-3 capitalized words, no email/url).
     for line in text.splitlines():
         line = line.strip().rstrip(",")
-        if 2 <= len(line.split()) <= 3 and line[0:1].isalpha() and "@" not in line and "." not in line:
+        if (
+            2 <= len(line.split()) <= 3
+            and line[0:1].isalpha()
+            and "@" not in line
+            and "." not in line
+        ):
             if any(c.isupper() for c in line):
                 return line
     return "Quý khách hàng"
@@ -266,28 +317,41 @@ def render_pdf(proposal: dict[str, Any] | ProposalResult, brand: dict[str, Any])
 
     styles = getSampleStyleSheet()
     title_style = ParagraphStyle(
-        "BrandTitle", parent=styles["Title"], fontName=font_name, textColor=primary_color, fontSize=20
+        "BrandTitle",
+        parent=styles["Title"],
+        fontName=font_name,
+        textColor=primary_color,
+        fontSize=20,
     )
     sub_style = ParagraphStyle(
-        "BrandSub", parent=styles["Normal"], fontName=font_name, textColor=accent_color, fontSize=11, alignment=TA_CENTER
+        "BrandSub",
+        parent=styles["Normal"],
+        fontName=font_name,
+        textColor=accent_color,
+        fontSize=11,
+        alignment=TA_CENTER,
     )
     h_style = ParagraphStyle(
-        "BrandH", parent=styles["Heading2"], fontName=font_name, textColor=primary_color, fontSize=13
+        "BrandH",
+        parent=styles["Heading2"],
+        fontName=font_name,
+        textColor=primary_color,
+        fontSize=13,
     )
     body_style = ParagraphStyle(
         "BrandBody", parent=styles["Normal"], fontName=base_font, fontSize=10.5, leading=15
     )
     footer_style = ParagraphStyle(
-        "BrandFooter", parent=styles["Normal"], fontName=base_font, fontSize=8, textColor=accent_color, alignment=TA_CENTER
+        "BrandFooter",
+        parent=styles["Normal"],
+        fontName=base_font,
+        fontSize=8,
+        textColor=accent_color,
+        alignment=TA_CENTER,
     )
 
     def _esc(s: Any) -> str:
-        return (
-            str(s)
-            .replace("&", "&amp;")
-            .replace("<", "&lt;")
-            .replace(">", "&gt;")
-        )
+        return str(s).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
     story: list[Any] = []
     story.append(Paragraph(_esc(company), title_style))
@@ -397,7 +461,8 @@ class SalesAgent:
         resolved_package = package_key or _select_package(email_text, pricing)
 
         pkg = (pricing.get("packages") or {}).get(
-            resolved_package, (pricing.get("packages") or {}).get(pricing.get("default_package", "launch_impact"))
+            resolved_package,
+            (pricing.get("packages") or {}).get(pricing.get("default_package", "launch_impact")),
         )
         if not pkg:
             # Defensive: never fabricate — use a clearly-empty placeholder.
@@ -463,23 +528,23 @@ class SalesAgent:
                 f"Cảm ơn bạn đã phản hồi. Chúng tôi rất tiếc về trải nghiệm chưa tốt "
                 f"và đã tiếp nhận khiếu nại của bạn. Bộ phận CSKH sẽ liên hệ lại trong "
                 f"vòng 24h để xử lý tận gốc.\n\n"
-                f"Trân trọng,\n{company}"
-                + (f"\n{contact}" if contact else "")
+                f"Trân trọng,\n{company}" + (f"\n{contact}" if contact else "")
             )
         else:
             subject = f"Báo giá & đề xuất {proposal_name} dành cho {client} — {company}"
             body = (
                 f"Kính gửi {client},\n\n"
                 f"Cảm ơn bạn đã quan tâm đến dịch vụ của {company}. Theo yêu cầu trong "
-                f"email của bạn, mình gửi kèm đề xuất \"{proposal_name}\" (file PDF).\n\n"
+                f'email của bạn, mình gửi kèm đề xuất "{proposal_name}" (file PDF).\n\n'
                 f"Nếu bạn cần điều chỉnh phạm vi hoặc muốn đặt lịch cuộc gọi 15 phút để "
                 f"chốt phương án, phản hồi email này nhé.\n\n"
-                f"Trân trọng,\n{company}"
-                + (f"\n{contact}" if contact else "")
+                f"Trân trọng,\n{company}" + (f"\n{contact}" if contact else "")
             )
         return {"subject": subject, "body": body}
 
-    def render_pdf(self, proposal: dict[str, Any] | ProposalResult, brand: dict[str, Any] | None = None) -> bytes:
+    def render_pdf(
+        self, proposal: dict[str, Any] | ProposalResult, brand: dict[str, Any] | None = None
+    ) -> bytes:
         return render_pdf(proposal, brand or load_brand(self._brand_path))
 
     # ------------------------------------------------------------------ #
@@ -497,7 +562,9 @@ class SalesAgent:
                 ),
             )
 
-        email_text = str(request.payload.get("email_text") or request.payload.get("email") or "").strip()
+        email_text = str(
+            request.payload.get("email_text") or request.payload.get("email") or ""
+        ).strip()
         if not email_text:
             return AgentResponse(
                 task_id=request.task_id,
@@ -547,7 +614,9 @@ class SalesAgent:
         """Async convenience wrapper (mirrors other agents' public API)."""
         return self.process_email(email_text, brand=brand, client=client)
 
-    async def render_pdf_async(self, proposal: dict[str, Any] | ProposalResult, brand: dict[str, Any] | None = None) -> bytes:
+    async def render_pdf_async(
+        self, proposal: dict[str, Any] | ProposalResult, brand: dict[str, Any] | None = None
+    ) -> bytes:
         return self.render_pdf(proposal, brand)
 
 

@@ -90,9 +90,7 @@ async def test_org_scoping(repo, db, org_id):
     assert await repo.list_messages(other_org, conv.id) == []
 
     # Writes are scoped: append and status update are no-ops for foreign orgs.
-    assert (
-        await repo.append_message(other_org, conv.id, MessageRole.user, "hax") is None
-    )
+    assert await repo.append_message(other_org, conv.id, MessageRole.user, "hax") is None
     assert await repo.update_status(other_org, conv.id, ConversationStatus.closed) is None
     # Still only the original message — nothing foreign was written.
     msgs = await repo.list_messages(org_id, conv.id)
@@ -105,9 +103,7 @@ async def test_status_transitions(repo):
 
     assert conv.status == ConversationStatus.open
 
-    updated = await repo.update_status(
-        org_id, conv.id, ConversationStatus.escalated
-    )
+    updated = await repo.update_status(org_id, conv.id, ConversationStatus.escalated)
     assert updated.status == ConversationStatus.escalated
 
     updated = await repo.update_status(org_id, conv.id, ConversationStatus.resolved)

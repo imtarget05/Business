@@ -88,9 +88,7 @@ class AgentResponse(BaseModel):
     @model_validator(mode="after")
     def _check_error_presence(self) -> AgentResponse:
         if self.status != AgentResponseStatus.SUCCESS and self.error is None:
-            raise ValueError(
-                f"non-success responses ({self.status.value}) must include `error`"
-            )
+            raise ValueError(f"non-success responses ({self.status.value}) must include `error`")
         if self.status == AgentResponseStatus.SUCCESS and self.error is not None:
             raise ValueError("success responses must not include `error`")
         return self

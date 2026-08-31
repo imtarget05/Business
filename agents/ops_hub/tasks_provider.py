@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Task source for the Business Ops Hub.
 
 The plan (Task 2) aggregates Gmail unread + Calendar upcoming + *tasks* into a
@@ -22,8 +21,8 @@ the unit tests can pass hand-built lists without touching the network or disk.
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from dataclasses import dataclass
+from datetime import UTC, datetime
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -105,7 +104,7 @@ class InMemoryTaskProvider(TaskProvider):
                 # config.yaml task times are naive locals (e.g. "2026-08-30T17:00:00").
                 # Normalize to aware UTC so they compare cleanly against _now() (UTC-aware).
                 if due.tzinfo is None:
-                    due = due.replace(tzinfo=timezone.utc)
+                    due = due.replace(tzinfo=UTC)
             except ValueError:
                 logger.warning("ops.tasks[%s] due không hợp lệ: %r", index, due_raw)
         return Task(
@@ -149,7 +148,7 @@ def _load_ops_tasks_from_config() -> list[dict[str, Any]]:
         path = os.path.join(os.getcwd(), "config.yaml")
         if not os.path.exists(path):
             return []
-        with open(path, "r", encoding="utf-8") as f:
+        with open(path, encoding="utf-8") as f:
             data = yaml.safe_load(f) or {}
         return list((data.get("ops") or {}).get("tasks") or [])
     except Exception:  # noqa: BLE001

@@ -93,9 +93,7 @@ def _column_exists(bind: sa.engine.Connection, table: str, column: str) -> bool:
 
 def _vector_extension_installed(bind: sa.engine.Connection) -> bool:
     return bool(
-        bind.execute(
-            sa.text("SELECT 1 FROM pg_extension WHERE extname = 'vector'")
-        ).scalar()
+        bind.execute(sa.text("SELECT 1 FROM pg_extension WHERE extname = 'vector'")).scalar()
     )
 
 

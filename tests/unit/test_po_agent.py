@@ -13,12 +13,12 @@ from agents.supply_chain.po_agent import (
 )
 from packages.config.settings import Settings
 from packages.contracts.enums import Domain
-from packages.contracts.models import AgentDescriptor, TaskRequest, TaskContext
-
+from packages.contracts.models import AgentDescriptor, TaskContext, TaskRequest
 
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
+
 
 def make_po_agent(llm=None, with_llm=False):
     """Helper to create PO agent with optional mocked LLM and thresholds."""
@@ -54,6 +54,7 @@ def descriptor():
 # Descriptor tests
 # ---------------------------------------------------------------------------
 
+
 def test_po_agent_descriptor_created(po_agent):
     agent = po_agent
     assert agent.descriptor.name == "purchase_order_agent"
@@ -80,6 +81,7 @@ def test_po_agent_descriptor_supply_chain_caps(po_agent):
 # ---------------------------------------------------------------------------
 # Action routing tests
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_handle_unsupported_action(po_agent):
@@ -117,6 +119,7 @@ async def test_handle_missing_content(po_agent):
 # ---------------------------------------------------------------------------
 # PO parsing tests (rule-based)
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_parse_po_basic(po_agent):
@@ -195,6 +198,7 @@ async def test_parse_po_no_po_data(po_agent):
 # ---------------------------------------------------------------------------
 # Classification tests (rule-based)
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_classify_new_order(po_agent):
@@ -275,6 +279,7 @@ TOTAL: $1000.00
 # Routing / Policy tests
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_route_auto_approved_small_po(po_agent):
     from uuid import uuid4
@@ -354,10 +359,12 @@ TOTAL: $6000.00
 # LLM fallback tests
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_llm_parse_fallback_to_rule_based(po_agent_with_llm):
     """When LLM throws an error, agent falls back to rule-based parsing."""
     from uuid import uuid4
+
     from pydantic import BaseModel, Field
 
     class POExtractionSchema(BaseModel):
@@ -368,9 +375,7 @@ async def test_llm_parse_fallback_to_rule_based(po_agent_with_llm):
         items: list[dict] = Field(default_factory=list)
         total: float = Field(default=300.0)
 
-    po_agent_with_llm._llm.generate_structured = AsyncMock(
-        side_effect=Exception("LLM parse error")
-    )
+    po_agent_with_llm._llm.generate_structured = AsyncMock(side_effect=Exception("LLM parse error"))
 
     text = """\
 PO NUMBER: PO-2024-FALLBACK
@@ -396,6 +401,7 @@ Total: $300.00
 async def test_llm_classify_fallback_to_rule_based(po_agent_with_llm):
     """When LLM classification throws, agent falls back to rule-based classify."""
     from uuid import uuid4
+
     from pydantic import BaseModel, Field
 
     class POExtractionSchema(BaseModel):
@@ -403,15 +409,17 @@ async def test_llm_classify_fallback_to_rule_based(po_agent_with_llm):
         vendor: str = Field(default="Test Vendor")
         vendor_email: str | None = Field(default=None)
         date: str | None = Field(default=None)
-        items: list[dict] = Field(default=[
-            {
-                "sku": "SKU-999",
-                "description": "Exchange Request Item",
-                "quantity": 1,
-                "unit_price": 10.0,
-                "total_price": 10.0,
-            }
-        ])
+        items: list[dict] = Field(
+            default=[
+                {
+                    "sku": "SKU-999",
+                    "description": "Exchange Request Item",
+                    "quantity": 1,
+                    "unit_price": 10.0,
+                    "total_price": 10.0,
+                }
+            ]
+        )
         total: float = Field(default=10.0)
 
     # Mock structured parse to succeed (return dict, not a Pydantic model)
@@ -434,9 +442,7 @@ async def test_llm_classify_fallback_to_rule_based(po_agent_with_llm):
         }
     )
     # Mock generate (for classification) to raise
-    po_agent_with_llm._llm.generate = AsyncMock(
-        side_effect=Exception("LLM classification error")
-    )
+    po_agent_with_llm._llm.generate = AsyncMock(side_effect=Exception("LLM classification error"))
 
     text = """\
 PO NUMBER: PO-2024-CLASS-FALLBACK
@@ -462,6 +468,7 @@ TOTAL: $10.00
 # ---------------------------------------------------------------------------
 # Data structure tests
 # ---------------------------------------------------------------------------
+
 
 def test_po_item_creation():
     item = POItem(

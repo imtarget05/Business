@@ -16,18 +16,16 @@ from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from apps.api.deps import current_org
+from apps.api.routes.tasks import get_task_store
 from packages.config.settings import get_settings
 from packages.contracts.enums import Domain
 from packages.contracts.models import TaskContext, TaskRequest
 from packages.core.bootstrap import get_container
-from packages.core.errors import ValidationError
 from packages.core.persistence import TaskStore
 from packages.core.response_presentation import present
 from packages.core.router import RouterAgent
 from packages.database.session import get_session
-from packages.database.task_store import SqlAlchemyTaskStore
-from apps.api.deps import current_org
-from apps.api.routes.tasks import get_task_store
 from packages.llm.factory import get_llm_provider
 
 router = APIRouter(prefix="/v1/router", tags=["router"])
@@ -71,8 +69,7 @@ async def dispatch(
                     "agent": agent,
                     "score": score,
                     "hint": (
-                        f"Thử yêu cầu liên quan tới "
-                        f"{agent.rsplit('-v', 1)[0].replace('_', ' ')}"
+                        f"Thử yêu cầu liên quan tới {agent.rsplit('-v', 1)[0].replace('_', ' ')}"
                     ),
                 }
                 for agent, score in candidates

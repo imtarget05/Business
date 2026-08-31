@@ -51,9 +51,7 @@ def get_session_factory(settings: Settings | None = None) -> async_sessionmaker[
                 import sys
 
                 if sys.platform == "win32":
-                    asyncio.set_event_loop_policy(
-                        asyncio.WindowsSelectorEventLoopPolicy()
-                    )
+                    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
             except Exception:
                 pass
         _session_factory = async_sessionmaker(engine, expire_on_commit=False)

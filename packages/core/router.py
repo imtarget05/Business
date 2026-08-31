@@ -156,12 +156,22 @@ def _vietnamese_intent(text: str) -> tuple[str, str] | None:
             return mapping[capability]
     return None
 
+
 RULE_FALLBACKS: tuple[tuple[tuple[str, ...], tuple[str, str]], ...] = (
     (("hoàn tiền", "refund", "trả hàng", "return"), ("support", "triage")),
     (("khiếu nại", "complaint", "không hoạt động", "broken", "lỗi"), ("support", "triage")),
     (
-        ("chính sách", "policy", "bao nhiêu", "bảo hành", "warranty",
-         "đổi trả", "faq", "ship", "vận chuyển"),
+        (
+            "chính sách",
+            "policy",
+            "bao nhiêu",
+            "bảo hành",
+            "warranty",
+            "đổi trả",
+            "faq",
+            "ship",
+            "vận chuyển",
+        ),
         ("knowledge", "query"),
     ),
 )
@@ -187,7 +197,10 @@ CAPABILITY_KEYWORDS: tuple[tuple[tuple[str, ...], tuple[str, ...]], ...] = (
     (("báo cáo", "report", "dashboard", "thống kê"), ("report",)),
     (("tổng hợp", "ops", "vận hành", "cần làm", "digest", "công việc"), ("ops",)),
     (("báo giá", "quote", "proposal", "đề xuất", "chào giá", "email khách", "báo gia"), ("sales",)),
-    (("đối thủ", "competitor", "cạnh tranh", "competitive", "giá đối thủ", "doi thu", "doi thu"), ("competitor",)),
+    (
+        ("đối thủ", "competitor", "cạnh tranh", "competitive", "giá đối thủ", "doi thu", "doi thu"),
+        ("competitor",),
+    ),
 )
 
 
@@ -226,7 +239,6 @@ def score_candidates(
 
 
 DEFAULT_CONFIDENCE_THRESHOLD = 0.6
-
 
 
 class _LLMClassification(BaseModel):
@@ -277,8 +289,6 @@ class RouterAgent:
             if keyword.lower() in text.lower():
                 return tuple(capability.split(".", 1))  # type: ignore[return-value]
         return None
-
-
 
     def _get_allowed_intents(self) -> frozenset[tuple[str, str]]:
         """Return the current routing table (intents the router can classify to)."""

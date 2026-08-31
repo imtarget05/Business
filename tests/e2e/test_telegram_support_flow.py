@@ -1,4 +1,3 @@
-﻿# -*- coding: utf-8 -*-
 """E2E: Telegram (Vietnamese) support query -> Orchestrator -> Knowledge handoff
 -> Telegram reply, fully offline (Mock LLM + mock embedding + SQLite KB).
 
@@ -25,9 +24,7 @@ from agents.knowledge.agent import NO_INFO_ANSWER
 from packages.contracts.enums import AgentResponseStatus, Domain
 from packages.contracts.models import Citation, TaskContext, TaskRequest
 from packages.telegram.nlp import classify_vietnamese_intent
-
 from tests.e2e.conftest import FakeTelegramBot, format_support_reply
-
 
 VIETNAMESE_PASSWORD_DOC = """
 Neu ban quen mat khau, hay dat lai mat khau qua lien ket Quen mat khau tren
@@ -88,9 +85,7 @@ async def test_telegram_support_knowledge_end_to_end(e2e_container, telegram_stu
     assert isinstance(resp.citations, list)
     assert resp.citations, "knowledge response must include citations"
     assert any(
-        isinstance(c, Citation)
-        and c.snippet is not None
-        and SEED_PHRASE in c.snippet.lower()
+        isinstance(c, Citation) and c.snippet is not None and SEED_PHRASE in c.snippet.lower()
         for c in resp.citations
     ), "no citation references the seeded document"
 

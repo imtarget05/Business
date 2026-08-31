@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 Inbound Handler for Purchase Order emails (Phase SC).
 
@@ -28,17 +27,17 @@ import logging
 from typing import Any
 from uuid import UUID, uuid4
 
+from agents.supply_chain.po_agent import PurchaseOrderAgent
 from packages.contracts.enums import AgentResponseStatus, Domain
 from packages.contracts.models import AgentResponse, ErrorDetail, TaskContext, TaskRequest
 from packages.llm.mock import MockLLMProvider
-
-from agents.supply_chain.po_agent import PurchaseOrderAgent
 
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Single email processing
 # ---------------------------------------------------------------------------
+
 
 async def process_inbound_email(
     email_content: str,
@@ -99,7 +98,9 @@ async def process_inbound_email(
         payload={"email_content": email_content},
         context=TaskContext(
             user_id=UUID(user_id) if isinstance(user_id, str) else user_id,
-            organization_id=UUID(organization_id) if isinstance(organization_id, str) else organization_id,
+            organization_id=UUID(organization_id)
+            if isinstance(organization_id, str)
+            else organization_id,
             channel=channel,
             trace_id=trace_id,
         ),
@@ -115,6 +116,7 @@ async def process_inbound_email(
 # ---------------------------------------------------------------------------
 # Batch processing
 # ---------------------------------------------------------------------------
+
 
 async def process_inbound_batch(
     email_contents: list[str],
@@ -167,6 +169,7 @@ async def process_inbound_batch(
 # the user supplies credentials and elects to implement the real integration.
 # ═══════════════════════════════════════════════════════════════════════════
 
+
 async def fetch_unread_gmail_messages(
     query: str = "is:unread category:primary",
     max_results: int = 50,
@@ -202,14 +205,14 @@ async def fetch_gmail_message_body(message_id: str) -> str:
         Email body as string (stub: NotImplementedError).
     """
     raise NotImplementedError(
-        "fetch_gmail_message_body is a placeholder.  "
-        "Gmail API credential setup is required."
+        "fetch_gmail_message_body is a placeholder.  Gmail API credential setup is required."
     )
 
 
 # ---------------------------------------------------------------------------
 # Queue / webhook stubs (SKELETON)
 # ---------------------------------------------------------------------------
+
 
 async def process_queue_messages(
     messages: list[dict[str, Any]],

@@ -213,9 +213,7 @@ def _to_libpq_dsn(url: str | None) -> str | None:
     parts = urlsplit(url.strip())
     if parts.scheme.split("+", 1)[0].lower() not in _POSTGRES_SCHEMES:
         return None
-    return urlunsplit(
-        ("postgresql", parts.netloc, parts.path, parts.query, parts.fragment)
-    )
+    return urlunsplit(("postgresql", parts.netloc, parts.path, parts.query, parts.fragment))
 
 
 def resolve_checkpoint_dsn(settings: Settings) -> tuple[str | None, str]:

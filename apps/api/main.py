@@ -75,8 +75,10 @@ class SlidingWindowRateLimiter:
 # Rate limiter stored in app.state (initialized at startup)
 # No global to avoid test cross-contamination
 
+
 def get_rate_limiter(app: FastAPI) -> SlidingWindowRateLimiter | None:
     return getattr(app.state, "rate_limiter", None)
+
 
 def init_rate_limiter(app: FastAPI, max_requests: int, window_seconds: int = 60) -> None:
     app.state.rate_limiter = SlidingWindowRateLimiter(max_requests, window_seconds)
@@ -89,7 +91,11 @@ async def lifespan(app: FastAPI):
     # Initialize rate limiter
     init_rate_limiter(app, settings.rate_limit_per_minute, 60)
     # Fail-closed auth: never start without any authn boundary outside local.
-    env_value = settings.environment.value if hasattr(settings.environment, 'value') else settings.environment
+    env_value = (
+        settings.environment.value
+        if hasattr(settings.environment, "value")
+        else settings.environment
+    )
     if (
         env_value != Environment.LOCAL.value
         and not settings.api_key
@@ -109,7 +115,7 @@ async def _verify_api_key(api_key: str) -> str | None:
     """Verify API key against DB. Returns organization_id (string) or None."""
     if not api_key:
         return None
-    
+
     factory = get_session_factory()
     async with factory() as session:
         repo = ApiKeyRepository(session)
@@ -180,10 +186,7 @@ def create_app() -> FastAPI:
     app = FastAPI(
         title="Business Ops Agent Swarm API",
         version="0.1.0",
-        description=(
-            "Multi-agent platform for business operations "
-            "(Phase 1 - core platform)"
-        ),
+        description=("Multi-agent platform for business operations (Phase 1 - core platform)"),
         lifespan=lifespan,
     )
     get_container()  # eager-wire registry/orchestrator at startup
@@ -219,31 +222,31 @@ def create_app() -> FastAPI:
         if request.url.path.startswith("/v1"):
             supplied = request.headers.get("X-API-Key")
             org_id = None
-            
+
             if supplied:
                 # First try DB-backed API keys
                 org_id = await _verify_api_key(supplied)
-                
+
                 # Fallback to tenant_api_keys only in local environment
                 if org_id is None and settings.environment == Environment.LOCAL:
                     if supplied in settings.tenant_api_keys:
                         org_id = settings.tenant_api_keys[supplied]
-            
+
             if org_id is None:
                 exc = AuthenticationError("Missing or invalid API key")
                 return JSONResponse(
                     status_code=exc.http_status, content={"error": exc.to_payload()}
                 )
-            
+
             # Bind org_id to request state for downstream use
             request.state.organization_id = org_id
-        
+
         return await call_next(request)
 
     @app.middleware("http")
     async def rate_limit_middleware(request: Request, call_next):
         """Sliding window rate limiting per API key (X-API-Key header)."""
-        
+
         limiter = get_rate_limiter(request.app)
         if limiter is None:
             return await call_next(request)
@@ -257,10 +260,8 @@ def create_app() -> FastAPI:
             # No API key - let the auth middleware handle it
             return await call_next(request)
 
-        
         allowed, remaining = limiter.is_allowed(api_key)
-        
-        
+
         if not allowed:
             exc = RateLimitError("Rate limit exceeded")
             response = JSONResponse(

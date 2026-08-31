@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """LangGraph-based supply chain workflow orchestration.
 
 Wraps existing supply chain agents (PO Agent, Approval, Inventory, Reporting)
@@ -16,25 +15,24 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
 
 from langgraph.graph import END, START, StateGraph
-from langgraph.checkpoint.memory import InMemorySaver
 
-from agents.supply_chain.inbound import process_inbound_email
-from agents.supply_chain.po_agent import PurchaseOrderAgent
-from agents.supply_chain.approval import ApprovalWorkflow, ApprovalState, needs_approval
-from agents.supply_chain.inventory import InventoryMonitor, InventoryItem
-from agents.supply_chain.reporting import SupplyChainReporter
-from agents.supply_chain.po_guardrails import POAgentGuardrails
-from agents.supply_chain.reporting_guardrails import ReportingGuardrails
-from agents.supply_chain.inventory_guardrails import InventoryGuardrails
+from agents.supply_chain.approval import ApprovalState, ApprovalWorkflow, needs_approval
 from agents.supply_chain.approval_guardrails import ApprovalGuardrails
+from agents.supply_chain.inbound import process_inbound_email
+from agents.supply_chain.inventory import InventoryItem, InventoryMonitor
+from agents.supply_chain.inventory_guardrails import InventoryGuardrails
+from agents.supply_chain.po_agent import PurchaseOrderAgent
+from agents.supply_chain.po_guardrails import POAgentGuardrails
+from agents.supply_chain.reporting import SupplyChainReporter
+from agents.supply_chain.reporting_guardrails import ReportingGuardrails
 from packages.config.settings import Settings, get_settings
-from packages.core.checkpoint import get_checkpointer
 from packages.contracts.models import TaskContext, TaskRequest
+from packages.core.checkpoint import get_checkpointer
 
 logger = logging.getLogger(__name__)
 
@@ -42,6 +40,7 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 # Graph State
 # ---------------------------------------------------------------------------
+
 
 @dataclass
 class SupplyChainGraphState:
@@ -89,17 +88,21 @@ class SupplyChainGraphState:
 # Helper: record step in history
 # ---------------------------------------------------------------------------
 
+
 def _record_step(state: SupplyChainGraphState, step: str, status: str) -> None:
-    state.step_history.append({
-        "step": step,
-        "timestamp": datetime.now(timezone.utc).isoformat(),
-        "status": status,
-    })
+    state.step_history.append(
+        {
+            "step": step,
+            "timestamp": datetime.now(UTC).isoformat(),
+            "status": status,
+        }
+    )
 
 
 # ---------------------------------------------------------------------------
 # Node: PO Agent
 # ---------------------------------------------------------------------------
+
 
 async def po_agent_node(state: SupplyChainGraphState) -> SupplyChainGraphState:
     """Parse inbound email content using PurchaseOrderAgent.
@@ -120,11 +123,12 @@ async def po_agent_node(state: SupplyChainGraphState) -> SupplyChainGraphState:
 
     # Get settings and create PO Agent with guardrails
     s = get_settings()
-    po_agent = PurchaseOrderAgent(llm=None, settings=s)  #llm=None uses rule-based fallback
+    po_agent = PurchaseOrderAgent(llm=None, settings=s)  # llm=None uses rule-based fallback
     guardrails = POAgentGuardrails(po_agent)
 
     # Build TaskRequest for guardrails
-    from packages.contracts.models import TaskRequest, TaskContext
+    from packages.contracts.models import TaskContext, TaskRequest
+
     req = TaskRequest(
         task_id=state.task_id,
         domain="supply_chain",
@@ -172,6 +176,7 @@ async def po_agent_node(state: SupplyChainGraphState) -> SupplyChainGraphState:
 # Node: Approval
 # ---------------------------------------------------------------------------
 
+
 async def approval_node(state: SupplyChainGraphState) -> SupplyChainGraphState:
     """Handle PO approval workflow.
 
@@ -187,7 +192,7 @@ async def approval_node(state: SupplyChainGraphState) -> SupplyChainGraphState:
             task_id=state.task_id,
             domain="supply_chain",
             action="supply_chain_approve_po",
-            payload={"po": state.po_data },
+            payload={"po": state.po_data},
             context=TaskContext(**state.context),
         )
         guardrails.validate_input(req)
@@ -251,6 +256,7 @@ async def approval_node(state: SupplyChainGraphState) -> SupplyChainGraphState:
 # ---------------------------------------------------------------------------
 # Node: Inventory Monitor
 # ---------------------------------------------------------------------------
+
 
 async def inventory_node(state: SupplyChainGraphState) -> SupplyChainGraphState:
     """Check inventory levels for PO items, generate alerts, compute summary.
@@ -330,6 +336,7 @@ async def inventory_node(state: SupplyChainGraphState) -> SupplyChainGraphState:
 # ---------------------------------------------------------------------------
 # Node: Reporting
 # ---------------------------------------------------------------------------
+
 
 async def reporting_node(state: SupplyChainGraphState) -> SupplyChainGraphState:
     """Consolidate PO, approval, inventory data into dashboard/report.
@@ -429,6 +436,7 @@ async def reporting_node(state: SupplyChainGraphState) -> SupplyChainGraphState:
 # Node: n8n export (Phase D — Task 3.5)
 # ---------------------------------------------------------------------------
 
+
 async def n8n_export_node(state: SupplyChainGraphState) -> SupplyChainGraphState:
     """Export the approved PO to an n8n workflow via webhook (non-blocking).
 
@@ -473,9 +481,7 @@ async def n8n_export_node(state: SupplyChainGraphState) -> SupplyChainGraphState
             "status_code": result.status_code,
             "error": result.error,
         }
-        _record_step(
-            state, "n8n_export", "success" if result.exported else "no_op"
-        )
+        _record_step(state, "n8n_export", "success" if result.exported else "no_op")
     except Exception as e:
         logger.warning(f"n8n export node error (non-fatal): {e}")
         state.n8n_result = {"exported": False, "error": str(e)}
@@ -486,6 +492,7 @@ async def n8n_export_node(state: SupplyChainGraphState) -> SupplyChainGraphState
 # ---------------------------------------------------------------------------
 # Node: Error (terminal)
 # ---------------------------------------------------------------------------
+
 
 async def error_node(state: SupplyChainGraphState) -> SupplyChainGraphState:
     """Terminal node for failed workflows."""
@@ -503,6 +510,7 @@ async def error_node(state: SupplyChainGraphState) -> SupplyChainGraphState:
 # ---------------------------------------------------------------------------
 # Conditional edge functions
 # ---------------------------------------------------------------------------
+
 
 def after_po_agent(state: SupplyChainGraphState) -> str:
     """Route after PO Agent: approval needed? → approval, else → inventory."""
@@ -538,6 +546,7 @@ def after_reporting(state: SupplyChainGraphState) -> str:
 # ---------------------------------------------------------------------------
 # Graph builder
 # ---------------------------------------------------------------------------
+
 
 def _build_checkpointer(settings: Settings) -> Any:
     """Build a checkpointer from settings.
@@ -617,6 +626,7 @@ def _build_supply_chain_graph(
 # Orchestrator wrapper
 # ---------------------------------------------------------------------------
 
+
 class SupplyChainGraphOrchestrator:
     """LangGraph-backed supply chain workflow orchestrator.
 
@@ -632,7 +642,9 @@ class SupplyChainGraphOrchestrator:
         self._settings = settings or get_settings()
         self._graph = _build_supply_chain_graph(self._settings, checkpointer=checkpointer)
 
-    async def execute(self, task_id: UUID, payload: dict[str, Any], context: dict[str, Any] | None = None) -> dict[str, Any]:
+    async def execute(
+        self, task_id: UUID, payload: dict[str, Any], context: dict[str, Any] | None = None
+    ) -> dict[str, Any]:
         """Execute the supply chain graph for a single PO inbound request.
 
         Args:
@@ -651,7 +663,7 @@ class SupplyChainGraphOrchestrator:
             context=context or {},
         )
 
-        start_time = datetime.now(timezone.utc)
+        start_time = datetime.now(UTC)
 
         config = {
             "configurable": {"thread_id": str(task_id)},
@@ -660,7 +672,7 @@ class SupplyChainGraphOrchestrator:
 
         result = await self._graph.ainvoke(initial_state, config)
 
-        end_time = datetime.now(timezone.utc)
+        end_time = datetime.now(UTC)
         duration_ms = (end_time - start_time).total_seconds() * 1000
         step_count = len(result.get("step_history", []))
 
@@ -677,7 +689,9 @@ class SupplyChainGraphOrchestrator:
         final_status = final.get("status") if isinstance(final, dict) else None
         # Build rich result envelope for observability + downstream consumers
         envelope = {
-            "status": "failed" if final_status == "failed" else ("success" if final is not None else "failed"),
+            "status": "failed"
+            if final_status == "failed"
+            else ("success" if final is not None else "failed"),
             "task_id": str(task_id),
             "po_data": result.get("po_data"),
             "approval": {
@@ -701,7 +715,11 @@ class SupplyChainGraphOrchestrator:
             },
         }
         if envelope["status"] == "failed":
-            envelope["error"] = (final.get("error") if isinstance(final, dict) else None) or result.get("error") or "no result"
+            envelope["error"] = (
+                (final.get("error") if isinstance(final, dict) else None)
+                or result.get("error")
+                or "no result"
+            )
         return envelope
 
 
@@ -709,6 +727,9 @@ class SupplyChainGraphOrchestrator:
 # Factory
 # ---------------------------------------------------------------------------
 
-def create_supply_chain_graph_orchestrator(settings: Settings | None = None) -> SupplyChainGraphOrchestrator:
+
+def create_supply_chain_graph_orchestrator(
+    settings: Settings | None = None,
+) -> SupplyChainGraphOrchestrator:
     """Factory function for SupplyChainGraphOrchestrator."""
     return SupplyChainGraphOrchestrator(settings)

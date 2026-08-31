@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import hashlib
 import secrets
+from datetime import UTC
 from uuid import UUID
 
 from sqlalchemy import select
@@ -57,18 +58,16 @@ class ApiKeyRepository:
             return None
 
         # Update last_used_at
-        from datetime import datetime, timezone
+        from datetime import datetime
 
-        api_key.last_used_at = datetime.now(timezone.utc)
+        api_key.last_used_at = datetime.now(UTC)
         await self._session.flush()
 
         return api_key.organization_id
 
     async def get_key(self, organization_id: UUID, key_id: UUID) -> ApiKey | None:
         """Fetch a specific API key by ID (org-scoped)."""
-        stmt = select(ApiKey).where(
-            ApiKey.id == key_id, ApiKey.organization_id == organization_id
-        )
+        stmt = select(ApiKey).where(ApiKey.id == key_id, ApiKey.organization_id == organization_id)
         result = await self._session.execute(stmt)
         return result.scalars().first()
 

@@ -33,8 +33,7 @@ class RootCauseAgent(DomainAgent):
             domain=Domain.OPS,
             version="1",
             description=(
-                "Root-cause analysis over audit events and metrics "
-                "(evidence-first, no guessing)."
+                "Root-cause analysis over audit events and metrics (evidence-first, no guessing)."
             ),
             capabilities=frozenset({"ops.root_cause", "ops.get_metrics"}),
             timeout_ms=30_000,
@@ -54,10 +53,7 @@ class RootCauseAgent(DomainAgent):
                 result={"metrics": get_metrics().snapshot()},
             )
 
-        evidence = [
-            e for e in self._audit_events
-            if str(e.get("task_id")) == str(request.task_id)
-        ]
+        evidence = [e for e in self._audit_events if str(e.get("task_id")) == str(request.task_id)]
         evidence = evidence or self._audit_events
         if not evidence:
             return AgentResponse(

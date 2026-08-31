@@ -181,9 +181,7 @@ class ReportingAgent:
             },
         )
 
-    async def _execute_chain(
-        self, request: TaskRequest, metrics: dict[str, Any]
-    ) -> dict[str, Any]:
+    async def _execute_chain(self, request: TaskRequest, metrics: dict[str, Any]) -> dict[str, Any]:
         """Run all 5 steps sequentially, passing data forward."""
         step_results: dict[str, Any] = {}
 
@@ -204,9 +202,7 @@ class ReportingAgent:
         step_results["recommend"] = recommend.model_dump()
 
         # Step 5: REPORT
-        report = await self._step_report(
-            collect, analyze, root_cause, recommend
-        )
+        report = await self._step_report(collect, analyze, root_cause, recommend)
         step_results["report"] = report.model_dump()
 
         return step_results
@@ -231,7 +227,7 @@ class ReportingAgent:
             "identify trends for each metric. Return structured output.\n\n"
             f"METRICS:\n{json.dumps(collect.metrics, indent=2, default=str)}\n\n"
             "For each metric, determine:\n"
-            "- direction: \"up\", \"down\", or \"flat\"\n"
+            '- direction: "up", "down", or "flat"\n'
             "- magnitude: relative change 0.0-1.0+ (e.g., 0.15 = 15% change)\n"
             "Return ONLY the structured trends array."
         )
@@ -246,9 +242,7 @@ class ReportingAgent:
             temperature=0.0,
         )
 
-    async def _step_root_cause(
-        self, collect: CollectOut, analyze: AnalyzeOut
-    ) -> RootCauseOut:
+    async def _step_root_cause(self, collect: CollectOut, analyze: AnalyzeOut) -> RootCauseOut:
         """LLM: hypothesize root causes for concerning trends."""
         prompt = (
             "You are an operations analyst. Given these metrics and their trends, "
@@ -285,7 +279,7 @@ class ReportingAgent:
             f"TRENDS:\n{json.dumps([t.model_dump() for t in analyze.trends], indent=2)}\n\n"
             f"ROOT CAUSES:\n{json.dumps([c.model_dump() for c in root_cause.causes], indent=2)}\n\n"
             "For each concern, recommend an action with:\n"
-            "- priority: \"high\", \"medium\", or \"low\"\n"
+            '- priority: "high", "medium", or "low"\n'
             "- action: specific, actionable step\n"
             "- rationale: why this addresses the root cause\n"
             "Return ONLY the structured actions array."

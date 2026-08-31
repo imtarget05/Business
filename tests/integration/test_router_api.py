@@ -16,10 +16,10 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.ext.asyncio import create_async_engine
 
-import packages.database.session as session_mod
 import packages.config.settings as settings_mod
+import packages.database.session as session_mod
 from apps.api.main import create_app
-from packages.config.settings import Settings, LLMProviderKind
+from packages.config.settings import LLMProviderKind, Settings
 from packages.database import models
 from packages.database.base import Base
 from packages.database.session import get_session_factory
@@ -31,7 +31,7 @@ def tmp_db() -> str:
     return path.replace("\\", "/")
 
 
-@ pytest.fixture()
+@pytest.fixture()
 def client(tmp_path, monkeypatch):
     """Fresh module state per test: point the global engine at a temp sqlite db."""
     monkeypatch.setattr(session_mod, "_engine", None)
@@ -54,9 +54,13 @@ def client(tmp_path, monkeypatch):
     monkeypatch.setattr(live, "database_url", url)
     monkeypatch.setattr(live, "persistence_enabled", True)
     monkeypatch.setattr(live, "llm_provider", LLMProviderKind.MOCK)
-    monkeypatch.setattr(live, "tenant_api_keys", {
-        "tenant-key-a": "00000000-0000-0000-0000-000000000001",
-    })
+    monkeypatch.setattr(
+        live,
+        "tenant_api_keys",
+        {
+            "tenant-key-a": "00000000-0000-0000-0000-000000000001",
+        },
+    )
     monkeypatch.setattr(live, "rate_limit_per_minute", 1000)
 
     async def _setup() -> None:
@@ -175,9 +179,9 @@ def test_dispatch_uses_container_registry_capabilities(client) -> None:
     assert data["classification"]["action"] == "query"
 
     # Verify the router agent used by the endpoint has the registry's capabilities
-    from packages.core.router import RouterAgent, _build_routing_table
-    from packages.llm.mock import MockLLMProvider
     from packages.config.settings import get_settings
+    from packages.core.router import RouterAgent
+    from packages.llm.mock import MockLLMProvider
 
     settings = get_settings()
     router_agent = RouterAgent(

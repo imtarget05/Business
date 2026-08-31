@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 import uuid
-from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -135,6 +134,7 @@ class TestSendGmailReplyTool:
     async def test_real_send_requires_google_config(self, tool, monkeypatch):
         """Real send requires Google OAuth configuration."""
         from unittest.mock import patch
+
         from packages.config.settings import Settings
 
         # Create mock settings with gmail enabled but no google creds
@@ -241,7 +241,7 @@ class TestSendGmailReplyTool:
                 mock_creds.return_value = MagicMock()
                 with patch("integrations.google_client.gmail_send") as mock_send:
                     mock_send.return_value = {"id": "msg123"}
-                    with patch.object(tool, "_log_to_sheet", new_callable=AsyncMock) as mock_log:
+                    with patch.object(tool, "_log_to_sheet", new_callable=AsyncMock):
                         result = await tool.run(
                             {
                                 "to_email": "allowed@example.com",
@@ -278,7 +278,9 @@ class TestSendGmailReplyTool:
         assert logged_row[3] == "Test body for logging"  # body truncated to 500 chars
 
     @pytest.mark.asyncio
-    async def test_body_truncated_to_500_chars_in_sheet(self, tool, db, org_id, test_customer, monkeypatch):
+    async def test_body_truncated_to_500_chars_in_sheet(
+        self, tool, db, org_id, test_customer, monkeypatch
+    ):
         """Body is truncated to 500 characters in sheet log."""
         monkeypatch.setenv("GMAIL_SEND_ENABLED", "false")
         get_settings.cache_clear()

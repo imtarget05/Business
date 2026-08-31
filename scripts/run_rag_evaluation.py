@@ -130,7 +130,9 @@ def _fts_score(query_tokens: list[str], content: str) -> float:
 
 
 async def _get_fts_results(
-    factory: async_sessionmaker[Any], query: str, k: int = 20,
+    factory: async_sessionmaker[Any],
+    query: str,
+    k: int = 20,
 ) -> list[dict[str, Any]]:
     """Get FTS results with title, content, and score."""
     tokens = _TOKEN_RE.findall(query.lower())
@@ -148,7 +150,10 @@ async def _get_fts_results(
 
 
 async def _get_vector_results(
-    factory: async_sessionmaker[Any], query: str, provider: TfIdfMockEmbedding, k: int = 20,
+    factory: async_sessionmaker[Any],
+    query: str,
+    provider: TfIdfMockEmbedding,
+    k: int = 20,
 ) -> list[dict[str, Any]]:
     """Get vector search results with title, content, and cosine similarity."""
     async with factory() as session:

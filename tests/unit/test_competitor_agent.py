@@ -75,9 +75,7 @@ def _make_agent(llm=None, results=_RAW_RESULTS) -> CompetitorAgent:
     web = _FakeWebTools(results)
     agent = CompetitorAgent(llm=llm, web_tools=web)
     # Use the real placeholder competitors config (DoiThuA / DoiThuB aliases).
-    agent._competitors_path = CompetitorAgent.__init__.__globals__[
-        "COMPETITORS_CONFIG_PATH"
-    ]
+    agent._competitors_path = CompetitorAgent.__init__.__globals__["COMPETITORS_CONFIG_PATH"]
     return agent
 
 

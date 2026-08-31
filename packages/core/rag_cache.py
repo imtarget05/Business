@@ -1,4 +1,3 @@
-﻿# -*- coding: utf-8 -*-
 """Local RAG cache for verified Michelin answers (FTS + vector, PostgreSQL).
 
 Why: AI-Engineer point 2 (RAG + Vector DB, no hallucination) + point 3 (cost -
@@ -17,6 +16,7 @@ TEXT column (SQLite fallback).
 
 Falls back to no-op (returns None) on any DB error so the bot never hard-fails.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -24,7 +24,6 @@ import concurrent.futures
 import hashlib
 import json
 import uuid
-from typing import Optional
 
 from sqlalchemy import text
 
@@ -89,7 +88,7 @@ def _embed_sync(provider, texts: list[str]) -> list[list[float]]:
         return ex.submit(asyncio.run, provider.embed(texts)).result(timeout=30)
 
 
-def _embed_query(question: str) -> Optional[list[float]]:
+def _embed_query(question: str) -> list[float] | None:
     """Return the query embedding, or None if the provider is unavailable."""
     try:
         provider = _get_embedding_provider()
@@ -101,7 +100,7 @@ def _embed_query(question: str) -> Optional[list[float]]:
     return None
 
 
-def rag_get(question: str, *, top_k: int = 1, similarity_threshold: float = 0.80) -> Optional[dict]:
+def rag_get(question: str, *, top_k: int = 1, similarity_threshold: float = 0.80) -> dict | None:
     """Return a cached verified answer, trying FTS first then vector similarity.
 
     Returns the best match or None.
@@ -164,10 +163,7 @@ def rag_get(question: str, *, top_k: int = 1, similarity_threshold: float = 0.80
                         best = None
                 if best is None:
                     rows = conn.execute(
-                        text(
-                            "SELECT answer_text, source_urls, embedding "
-                            "FROM michelin_facts"
-                        )
+                        text("SELECT answer_text, source_urls, embedding FROM michelin_facts")
                     ).fetchall()
                     for r in rows:
                         vec = _parse_vector(r[2])
@@ -195,7 +191,7 @@ def rag_store(question: str, answer: str, urls: list[str]) -> None:
         if eng is None:
             return
         qh = _query_hash(question)
-        emb_str: Optional[str] = None
+        emb_str: str | None = None
         qvec = _embed_query(question)
         if qvec is not None:
             emb_str = _vector_to_pg(qvec)
@@ -234,4 +230,3 @@ def rag_count() -> int:
             return int(conn.execute(text("SELECT count(*) FROM michelin_facts")).scalar() or 0)
     except Exception:
         return 0
-

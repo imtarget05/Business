@@ -47,9 +47,10 @@ async def export(out_path: str, min_turns: int) -> int:
                     elif role == "assistant" and messages:
                         messages.append({"role": "assistant", "content": m.content})
                         if len(messages) >= 2:
-                            f.write(json.dumps(
-                                {"messages": list(messages[-2:])}, ensure_ascii=False
-                            ) + "\n")
+                            f.write(
+                                json.dumps({"messages": list(messages[-2:])}, ensure_ascii=False)
+                                + "\n"
+                            )
                             pairs += 1
     print(f"Exported {pairs} pairs (min_turns={min_turns}) -> {out_path}")
     return pairs

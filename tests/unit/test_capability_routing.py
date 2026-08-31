@@ -41,9 +41,7 @@ class TestScoreCandidates:
         assert score_candidates("anything", None) == []
 
     def test_router_agent_candidates_method(self) -> None:
-        reg = _Registry(
-            [_Descriptor("research", "research", {"research.web_search"})]
-        )
+        reg = _Registry([_Descriptor("research", "research", {"research.web_search"})])
         router = RouterAgent(llm=MockLLMProvider(), registry=reg)
         scored = router.candidates("tìm kiếm nghiên cứu về AI")
         assert scored and scored[0][0] == "research-v1"

@@ -62,10 +62,7 @@ def _extract_key_points(response: AgentResponse) -> list[str]:
 
 
 def _extract_evidence(response: AgentResponse) -> list[dict[str, Any]]:
-    evidence = [
-        {"title": c.title, "uri": c.uri, "snippet": c.snippet}
-        for c in response.citations
-    ]
+    evidence = [{"title": c.title, "uri": c.uri, "snippet": c.snippet} for c in response.citations]
     result = response.result or {}
     for key in ("results", "evidence"):
         value = result.get(key)

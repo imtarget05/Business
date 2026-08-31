@@ -7,6 +7,7 @@ We use PostgreSQL full-text search with the `simple` config so Vietnamese text
 is indexed verbatim (no English stopword stripping). The source URLs are stored
 alongside the answer so every cached reply stays verifiable.
 """
+
 from __future__ import annotations
 
 import sqlalchemy as sa

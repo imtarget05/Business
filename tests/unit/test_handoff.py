@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
-import pytest
 from uuid import uuid4
+
+import pytest
 
 from packages.config.settings import LLMProviderKind, Settings
 from packages.contracts.enums import AgentResponseStatus, Domain
@@ -335,16 +336,24 @@ async def test_per_hop_timeout_budget_not_shared(container):
     Each agent in a handoff chain gets its own agent_hop_timeout_seconds budget.
     The total chain is capped at 2x agent_task_timeout_seconds.
     """
-    from packages.core.registry import InMemoryAgentRegistry
+    import asyncio
+
+    from packages.contracts.enums import AgentResponseStatus, Domain
     from packages.contracts.models import AgentDescriptor, AgentResponse
     from packages.core.orchestrator import Orchestrator
-    from packages.llm.mock import MockLLMProvider
-    from packages.contracts.enums import AgentResponseStatus, Domain
-    import asyncio
+    from packages.core.registry import InMemoryAgentRegistry
 
     class SlowThenFastAgent:
         """First hop is slow (2s), second hop is fast."""
-        def __init__(self, name: str, domain: Domain, capabilities: list[str], delay: float = 0.0, is_handoff_trigger: bool = False):
+
+        def __init__(
+            self,
+            name: str,
+            domain: Domain,
+            capabilities: list[str],
+            delay: float = 0.0,
+            is_handoff_trigger: bool = False,
+        ):
             self.descriptor = AgentDescriptor(
                 name=name,
                 domain=domain,
@@ -407,7 +416,8 @@ async def test_per_hop_timeout_budget_not_shared(container):
     registry.register(fast_agent.descriptor, fast_agent)
 
     # Settings: agent_hop_timeout_seconds=3 (each hop gets 3s), agent_task_timeout_seconds=5 (total chain cap 10s)
-    from packages.config.settings import Settings, LLMProviderKind
+    from packages.config.settings import LLMProviderKind, Settings
+
     settings = Settings(
         llm_provider=LLMProviderKind.MOCK,
         agent_hop_timeout_seconds=3,

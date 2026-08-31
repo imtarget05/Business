@@ -15,12 +15,11 @@ from uuid import UUID, uuid4
 from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel, Field
 
-from packages.config.settings import get_settings
+from apps.api.deps import current_org
 from packages.contracts.enums import Domain
 from packages.contracts.models import TaskContext, TaskRequest
 from packages.core.errors import DatabaseError, ValidationError
 from packages.database.session import get_session
-from apps.api.deps import current_org
 
 router = APIRouter(prefix="/v1/knowledge", tags=["knowledge"])
 

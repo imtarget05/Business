@@ -490,9 +490,7 @@ class TestLookupCustomerTool:
 
         tool.bind_organization(org_id)
 
-        result = await tool.run(
-            {"operation": "list"}
-        )
+        result = await tool.run({"operation": "list"})
         data = json.loads(result)
         assert data["count"] == 1
         assert data["customers"][0]["email"] == "a@a.com"

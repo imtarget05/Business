@@ -1,4 +1,4 @@
-﻿"""Knowledge Agent - hybrid (full-text + vector) Second Brain answer loop.
+"""Knowledge Agent - hybrid (full-text + vector) Second Brain answer loop.
 
 Flow: retrieve top-k chunks via BOTH full-text (tsvector) and vector (cosine)
 retrieval, merge + rerank with :func:`hybrid_retrieve`, then:
@@ -120,9 +120,7 @@ class KnowledgeAgent:
             vec = await self._kb.query_vector(question, top_k=self._top_k)
 
         fts_denom = len(fts) or 1
-        fts_items = [
-            {"content": c, "score": 1.0 - i / fts_denom} for i, c in enumerate(fts)
-        ]
+        fts_items = [{"content": c, "score": 1.0 - i / fts_denom} for i, c in enumerate(fts)]
 
         # Pre-fusion similarity floor. The fused RRF score is rank-based (max
         # ~1/60 ~= 0.016) and never reaches min_similarity, so the floor MUST be

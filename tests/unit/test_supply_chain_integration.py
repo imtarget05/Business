@@ -9,12 +9,11 @@ import pytest
 from agents.supply_chain.po_agent import PurchaseOrderAgent
 from packages.config.settings import Settings
 from packages.contracts.enums import Domain
-from packages.contracts.models import AgentDescriptor
-
 
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
+
 
 @pytest.fixture
 def supply_chain_agent():
@@ -27,6 +26,7 @@ def supply_chain_agent():
 # ---------------------------------------------------------------------------
 # Integration tests: agent registration patterns
 # ---------------------------------------------------------------------------
+
 
 def test_agent_descriptor_matches_domain(supply_chain_agent):
     """Agent descriptor must use Domain.SUPPLY_CHAIN and proper capabilities."""
@@ -43,8 +43,7 @@ def test_agent_descriptor_capability_prefix(supply_chain_agent):
     d = supply_chain_agent.descriptor
     for cap in d.capabilities:
         assert cap.startswith("supply_chain."), (
-            f"Capability {cap!r} must start with 'supply_chain.' "
-            f"to match domain {d.domain.value!r}"
+            f"Capability {cap!r} must start with 'supply_chain.' to match domain {d.domain.value!r}"
         )
 
 
@@ -76,12 +75,13 @@ def test_settings_thresholds_flow_to_agent():
 # Integration tests: inbound processing skeleton
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_inbound_single_email_processing(supply_chain_agent):
     """Inbound handler should process a single email through the agent pipeline."""
     from uuid import uuid4
-    from agents.supply_chain.po_agent import PurchaseOrderAgent
-    from packages.contracts.models import TaskRequest, TaskContext
+
+    from packages.contracts.models import TaskContext, TaskRequest
 
     email_content = (
         "PO NUMBER: PO-2024-001\n"
@@ -130,7 +130,8 @@ async def test_inbound_batch_processing_placeholder():
 async def test_inbound_invalid_email_content(supply_chain_agent):
     """Inbound handler should reject emails without PO data."""
     from uuid import uuid4
-    from packages.contracts.models import TaskRequest, TaskContext
+
+    from packages.contracts.models import TaskContext, TaskRequest
 
     req = TaskRequest(
         task_id=uuid4(),
@@ -149,7 +150,8 @@ async def test_inbound_invalid_email_content(supply_chain_agent):
 async def test_inbound_missing_payload(supply_chain_agent):
     """Inbound handler should reject requests with missing email_content."""
     from uuid import uuid4
-    from packages.contracts.models import TaskRequest, TaskContext
+
+    from packages.contracts.models import TaskContext, TaskRequest
 
     req = TaskRequest(
         task_id=uuid4(),
@@ -168,7 +170,8 @@ async def test_inbound_missing_payload(supply_chain_agent):
 async def test_inbound_empty_payload(supply_chain_agent):
     """Inbound handler should reject empty email content."""
     from uuid import uuid4
-    from packages.contracts.models import TaskRequest, TaskContext
+
+    from packages.contracts.models import TaskContext, TaskRequest
 
     req = TaskRequest(
         task_id=uuid4(),
@@ -187,7 +190,8 @@ async def test_inbound_empty_payload(supply_chain_agent):
 async def test_inbound_unsupported_action_rejected(supply_chain_agent):
     """Inbound handler should reject unsupported actions."""
     from uuid import uuid4
-    from packages.contracts.models import TaskRequest, TaskContext
+
+    from packages.contracts.models import TaskContext, TaskRequest
 
     req = TaskRequest(
         task_id=uuid4(),
@@ -208,11 +212,13 @@ async def test_inbound_unsupported_action_rejected(supply_chain_agent):
 # Integration tests: routing and policy thresholds
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_inbound_auto_approval_threshold(supply_chain_agent):
     """POs below manager_a threshold should be auto-approved."""
     from uuid import uuid4
-    from packages.contracts.models import TaskRequest, TaskContext
+
+    from packages.contracts.models import TaskContext, TaskRequest
 
     email_content = (
         "PO NUMBER: PO-2024-001\n"
@@ -241,7 +247,8 @@ async def test_inbound_auto_approval_threshold(supply_chain_agent):
 async def test_inbound_manager_a_approval_threshold(supply_chain_agent):
     """POs above manager_a threshold should require manager A approval."""
     from uuid import uuid4
-    from packages.contracts.models import TaskRequest, TaskContext
+
+    from packages.contracts.models import TaskContext, TaskRequest
 
     # Threshold manager_a = 100.0, PO total = 150.0 (above threshold)
     email_content = (
@@ -270,7 +277,8 @@ async def test_inbound_manager_a_approval_threshold(supply_chain_agent):
 async def test_inbound_manager_b_approval_threshold(supply_chain_agent):
     """POs above manager_b threshold should require manager B approval."""
     from uuid import uuid4
-    from packages.contracts.models import TaskRequest, TaskContext
+
+    from packages.contracts.models import TaskContext, TaskRequest
 
     email_content = (
         "PO NUMBER: PO-2024-001\n"
@@ -298,13 +306,15 @@ async def test_inbound_manager_b_approval_threshold(supply_chain_agent):
 # Integration tests: LLM fallback behavior
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_inbound_llm_fallback_enabled():
     """When LLM is available but fails, agent must fall back to rule-based processing."""
     from uuid import uuid4
+
     from agents.supply_chain.po_agent import PurchaseOrderAgent
     from packages.config.settings import Settings
-    from packages.contracts.models import TaskRequest, TaskContext
+    from packages.contracts.models import TaskContext, TaskRequest
 
     settings = Settings()
     settings.po_approval_thresholds = {"manager_a": 100.0, "manager_b": 1000.0}
@@ -318,17 +328,17 @@ async def test_inbound_llm_fallback_enabled():
 
     agent = PurchaseOrderAgent(llm=None, settings=settings)
     # Manually attach failing functions to simulate LLM failure
-    agent._llm = type("FakeLLM", (), {
-        "generate_structured": failing_generate_structured,
-        "generate": failing_generate,
-        "provider_name": "fake",
-    })()
+    agent._llm = type(
+        "FakeLLM",
+        (),
+        {
+            "generate_structured": failing_generate_structured,
+            "generate": failing_generate,
+            "provider_name": "fake",
+        },
+    )()
 
-    email_content = (
-        "PO NUMBER: PO-2024-FALLBACK-TEST\n"
-        "VENDOR: Fallback Test Vendor\n"
-        "Total: $150.00"
-    )
+    email_content = "PO NUMBER: PO-2024-FALLBACK-TEST\nVENDOR: Fallback Test Vendor\nTotal: $150.00"
 
     req = TaskRequest(
         task_id=uuid4(),

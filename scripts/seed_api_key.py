@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env python
+#!/usr/bin/env python
 """Seed API keys for all organizations (Task 5.3).
 
 Usage:
@@ -54,9 +54,7 @@ async def main() -> int:
     parser.add_argument(
         "--org", type=str, help="Organization ID to create key for (default: all orgs)"
     )
-    parser.add_argument(
-        "--name", type=str, default="default", help="Key name (default: 'default')"
-    )
+    parser.add_argument("--name", type=str, default="default", help="Key name (default: 'default')")
     parser.add_argument(
         "--list", action="store_true", help="List existing keys instead of creating"
     )

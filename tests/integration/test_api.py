@@ -14,10 +14,10 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.ext.asyncio import create_async_engine
 
-import packages.database.session as session_mod
 import packages.config.settings as settings_mod
+import packages.database.session as session_mod
 from apps.api.main import create_app
-from packages.config.settings import Settings, LLMProviderKind
+from packages.config.settings import LLMProviderKind, Settings
 from packages.database import models
 from packages.database.base import Base
 from packages.database.session import get_session_factory
@@ -53,14 +53,19 @@ def client(tmp_path, monkeypatch):
     monkeypatch.setattr(live, "database_url", url)
     monkeypatch.setattr(live, "persistence_enabled", True)
     monkeypatch.setattr(live, "llm_provider", LLMProviderKind.MOCK)
-    monkeypatch.setattr(live, "tenant_api_keys", {
-        "tenant-key-a": "00000000-0000-0000-0000-000000000001",
-        "tenant-key-b": "00000000-0000-0000-0000-000000000002",
-    })
+    monkeypatch.setattr(
+        live,
+        "tenant_api_keys",
+        {
+            "tenant-key-a": "00000000-0000-0000-0000-000000000001",
+            "tenant-key-b": "00000000-0000-0000-0000-000000000002",
+        },
+    )
     monkeypatch.setattr(live, "rate_limit_per_minute", 1000)
 
     # Force container rebuild with patched settings (singleton cache)
     from packages.core.bootstrap import set_container
+
     set_container(None)
 
     async def _setup() -> None:
@@ -137,7 +142,9 @@ def test_list_agents_endpoint(client) -> None:
 
 
 def test_validation_error_envelope(client) -> None:
-    resp = client.post("/v1/tasks", json={"action": "query"}, headers={"X-API-Key": "tenant-key-a"})  # domain missing
+    resp = client.post(
+        "/v1/tasks", json={"action": "query"}, headers={"X-API-Key": "tenant-key-a"}
+    )  # domain missing
     assert resp.status_code == 422
     err = resp.json()["error"]
     assert err["code"] == "VALIDATION_ERROR"
@@ -145,7 +152,9 @@ def test_validation_error_envelope(client) -> None:
 
 def test_empty_payload_rejected_with_task_id(client) -> None:
     resp = client.post(
-        "/v1/tasks", json={"domain": "support", "action": "triage", "payload": {}}, headers={"X-API-Key": "tenant-key-a"}
+        "/v1/tasks",
+        json={"domain": "support", "action": "triage", "payload": {}},
+        headers={"X-API-Key": "tenant-key-a"},
     )
     assert resp.status_code == 422
     assert resp.json()["error"]["task_id"]

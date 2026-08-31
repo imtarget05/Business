@@ -82,11 +82,7 @@ async def test_multi_step_loop_two_tool_calls() -> None:
     registry = ToolRegistry(echo, add)
     llm = MockLLMProvider(
         [
-            {
-                "tool_calls": [
-                    {"id": "c1", "name": "add", "arguments": {"a": 2, "b": 3}}
-                ]
-            },
+            {"tool_calls": [{"id": "c1", "name": "add", "arguments": {"a": 2, "b": 3}}]},
             {
                 "tool_calls": [
                     {

@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Unit tests for supply_chain approval workflow (Phase SC).
 
 Validates the ApprovalWorkflow state machine, timeout handling,
@@ -7,7 +6,6 @@ and stub notification behavior.
 
 from __future__ import annotations
 
-import asyncio
 import time
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
@@ -21,10 +19,10 @@ from agents.supply_chain.approval import (
     needs_approval,
 )
 
-
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
+
 
 @pytest.fixture
 def po_data_auto_approved() -> dict:
@@ -63,6 +61,7 @@ def po_data_needs_approval_b() -> dict:
 # Needs approval check
 # ---------------------------------------------------------------------------
 
+
 def test_needs_approval_auto_approved(po_data_auto_approved):
     """auto_approved route does not need human approval."""
     assert needs_approval(po_data_auto_approved) is False
@@ -86,6 +85,7 @@ def test_needs_approval_missing_route():
 # ---------------------------------------------------------------------------
 # ApprovalWorkflow initialization
 # ---------------------------------------------------------------------------
+
 
 def test_approval_workflow_initial_state(po_data_needs_approval):
     """Workflow starts in PENDING state."""
@@ -128,6 +128,7 @@ def test_approval_workflow_default_timeout(po_data_needs_approval):
 # handle() — auto-approved POs skip workflow
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_handle_auto_approved_skips_workflow(po_data_auto_approved):
     """Auto-approved POs return success without human approval."""
@@ -146,6 +147,7 @@ async def test_handle_auto_approved_skips_workflow(po_data_auto_approved):
 # ---------------------------------------------------------------------------
 # handle() — POs needing approval transition to pending
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_handle_approval_pending(po_data_needs_approval):
@@ -175,6 +177,7 @@ async def test_handle_approval_pending(po_data_needs_approval):
 # handle() — notification stub raises NotImplementedError
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_handle_notification_stub_not_implemented(po_data_needs_approval):
     """Notification stub raises NotImplementedError when called."""
@@ -193,6 +196,7 @@ async def test_handle_notification_stub_not_implemented(po_data_needs_approval):
 # ---------------------------------------------------------------------------
 # resolve() — human decision processing
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_resolve_approved(po_data_needs_approval):
@@ -234,6 +238,7 @@ async def test_resolve_rejected(po_data_needs_approval):
 # resolve() — invalid states
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_resolve_invalid_state(po_data_needs_approval):
     """Cannot resolve when not in PENDING_HUMAN_APPROVAL state."""
@@ -268,6 +273,7 @@ async def test_resolve_already_resolved(po_data_needs_approval):
 # resolve() — missing decision
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_resolve_missing_decision(po_data_needs_approval):
     """Resolve without decision returns error."""
@@ -287,6 +293,7 @@ async def test_resolve_missing_decision(po_data_needs_approval):
 # ---------------------------------------------------------------------------
 # resolve() — invalid decision value
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_resolve_invalid_decision(po_data_needs_approval):
@@ -308,6 +315,7 @@ async def test_resolve_invalid_decision(po_data_needs_approval):
 # ---------------------------------------------------------------------------
 # resolve() — timeout handling
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_resolve_timeout(po_data_needs_approval):
@@ -333,6 +341,7 @@ async def test_resolve_timeout(po_data_needs_approval):
 # ---------------------------------------------------------------------------
 # get_status() — status monitoring
 # ---------------------------------------------------------------------------
+
 
 def test_get_status_pending(po_data_needs_approval):
     """get_status returns current state info."""
@@ -370,6 +379,7 @@ def test_get_status_after_approval(po_data_needs_approval):
 # create_approval_workflow convenience function
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_create_approval_workflow():
     """create_approval_workflow returns an ApprovalWorkflow instance."""
@@ -388,6 +398,7 @@ async def test_create_approval_workflow():
 # ---------------------------------------------------------------------------
 # Integration-style: workflow with PO Agent output
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_workflow_with_po_agent_output():

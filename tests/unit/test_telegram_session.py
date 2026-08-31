@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Unit tests for the Telegram SessionStore (Feature 5 — UX).
 
 Covers get / set / update / clear, history trimming and lazy TTL expiry with an
@@ -47,6 +46,7 @@ def store(clock: FakeClock) -> SessionStore:
 # ---------------------------------------------------------------------------
 # get / set / update / clear
 # ---------------------------------------------------------------------------
+
 
 def test_default_ttl_is_30_minutes(store: SessionStore):
     assert store.ttl_seconds == DEFAULT_TTL_SECONDS == 1800
@@ -130,6 +130,7 @@ def test_clear_all(store: SessionStore):
 # history
 # ---------------------------------------------------------------------------
 
+
 def test_remember_keeps_order_and_trims(store: SessionStore):
     session = store.get_or_create(3)
     for i in range(MAX_HISTORY + 5):
@@ -151,6 +152,7 @@ def test_remember_respects_custom_limit():
 # ---------------------------------------------------------------------------
 # lazy TTL expiry
 # ---------------------------------------------------------------------------
+
 
 def test_session_expires_after_ttl(store: SessionStore, clock: FakeClock):
     store.update(1, last_query="tìm quán ăn")
@@ -179,9 +181,7 @@ def test_activity_extends_the_ttl(store: SessionStore, clock: FakeClock):
     assert session.last_query == "lượt 2"
 
 
-def test_get_or_create_after_expiry_returns_fresh_session(
-    store: SessionStore, clock: FakeClock
-):
+def test_get_or_create_after_expiry_returns_fresh_session(store: SessionStore, clock: FakeClock):
     store.update(1, last_query="cũ", page=4)
     clock.advance(store.ttl_seconds + 1)
     session = store.get_or_create(1)

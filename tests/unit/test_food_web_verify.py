@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Unit tests: Michelin / food questions must be web-verified, never hallucinated.
 
 Mirrors the JobSearch V5 principle: verify with a real tool before answering;
@@ -9,12 +8,15 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-import pytest
-
 ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(ROOT))
 
-from agents.monitoring.telegram_bot import _is_food_lookup, _food_query, _real_web_search, _summarize_food
+from agents.monitoring.telegram_bot import (
+    _food_query,
+    _is_food_lookup,
+    _real_web_search,
+    _summarize_food,
+)
 
 
 class _FakeResult:
@@ -32,8 +34,6 @@ class _FakeHandler:
 class _FakeContainer:
     def __init__(self, results):
         self._results = results
-    def registry(self):  # attribute access used in code
-        return self
     @property
     def registry(self):
         return self
@@ -82,6 +82,7 @@ def test_real_web_search_returns_verifiable_links(monkeypatch):
 def test_feedback_callback_keeps_original_message(monkeypatch):
     """Clicking 👍/👎 must NOT overwrite the source message text."""
     import asyncio
+
     import agents.monitoring.telegram_bot as tb
     bot = tb.MonitoringBot(tb.TelegramConfig(bot_token="STUB"))
 
@@ -131,6 +132,7 @@ def test_feedback_callback_keeps_original_message(monkeypatch):
 def test_summarize_food_rejects_invented_counts(monkeypatch, tmp_path):
     """LLM must not invent aggregate counts (7 one-star, 58 Bib...) not in snippet."""
     import asyncio
+
     import packages.core.llm_cost as lc
     monkeypatch.setattr(lc, "_CACHE_DIR", tmp_path / "cache")
     captured = {}

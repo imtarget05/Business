@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Per-user conversation sessions for the Telegram bot (Feature 5 — UX).
 
 Keyed by `telegram_user_id` so the context follows the *person* (a user may talk

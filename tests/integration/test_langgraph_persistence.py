@@ -8,11 +8,11 @@ required.
 
 from __future__ import annotations
 
-import pytest
 from collections.abc import Iterator
 from contextlib import contextmanager
 from uuid import uuid4
 
+import pytest
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.checkpoint.memory import InMemorySaver
 
@@ -25,8 +25,8 @@ from packages.contracts.models import (
     TaskRequest,
 )
 from packages.core.checkpoint import (
-    PostgresCheckpointManager,
     _POSTGRES_AVAILABLE,
+    PostgresCheckpointManager,
     close_checkpointers,
     get_checkpointer,
 )
@@ -96,9 +96,7 @@ def test_postgres_checkpointer_selected_when_url_set(monkeypatch) -> None:
         def from_conn_string(cls, url: str) -> Iterator[FakeSaver]:
             yield FakeSaver()
 
-    monkeypatch.setattr(
-        "packages.core.checkpoint.PostgresSaver", FakePostgresSaver
-    )
+    monkeypatch.setattr("packages.core.checkpoint.PostgresSaver", FakePostgresSaver)
 
     settings = Settings(
         langgraph_checkpoint_url="postgresql://user:pass@localhost:5432/checkpoints"
@@ -134,9 +132,7 @@ def test_postgres_manager_uses_conn_string(monkeypatch) -> None:
             finally:
                 captured["exited"] = True
 
-    monkeypatch.setattr(
-        "packages.core.checkpoint.PostgresSaver", FakePostgresSaver
-    )
+    monkeypatch.setattr("packages.core.checkpoint.PostgresSaver", FakePostgresSaver)
     manager = PostgresCheckpointManager("postgresql://x/y")
     manager.setup()
     assert captured["url"] == "postgresql://x/y"
@@ -179,9 +175,7 @@ async def test_inmemory_checkpointer_persists_state_across_invocations() -> None
     # Read the persisted state from a *second* orchestrator wired to the SAME
     # checkpointer — proving the state lives in the checkpointer, not the graph.
     orchestrator2 = _make_orchestrator(cp)
-    snap = await orchestrator2._graph.aget_state(
-        {"configurable": {"thread_id": str(task_id)}}
-    )
+    snap = await orchestrator2._graph.aget_state({"configurable": {"thread_id": str(task_id)}})
     assert snap is not None
     assert snap.values is not None
     assert snap.values.get("response") is not None

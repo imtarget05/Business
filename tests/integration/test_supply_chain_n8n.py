@@ -1,20 +1,16 @@
-# -*- coding: utf-8 -*-
 """Phase D tests: n8n client, circuit breaker, n8n node in supply chain graph."""
 
 from __future__ import annotations
 
-import json
 from uuid import uuid4
-
-import pytest
 
 from agents.supply_chain.circuit_breaker import CircuitBreaker, CircuitState
 from agents.supply_chain.n8n_client import N8nClient, N8nResult
 
-
 # ---------------------------------------------------------------------------
 # n8n client
 # ---------------------------------------------------------------------------
+
 
 async def test_n8n_disabled_without_url() -> None:
     client = N8nClient(enabled=False)
@@ -91,6 +87,7 @@ async def test_n8n_export_handles_failure_gracefully() -> None:
 # Circuit breaker
 # ---------------------------------------------------------------------------
 
+
 async def test_circuit_breaker_opens_after_threshold() -> None:
     from agents.supply_chain.circuit_breaker import CircuitBreakerConfig
 
@@ -129,6 +126,7 @@ async def test_circuit_breaker_recovers_after_timeout() -> None:
 # ---------------------------------------------------------------------------
 # n8n node in supply chain graph e2e
 # ---------------------------------------------------------------------------
+
 
 async def test_supply_chain_graph_includes_n8n_result() -> None:
     """Run the full supply chain graph; envelope must carry n8n_result key.

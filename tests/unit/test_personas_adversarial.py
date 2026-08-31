@@ -7,11 +7,9 @@ substring collisions from silently stealing traffic.
 
 from __future__ import annotations
 
-import pytest
-
 from packages.core.personas import (
-    PERSONAS,
     PERSONA_KEYWORDS,
+    PERSONAS,
     available_personas,
     select_persona,
 )
@@ -69,9 +67,7 @@ def test_no_overlap_between_keyword_sets():
     for persona, kws in PERSONA_KEYWORDS.items():
         for kw in kws:
             if kw in seen:
-                raise AssertionError(
-                    f"keyword {kw!r} shared by {seen[kw]!r} and {persona!r}"
-                )
+                raise AssertionError(f"keyword {kw!r} shared by {seen[kw]!r} and {persona!r}")
             seen[kw] = persona
 
 

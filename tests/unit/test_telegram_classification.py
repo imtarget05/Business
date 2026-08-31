@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Adversarial / extremely-hard test cases for Telegram intent classification.
 
 These tests probe the message-classification logic in MonitoringBot._message_handler:
@@ -13,7 +12,6 @@ from __future__ import annotations
 
 import sys
 from dataclasses import dataclass, field
-from typing import Any
 
 import pytest
 
@@ -22,17 +20,19 @@ sys.path.insert(0, ".")
 
 from agents.monitoring.telegram_bot import MonitoringBot, TelegramConfig
 
-
 # ---------------------------------------------------------------------------
 # Extended mock surface (mirrors what _message_handler touches)
 # ---------------------------------------------------------------------------
+
 
 @dataclass
 class MockMessage:
     text: str = ""
     chat_id: int = 123456
 
-    async def reply_text(self, text: str, parse_mode: str = "Markdown", reply_markup=None) -> "MockMessage":
+    async def reply_text(
+        self, text: str, parse_mode: str = "Markdown", reply_markup=None
+    ) -> MockMessage:
         self.text = text
         self.parse_mode = parse_mode
         return self
@@ -49,7 +49,7 @@ class MockUpdate:
     effective_chat: MockChat | None = None
 
     @classmethod
-    def from_message(cls, text: str, chat_id: int = 123456) -> "MockUpdate":
+    def from_message(cls, text: str, chat_id: int = 123456) -> MockUpdate:
         return cls(
             message=MockMessage(text=text, chat_id=chat_id),
             effective_chat=MockChat(id=chat_id),
@@ -59,10 +59,13 @@ class MockUpdate:
 @dataclass
 class MockBot:
     """Captures send_message / send_chat_action; reply_text goes to the update."""
+
     sent: list = field(default_factory=list)
     chat_actions: list = field(default_factory=list)
 
-    async def send_message(self, chat_id: int, text: str, parse_mode: str = "Markdown", reply_markup=None) -> None:
+    async def send_message(
+        self, chat_id: int, text: str, parse_mode: str = "Markdown", reply_markup=None
+    ) -> None:
         self.sent.append(text)
 
     async def send_chat_action(self, chat_id: int, action: str) -> None:
@@ -90,8 +93,8 @@ def ctx() -> MockContext:
 # the pure classification + fast-path behavior (no network, no LLM).
 @pytest.fixture(autouse=True)
 def _isolate_external(monkeypatch):
-    import packages.core.personas as personas
     import packages.core.bootstrap as bootstrap
+    import packages.core.personas as personas
 
     async def _noop_advisory(self, update, context):
         await update.message.reply_text("[advisory-routed]")
@@ -102,6 +105,7 @@ def _isolate_external(monkeypatch):
     monkeypatch.setattr(personas, "select_persona", lambda text: None)
     monkeypatch.setattr(MonitoringBot, "_advisory_command", _noop_advisory)
     monkeypatch.setattr(MonitoringBot, "_sales_command", _noop_sales)
+
     # Avoid real container/orchestrator/LLM in the generic fallback path.
     # _message_handler does `from packages.core.bootstrap import get_container`.
     async def _boom(*a, **k):
@@ -122,6 +126,7 @@ async def _run(bot, ctx, text, chat_id=123456):
 # TEST CASES — cực khó
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_question_mark_is_not_help_menu(bot, ctx):
     """'? help intent' must NOT hijack a real question containing '?'.
@@ -132,8 +137,8 @@ async def test_question_mark_is_not_help_menu(bot, ctx):
     update = await _run(bot, ctx, "Nghề nào đang bị layoff nhiều nhất 2026?")
     txt = update.message.text or ""
     # Must NOT be hijacked into the help menu or a jobsearch confirm.
-    assert "chưa rõ ý" not in txt          # not the friendly-unknown menu
-    assert "Xác nhận tìm" not in txt        # not a jobsearch flow
+    assert "chưa rõ ý" not in txt  # not the friendly-unknown menu
+    assert "Xác nhận tìm" not in txt  # not a jobsearch flow
     assert "[advisory-routed]" not in txt  # not force-routed to advisory
     # It must reach a real answer path (here the orchestrator/LLM fallback).
     assert len(txt) > 0
@@ -185,8 +190,7 @@ async def test_greeting_with_email_triggers(bot, ctx, monkeypatch):
         return {"mode": "DRY_RUN", "id": "x"}
 
     monkeypatch.setattr(gc, "gmail_send", _fake_send, raising=True)
-    update = await _run(bot, ctx, "gửi lời chào tới friend@company.com")
-    txt = update.message.text or ""
+    await _run(bot, ctx, "gửi lời chào tới friend@company.com")
     assert captured.get("to") == "friend@company.com"
 
 
@@ -280,6 +284,7 @@ async def test_jobsearch_sua_clears_pending(bot, ctx):
 def test_tg_escape_md_escapes_special_chars():
     """External content with markdown must be escaped so Telegram never 500s."""
     from agents.monitoring.telegram_bot import _tg_escape_md
+
     # link-style markdown from LLM must be neutralized (was causing parse crash)
     out = _tg_escape_md("See [LangGraph](https://langchain.com) for *details*")
     assert "\\[LangGraph\\]" in out

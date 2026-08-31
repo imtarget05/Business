@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Configuration loader for the monitoring agent.
 
 Reads config.yaml (if present) and merges with environment variables.
@@ -85,7 +84,7 @@ def load_monitoring_config(path: str | None = None) -> MonitoringConfig:
     resolved = path or (DEFAULT_CONFIG_PATH if os.path.exists(DEFAULT_CONFIG_PATH) else None)
     if resolved and os.path.exists(resolved):
         try:
-            with open(resolved, "r", encoding="utf-8") as f:
+            with open(resolved, encoding="utf-8") as f:
                 data = yaml.safe_load(f) or {}
             mon = data.get("monitoring", {})
             cfg.enabled = mon.get("enabled", cfg.enabled)

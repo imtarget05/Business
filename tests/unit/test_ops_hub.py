@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Task 2 — Business Ops Hub unit tests.
 
 Covers the OpsHubAgent digest aggregation with fully mocked Gmail / Calendar /
@@ -8,9 +7,7 @@ count correctness, and alert derivation rules.
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
-
-import pytest
+from datetime import UTC, datetime, timedelta
 
 from agents.ops_hub.agent import OpsHubAgent
 from agents.ops_hub.tasks_provider import (
@@ -20,12 +17,12 @@ from agents.ops_hub.tasks_provider import (
     build_task_provider,
 )
 from packages.contracts.enums import AgentResponseStatus, Domain
-from packages.contracts.models import AgentDescriptor, AgentResponse, TaskRequest
+from packages.contracts.models import AgentResponse, TaskRequest
 from packages.llm.mock import MockLLMProvider
 
 
 def _iso(offset_hours: float) -> str:
-    return (datetime.now(timezone.utc) + timedelta(hours=offset_hours)).isoformat()
+    return (datetime.now(UTC) + timedelta(hours=offset_hours)).isoformat()
 
 
 def _mock_gmail(unread: list[dict]) -> object:
@@ -81,12 +78,8 @@ async def test_build_digest_aggregates_all_sources() -> None:
             {"id": "m2", "subject": "Newsletter", "from": "noreply@y.com", "read": True},
         ]
     )
-    calendar = _mock_calendar(
-        [{"id": "e1", "summary": "Standup", "start": {"dateTime": _iso(2)}}]
-    )
-    tasks = StaticTaskProvider(
-        [Task(id="t1", title="Renew domain", priority="high")]
-    )
+    calendar = _mock_calendar([{"id": "e1", "summary": "Standup", "start": {"dateTime": _iso(2)}}])
+    tasks = StaticTaskProvider([Task(id="t1", title="Renew domain", priority="high")])
     agent = OpsHubAgent(
         gmail_source=gmail,
         calendar_source=calendar,
@@ -154,7 +147,7 @@ async def test_far_event_not_alerted() -> None:
 
 
 async def test_due_task_within_window_is_alert() -> None:
-    due = datetime.now(timezone.utc) + timedelta(hours=5)
+    due = datetime.now(UTC) + timedelta(hours=5)
     tasks = StaticTaskProvider([Task(id="t1", title="Pay tax", due=due)])
     agent = OpsHubAgent(
         gmail_source=_mock_gmail([]),
@@ -230,7 +223,11 @@ async def test_build_digest_with_shipped_config_tasks_naive_due() -> None:
     # Mirror config.yaml ops.tasks exactly: one naive-ISO 'due', one no-due high.
     provider = InMemoryTaskProvider(
         tasks=[
-            {"title": "Gửi báo cáo tuần cho khách hàng", "due": "2026-08-30T17:00:00", "priority": "normal"},
+            {
+                "title": "Gửi báo cáo tuần cho khách hàng",
+                "due": "2026-08-30T17:00:00",
+                "priority": "normal",
+            },
             {"title": "Duyệt báo giá nhà cung cấp A", "priority": "high"},
         ]
     )
@@ -267,18 +264,19 @@ def test_scheduler_ops_hub_job_uses_vn_timezone() -> None:
     # Build the trigger exactly as the scheduler does and confirm its next fire
     # time lands at 01:00 UTC (08:00 VN) rather than 00:00 UTC (08:00 Seoul).
     from zoneinfo import ZoneInfo
+
     from apscheduler.triggers.cron import CronTrigger
 
     trigger = CronTrigger(hour=8, minute=0, timezone=ZoneInfo("Asia/Ho_Chi_Minh"))
     # Pick a reference instant and compute the next run.
-    ref = datetime(2026, 9, 1, 1, 30, tzinfo=timezone.utc)  # already past 08:00 VN that day
+    ref = datetime(2026, 9, 1, 1, 30, tzinfo=UTC)  # already past 08:00 VN that day
     nxt = trigger.get_next_fire_time(None, ref)
     assert nxt is not None
     # Fire time is expressed in the trigger's own tz (Asia/Ho_Chi_Minh, UTC+7);
     # verify the wall-clock is 08:00 local and the UTC instant is 01:00 (not 00:00 Seoul).
     assert nxt.utcoffset() == timedelta(seconds=25200)
     assert nxt.hour == 8 and nxt.minute == 0
-    nxt_utc = nxt.astimezone(timezone.utc)
+    nxt_utc = nxt.astimezone(UTC)
     # ~23h30m after ref (ref is 01:30 UTC, next fire at 01:00 UTC next day).
     assert 0 < (nxt_utc - ref).total_seconds() < 24 * 3600
     assert nxt_utc.hour == 1 and nxt_utc.minute == 0

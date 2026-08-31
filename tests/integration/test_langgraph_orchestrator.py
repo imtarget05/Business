@@ -7,18 +7,14 @@ by the existing unit tests which continue to pass unchanged.
 
 from __future__ import annotations
 
-import os
-import tempfile
-import pytest
-import sqlite3
 from typing import Any
 from uuid import uuid4
 
-from langgraph.checkpoint.memory import InMemorySaver
+import pytest
 
 from packages.config.settings import LLMProviderKind, Settings
 from packages.contracts.enums import AgentResponseStatus, Domain, TaskStatus
-from packages.contracts.models import TaskContext, TaskRequest, AgentResponse, ErrorDetail
+from packages.contracts.models import AgentResponse, TaskContext, TaskRequest
 from packages.core.bootstrap import build_container
 from packages.core.errors import (
     AuthorizationError,
@@ -26,7 +22,6 @@ from packages.core.errors import (
     HandoffDepthExceededError,
 )
 from packages.core.persistence import NoopTaskRecorder
-
 
 # ---------------------------------------------------------------------------
 # SpyRecorder — records (task_id, status) transitions for assertion
@@ -103,9 +98,7 @@ def langgraph_container() -> Any:
 
 async def test_happy_path_support_triage_completes(langgraph_container: Any) -> None:
     """LangGraph path: support.triage → SUCCESS, recorded transitions match classic."""
-    req = TaskRequest(
-        domain="support", action="triage", payload={"subject": "x", "body": "y"}
-    )
+    req = TaskRequest(domain="support", action="triage", payload={"subject": "x", "body": "y"})
     resp = await langgraph_container.orchestrator.execute(req)
     assert resp.status == AgentResponseStatus.SUCCESS
     assert resp.agent == "support-v1"
@@ -118,9 +111,7 @@ async def test_happy_path_support_triage_completes(langgraph_container: Any) -> 
 
 async def test_happy_path_knowledge_query_completes(langgraph_container: Any) -> None:
     """LangGraph path: knowledge.query → SUCCESS/REJECTED."""
-    req = TaskRequest(
-        domain="knowledge", action="query", payload={"question": "hi?"}
-    )
+    req = TaskRequest(domain="knowledge", action="query", payload={"question": "hi?"})
     resp = await langgraph_container.orchestrator.execute(req)
     assert resp.status in (AgentResponseStatus.SUCCESS, AgentResponseStatus.REJECTED)
     assert resp.agent == "knowledge-v1"
@@ -133,9 +124,9 @@ async def test_happy_path_knowledge_query_completes(langgraph_container: Any) ->
 
 async def test_retry_once_on_transient_error(langgraph_container: Any) -> None:
     """LangGraph path: transient ToolExecutionError → 2 attempts → success on 2nd."""
-    from packages.core.registry import InMemoryAgentRegistry
     from packages.contracts.models import AgentDescriptor
     from packages.core.graph import GraphOrchestrator
+    from packages.core.registry import InMemoryAgentRegistry
     from packages.llm.mock import MockLLMProvider
 
     agent = FailingThenSucceedingAgent()
@@ -182,9 +173,9 @@ async def test_dead_letter_after_two_transient_failures(
     langgraph_container: Any,
 ) -> None:
     """LangGraph path: ToolExecutionError on both attempts → DEAD_LETTERED."""
-    from packages.core.registry import InMemoryAgentRegistry
     from packages.contracts.models import AgentDescriptor
     from packages.core.graph import GraphOrchestrator
+    from packages.core.registry import InMemoryAgentRegistry
     from packages.llm.mock import MockLLMProvider
 
     agent = AlwaysFailingAgent()
@@ -235,9 +226,7 @@ async def test_handoff_depth_exceeded(langgraph_container: Any) -> None:
             "needs_knowledge": True,
             "question": "q",
         },
-        context=TaskContext(
-            organization_id=uuid4(), max_handoff_depth=0
-        ),
+        context=TaskContext(organization_id=uuid4(), max_handoff_depth=0),
     )
     with pytest.raises(HandoffDepthExceededError):
         await langgraph_container.orchestrator.execute(req)
@@ -283,9 +272,7 @@ async def test_policy_rejection(langgraph_container: Any) -> None:
             return PolicyDecision(allowed=False, reason="not allowed")
 
     recorder = SpyRecorder()
-    req = TaskRequest(
-        domain="support", action="triage", payload={"subject": "x", "body": "y"}
-    )
+    req = TaskRequest(domain="support", action="triage", payload={"subject": "x", "body": "y"})
 
     with pytest.raises(AuthorizationError):
         await langgraph_container.orchestrator.execute(
@@ -330,9 +317,7 @@ async def test_checkpoint_written_per_node(langgraph_container: Any) -> None:
     InMemorySaver persists checkpoints in-process; we verify the path runs
     end-to-end by confirming a successful response.
     """
-    req = TaskRequest(
-        domain="support", action="triage", payload={"subject": "x", "body": "y"}
-    )
+    req = TaskRequest(domain="support", action="triage", payload={"subject": "x", "body": "y"})
     resp = await langgraph_container.orchestrator.execute(req)
     assert resp.status == AgentResponseStatus.SUCCESS
     assert resp.agent == "support-v1"

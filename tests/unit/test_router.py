@@ -28,6 +28,7 @@ from packages.llm.mock import MockLLMProvider
 @dataclass
 class _MockDescriptor:
     """Minimal mock descriptor for testing routing table construction."""
+
     capabilities: frozenset[str]
     domain: Domain
     status: AgentStatus = AgentStatus.ACTIVE
@@ -49,11 +50,7 @@ def llm() -> MockLLMProvider:
 
 
 def _script(llm: MockLLMProvider, domain: str, action: str, confidence: float) -> None:
-    llm.script(
-        json.dumps(
-            {"domain": domain, "action": action, "confidence": confidence}
-        )
-    )
+    llm.script(json.dumps({"domain": domain, "action": action, "confidence": confidence}))
 
 
 async def test_routes_refund_email_to_support_triage(llm) -> None:

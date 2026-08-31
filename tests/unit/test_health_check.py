@@ -1,10 +1,10 @@
-# -*- coding: utf-8 -*-
 """Tests: health check API URL resolution + api check behaviour."""
+
 from __future__ import annotations
 
 import asyncio
-from pathlib import Path
 import sys
+from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))

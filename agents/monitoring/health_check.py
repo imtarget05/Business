@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Health check module for monitoring agent.
 
 Checks system components:
@@ -14,14 +13,13 @@ import asyncio
 import logging
 import os
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 import httpx
 
 from packages.core.bootstrap import get_container
 from packages.database.session import check_database
-from packages.config.settings import get_settings
 
 logger = logging.getLogger(__name__)
 
@@ -29,6 +27,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class ComponentCheck:
     """Result of a single component health check."""
+
     name: str
     status: str = "ok"  # ok, warning, error, unavailable
     message: str = ""
@@ -39,6 +38,7 @@ class ComponentCheck:
 @dataclass
 class HealthCheckResult:
     """Aggregated health check result."""
+
     timestamp: str = ""
     overall: str = "ok"  # ok, degraded, down
     checks: list[ComponentCheck] = field(default_factory=list)
@@ -63,7 +63,7 @@ class HealthCheckResult:
 
     def to_markdown(self) -> str:
         lines = [
-            f"# 🏥 Health Check Report",
+            "# 🏥 Health Check Report",
             "",
             f"**Overall**: {self.overall.upper()}",
             f"*Generated: {self.timestamp}*",
@@ -86,14 +86,14 @@ class HealthCheckResult:
 async def check_api(base_url: str = "http://localhost:8000") -> ComponentCheck:
     """Check API service health endpoint."""
     check = ComponentCheck(name="api", status="unavailable")
-    start = datetime.now(timezone.utc)
-    
+    start = datetime.now(UTC)
+
     try:
         async with httpx.AsyncClient(timeout=5.0) as client:
             resp = await client.get(f"{base_url}/health")
-            elapsed = (datetime.now(timezone.utc) - start).total_seconds() * 1000
+            elapsed = (datetime.now(UTC) - start).total_seconds() * 1000
             check.response_time_ms = elapsed
-            
+
             if resp.status_code == 200:
                 data = resp.json()
                 check.status = "ok"
@@ -111,14 +111,14 @@ async def check_api(base_url: str = "http://localhost:8000") -> ComponentCheck:
     except Exception as e:
         check.status = "error"
         check.message = f"API check failed: {str(e)}"
-    
+
     return check
 
 
 async def check_database_health() -> ComponentCheck:
     """Check database connectivity using existing check_database function."""
     check = ComponentCheck(name="database", status="unavailable")
-    
+
     try:
         db_ok = await check_database()
         if db_ok:
@@ -130,20 +130,20 @@ async def check_database_health() -> ComponentCheck:
     except Exception as e:
         check.status = "error"
         check.message = f"Database check error: {str(e)}"
-    
+
     return check
 
 
 async def check_agent_registry() -> ComponentCheck:
     """Check agent registry health from container."""
     check = ComponentCheck(name="agent_registry", status="unavailable")
-    
+
     try:
         container = get_container()
         agents = container.registry.list_agents()
         agent_count = len(agents)
         llm_provider = container.settings.llm_provider.value
-        
+
         check.status = "ok"
         check.message = f"{agent_count} agents registered"
         check.details = {
@@ -151,14 +151,14 @@ async def check_agent_registry() -> ComponentCheck:
             "llm_provider": llm_provider,
             "agents": ", ".join(a.qualified_name for a in agents[:5]),
         }
-        
+
         if agent_count == 0:
             check.status = "warning"
             check.message = "No agents registered in registry"
     except Exception as e:
         check.status = "error"
         check.message = f"Agent registry check error: {str(e)}"
-    
+
     return check
 
 
@@ -189,7 +189,7 @@ async def run_health_check(
 
     tracer = get_tracer()
     with tracer.span("health_check") as _sid:
-        timestamp = datetime.now(timezone.utc).isoformat()
+        timestamp = datetime.now(UTC).isoformat()
         result = HealthCheckResult(timestamp=timestamp)
 
         # Run checks concurrently
@@ -204,11 +204,13 @@ async def run_health_check(
         result.checks = []
         for item in checks:
             if isinstance(item, Exception):
-                result.checks.append(ComponentCheck(
-                    name="unknown",
-                    status="error",
-                    message=f"Check failed: {str(item)}",
-                ))
+                result.checks.append(
+                    ComponentCheck(
+                        name="unknown",
+                        status="error",
+                        message=f"Check failed: {str(item)}",
+                    )
+                )
             else:
                 result.checks.append(item)
 
@@ -239,13 +241,14 @@ async def run_health_check(
 # CLI helper
 # ---------------------------------------------------------------------------
 
+
 async def main() -> None:
     """CLI entry point for health check."""
     import json
-    
+
     api_url = "http://localhost:8000"  # default
     result = await run_health_check(api_url)
-    
+
     print(result.to_markdown())
     print("\n--- JSON ---")
     print(json.dumps(result.to_dict(), indent=2, default=str))

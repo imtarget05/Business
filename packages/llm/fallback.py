@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """LLM provider fallback chain (Phase F — provider stability).
 
 Wraps one or more LLMProvider implementations behind a single facade that
@@ -100,8 +99,20 @@ class FallbackLLMProvider:
     @staticmethod
     def _looks_transient(exc: BaseException) -> bool:
         msg = str(exc).lower()
-        return any(t in msg for t in ("429", "rate limit", "timeout", "timed out",
-                                      "503", "502", "504", "unreachable", "connection"))
+        return any(
+            t in msg
+            for t in (
+                "429",
+                "rate limit",
+                "timeout",
+                "timed out",
+                "503",
+                "502",
+                "504",
+                "unreachable",
+                "connection",
+            )
+        )
 
     # -- LLMProvider protocol ------------------------------------------------
     async def generate(self, prompt: str, **kwargs: Any) -> str:
@@ -110,8 +121,9 @@ class FallbackLLMProvider:
     async def generate_structured(self, prompt: str, schema: type[T], **kwargs: Any) -> T:
         return await self._dispatch("generate_structured", prompt, schema, **kwargs)
 
-    async def complete_with_tools(self, messages: list[dict[str, Any]],
-                                  tools: list[dict[str, Any]], **kwargs: Any) -> dict[str, Any]:
+    async def complete_with_tools(
+        self, messages: list[dict[str, Any]], tools: list[dict[str, Any]], **kwargs: Any
+    ) -> dict[str, Any]:
         return await self._dispatch("complete_with_tools", messages, tools, **kwargs)
 
     async def aclose(self) -> None:

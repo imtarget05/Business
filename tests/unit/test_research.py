@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Unit tests for research module.
 
 Mocks the web_search / web_extract wrappers so no network or hermes_tools needed.
@@ -19,14 +18,28 @@ async def test_research_orchestrator_web_success(monkeypatch):
     """Web research with mocked search/extract returns a report."""
 
     async def fake_search(query: str, limit: int = 5) -> dict:
-        return {"data": {"web": [
-            {"title": "LangGraph Guide", "url": "https://example.com/1", "description": "Intro"},
-        ]}}
+        return {
+            "data": {
+                "web": [
+                    {
+                        "title": "LangGraph Guide",
+                        "url": "https://example.com/1",
+                        "description": "Intro",
+                    },
+                ]
+            }
+        }
 
     async def fake_extract(urls, char_limit=5000) -> dict:
-        return {"results": [
-            {"title": "LangGraph Guide", "url": "https://example.com/1", "content": "LangGraph is a graph-based agent framework."},
-        ]}
+        return {
+            "results": [
+                {
+                    "title": "LangGraph Guide",
+                    "url": "https://example.com/1",
+                    "content": "LangGraph is a graph-based agent framework.",
+                },
+            ]
+        }
 
     monkeypatch.setattr(research_mod, "_call_web_search", fake_search)
     monkeypatch.setattr(research_mod, "_call_web_extract", fake_extract)
@@ -68,6 +81,7 @@ async def test_web_search_agent_search_empty(monkeypatch):
     monkeypatch.setattr(research_mod, "_call_web_search", fake_search)
 
     from agents.monitoring.research import WebSearchAgent
+
     agent = WebSearchAgent()
     results = await agent.search("anything")
     assert results == []
@@ -77,6 +91,7 @@ async def test_web_search_agent_search_empty(monkeypatch):
 async def test_web_search_agent_extract_no_urls():
     """WebSearchAgent.extract handles results without URLs gracefully."""
     from agents.monitoring.research import WebSearchAgent
+
     agent = WebSearchAgent()
     extracted = await agent.extract([{"title": "T", "description": "D"}])
     assert len(extracted) == 1

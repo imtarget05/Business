@@ -58,8 +58,7 @@ class InMemoryAgentRegistry:
             if capability in descriptor.capabilities:
                 if descriptor.status != AgentStatus.ACTIVE:
                     raise AgentUnavailableError(
-                        f"Agent {key} handles {capability!r} but is "
-                        f"{descriptor.status.value}",
+                        f"Agent {key} handles {capability!r} but is {descriptor.status.value}",
                         details={"capability": capability},
                     )
                 return descriptor, self._handlers[key]
@@ -69,9 +68,7 @@ class InMemoryAgentRegistry:
         )
 
     def discover_by_domain(self, domain: Domain) -> list[AgentDescriptor]:
-        return [
-            d for d in self._descriptors.values() if d.domain == domain
-        ]
+        return [d for d in self._descriptors.values() if d.domain == domain]
 
     def list_agents(self) -> list[AgentDescriptor]:
         return list(self._descriptors.values())

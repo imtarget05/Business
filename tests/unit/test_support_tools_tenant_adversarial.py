@@ -88,9 +88,7 @@ async def test_dry_run_enforces_org_binding():
     tool = SendEmailReplyTool()
     # no bind_organization -> _resolve_org raises
     with pytest.raises(ToolExecutionError, match="no server-side organization"):
-        await tool.run(
-            {"to_email": "a@b.com", "subject": "s", "body_text": "b"}
-        )
+        await tool.run({"to_email": "a@b.com", "subject": "s", "body_text": "b"})
 
 
 @pytest.mark.asyncio
@@ -98,9 +96,7 @@ async def test_dry_run_draft_carries_org_id():
     org = uuid.uuid4()
     tool = SendEmailReplyTool()
     tool.bind_organization(org)
-    result = await tool.run(
-        {"to_email": "a@b.com", "subject": "s", "body_text": "b"}
-    )
+    result = await tool.run({"to_email": "a@b.com", "subject": "s", "body_text": "b"})
     data = json.loads(result)
     assert data["mode"] == "DRY_RUN"
     assert data["organization_id"] == str(org)
@@ -179,10 +175,12 @@ async def test_lookup_list_never_leaks_other_org(sf):
     org = uuid.uuid4()
     other = uuid.uuid4()
     async with sf() as s:
-        s.add_all([
-            Customer(id=uuid.uuid4(), organization_id=org, email="a@a.com", name="A"),
-            Customer(id=uuid.uuid4(), organization_id=other, email="b@b.com", name="B"),
-        ])
+        s.add_all(
+            [
+                Customer(id=uuid.uuid4(), organization_id=org, email="a@a.com", name="A"),
+                Customer(id=uuid.uuid4(), organization_id=other, email="b@b.com", name="B"),
+            ]
+        )
         await s.commit()
     tool = LookupCustomerTool(session_factory=sf)
     tool.bind_organization(org)

@@ -30,9 +30,11 @@ logger = logging.getLogger(__name__)
 # Configuration
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class SchedulerConfig:
     """Scheduler configuration."""
+
     health_check_interval_minutes: int = 30
     daily_report_time: time = time(9, 0)  # 09:00 AM
     time_zone: str = "Asia/Ho_Chi_Minh"  # Vietnam (UTC+7) — Business Ops Hub runs here
@@ -42,24 +44,25 @@ class SchedulerConfig:
 # Scheduler
 # ---------------------------------------------------------------------------
 
+
 class MonitoringScheduler:
     """APScheduler-based scheduler for monitoring tasks."""
-    
+
     def __init__(self, config: SchedulerConfig | None = None) -> None:
         self.config = config or SchedulerConfig()
         self.scheduler: AsyncIOScheduler | None = None
         self._telegram_config: Any = None  # Set later if Telegram available
         self._telegram_bot: Any = None
-    
+
     def set_telegram(self, bot: Any, config: Any) -> None:
         """Set Telegram bot for push notifications."""
         self._telegram_bot = bot
         self._telegram_config = config
-    
+
     async def initialize(self) -> None:
         """Initialize scheduler."""
         self.scheduler = AsyncIOScheduler(timezone=self.config.time_zone)
-        
+
         # Health check every N minutes
         self.scheduler.add_job(
             self._run_health_check_job,
@@ -68,7 +71,7 @@ class MonitoringScheduler:
             name="Periodic health check",
             replace_existing=True,
         )
-        
+
         # Daily report at specified time
         self.scheduler.add_job(
             self._run_daily_report_job,
@@ -80,7 +83,7 @@ class MonitoringScheduler:
             name="Daily progress report",
             replace_existing=True,
         )
-        
+
         # Learning loop cycle (ADR-010) — daily at configured UTC hour
         try:
             from packages.config.settings import get_settings
@@ -126,24 +129,24 @@ class MonitoringScheduler:
             f"learning at {learning_hour:02d}:00, "
             f"ops hub digest at 08:00"
         )
-    
+
     async def start(self) -> None:
         """Start scheduler."""
         if not self.scheduler:
             await self.initialize()
         self.scheduler.start()
         logger.info("Scheduler started")
-    
+
     async def stop(self) -> None:
         """Stop scheduler."""
         if self.scheduler:
             self.scheduler.shutdown(wait=False)
             logger.info("Scheduler stopped")
-    
+
     # ------------------------------------------------------------------
     # Jobs
     # ------------------------------------------------------------------
-    
+
     async def _run_health_check_job(self) -> None:
         """Execute health check job."""
         from packages.core.tracing import get_tracer
@@ -159,12 +162,12 @@ class MonitoringScheduler:
                 if self._telegram_bot and health_dict["overall"] != "ok":
                     await self._telegram_bot.send_health_alert(health_dict)
 
-                # Log result
+                    # Log result
                     logger.info(
-        "Health check: overall=%s, checks=%d",
-        health_dict["overall"],
-        len(health_dict["checks"]),
-    )
+                        "Health check: overall=%s, checks=%d",
+                        health_dict["overall"],
+                        len(health_dict["checks"]),
+                    )
                 tracer.event("health_check_scheduled", overall=health_dict["overall"])
         except Exception as e:
             logger.error(f"Health check job error: {e}")
@@ -270,7 +273,6 @@ class MonitoringScheduler:
         except Exception as e:
             logger.error(f"Ops Hub job error: {e}")
 
-
     async def _run_competitor_job(self) -> None:
         """Execute the weekly Competitive Intelligence brief job (Task 5).
 
@@ -346,6 +348,7 @@ def _format_ops_digest(digest: dict[str, Any]) -> str:
 # CLI helper
 # ---------------------------------------------------------------------------
 
+
 async def main() -> None:
     """CLI entry point — run scheduler for demo."""
     from agents.monitoring.config import load_monitoring_config
@@ -365,6 +368,7 @@ async def main() -> None:
     if cfg.telegram.enabled and cfg.telegram.bot_token:
         from agents.monitoring.telegram_bot import MonitoringBot
         from agents.monitoring.telegram_bot import TelegramConfig as TC
+
         telegram_config = TC(bot_token=cfg.telegram.bot_token, chat_id=cfg.telegram.chat_id)
         bot = MonitoringBot(telegram_config)
         await bot.initialize()
@@ -373,6 +377,7 @@ async def main() -> None:
         # token present but section disabled — still wire for alerts
         from agents.monitoring.telegram_bot import MonitoringBot
         from agents.monitoring.telegram_bot import TelegramConfig as TC
+
         telegram_config = TC(bot_token=cfg.telegram.bot_token, chat_id=cfg.telegram.chat_id)
         bot = MonitoringBot(telegram_config)
         await bot.initialize()
@@ -387,8 +392,10 @@ async def main() -> None:
 
     await scheduler.start()
 
-    print(f"Scheduler running: health every {scheduler_cfg.health_check_interval_minutes}m, "
-          f"daily report at {scheduler_cfg.daily_report_time.strftime('%H:%M')}")
+    print(
+        f"Scheduler running: health every {scheduler_cfg.health_check_interval_minutes}m, "
+        f"daily report at {scheduler_cfg.daily_report_time.strftime('%H:%M')}"
+    )
     print("Press Ctrl+C to stop")
 
     try:
@@ -402,4 +409,5 @@ async def main() -> None:
 
 if __name__ == "__main__":
     import asyncio
+
     asyncio.run(main())

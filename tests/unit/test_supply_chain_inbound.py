@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 Unit tests for supply_chain inbound handler (Phase SC).
 
@@ -24,12 +23,12 @@ from agents.supply_chain.inbound import (
 )
 from agents.supply_chain.po_agent import PurchaseOrderAgent
 from packages.config.settings import Settings
-from packages.contracts.enums import AgentResponseStatus, Domain
-from packages.contracts.models import AgentDescriptor, TaskRequest, TaskContext
+from packages.contracts.enums import AgentResponseStatus
 
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
+
 
 @pytest.fixture
 def po_agent():
@@ -52,6 +51,7 @@ def po_agent():
 # ---------------------------------------------------------------------------
 # process_inbound_email — happy path
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_process_inbound_email_success(po_agent):
@@ -135,6 +135,7 @@ async def test_process_inbound_email_uses_provided_llm():
 # process_inbound_email — validation
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_process_inbound_email_rejects_empty_string():
     """Empty string should be rejected."""
@@ -187,6 +188,7 @@ async def test_process_inbound_email_with_context_fields(po_agent):
 # process_inbound_batch
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_process_inbound_batch_empty_list(po_agent):
     """Empty batch returns empty result list."""
@@ -197,9 +199,7 @@ async def test_process_inbound_batch_empty_list(po_agent):
 @pytest.mark.asyncio
 async def test_process_inbound_batch_single_item(po_agent):
     """A batch with one item returns one response."""
-    emails = [
-        "PO NUMBER: PO-2024-BATCH-1\nVENDOR: Batch Vendor 1\nTOTAL: $10.00\n"
-    ]
+    emails = ["PO NUMBER: PO-2024-BATCH-1\nVENDOR: Batch Vendor 1\nTOTAL: $10.00\n"]
     results = await process_inbound_batch(emails, po_agent=po_agent)
 
     assert len(results) == 1
@@ -228,10 +228,7 @@ async def test_process_inbound_batch_multiple_items(po_agent):
 async def test_process_inbound_batch_concurrency_limit(po_agent):
     """Batch processing respects concurrency semaphore."""
     # Create 10 emails with non-zero totals (TOTAL: $0.00 fails rule-based parsing)
-    emails = [
-        f"PO NUMBER: PO-2024-C{i}\nVENDOR: V{i}\nTOTAL: ${i + 1}.00\n"
-        for i in range(10)
-    ]
+    emails = [f"PO NUMBER: PO-2024-C{i}\nVENDOR: V{i}\nTOTAL: ${i + 1}.00\n" for i in range(10)]
     results = await process_inbound_batch(
         emails,
         concurrency=3,
@@ -265,6 +262,7 @@ async def test_process_inbound_batch_mixed_valid_invalid(po_agent):
 # ---------------------------------------------------------------------------
 # process_queue_messages
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_process_queue_messages_valid(po_agent):
@@ -312,10 +310,12 @@ async def test_process_queue_messages_empty_list():
 @pytest.mark.asyncio
 async def test_process_queue_messages_custom_handler():
     """Custom handler function is used instead of default."""
+
     async def custom_handler(content: str):
-        from packages.contracts.models import AgentResponse
-        from packages.contracts.enums import AgentResponseStatus
         from uuid import uuid4
+
+        from packages.contracts.enums import AgentResponseStatus
+        from packages.contracts.models import AgentResponse
 
         return AgentResponse(
             task_id=uuid4(),
@@ -338,11 +338,13 @@ async def test_process_queue_messages_custom_handler():
 # Gmail API stubs — verify they raise NotImplementedError
 # ---------------------------------------------------------------------------
 
+
 def test_fetch_unread_gmail_messages_is_placeholder():
     """fetch_unread_gmail_messages is a stub that requires credentials."""
     with pytest.raises(NotImplementedError) as exc_info:
         # Can't call async function directly in sync test; use asyncio
         import asyncio
+
         asyncio.run(fetch_unread_gmail_messages())
 
     assert "placeholder" in str(exc_info.value).lower()
@@ -353,6 +355,7 @@ def test_fetch_gmail_message_body_is_placeholder():
     """fetch_gmail_message_body is a stub that requires credentials."""
     with pytest.raises(NotImplementedError) as exc_info:
         import asyncio
+
         asyncio.run(fetch_gmail_message_body("msg-123"))
 
     assert "placeholder" in str(exc_info.value).lower()
@@ -362,6 +365,7 @@ def test_fetch_gmail_message_body_is_placeholder():
 # ---------------------------------------------------------------------------
 # Integration-style: process_inbound_email uses po_agent.handle()
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_process_inbound_email_calls_po_agent_handle(po_agent):
@@ -405,6 +409,7 @@ async def test_process_inbound_email_with_action_process_po(po_agent):
 # ---------------------------------------------------------------------------
 # Data structure / metadata propagation
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_process_inbound_email_metadata_forwarded(po_agent):

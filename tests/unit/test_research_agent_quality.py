@@ -6,8 +6,6 @@ that summarize() synthesizes via the local LLM instead of naive concatenation.
 
 from __future__ import annotations
 
-import pytest
-
 from agents.monitoring import research as research_mod
 from agents.monitoring.research import WebSearchAgent
 
@@ -24,7 +22,11 @@ async def test_extract_drops_blocked_and_html_entries(monkeypatch):
                     "url": "https://y.com/b",
                     "content": "<!doctype html><html><head><title>spam</title></head></html>",
                 },
-                {"title": "Good", "url": "https://z.com/c", "content": "LangGraph là thư viện tạo agent stateful."},
+                {
+                    "title": "Good",
+                    "url": "https://z.com/c",
+                    "content": "LangGraph là thư viện tạo agent stateful.",
+                },
             ]
         }
 
@@ -56,6 +58,7 @@ async def test_extract_no_urls_keeps_clean_description():
 
 async def test_extract_drops_error_text_content(monkeypatch):
     """web_extract returns '[extract error: 403 ...]' as content (no error key) -> drop it."""
+
     async def fake_extract(urls, char_limit=5000):
         return {
             "results": [
@@ -64,13 +67,22 @@ async def test_extract_drops_error_text_content(monkeypatch):
                     "url": "https://sider.ai/x",
                     "content": "[extract error: Client error '403 Forbidden' for url 'https://sider.ai/x']",
                 },
-                {"title": "Good", "url": "https://z.com/c", "content": "LangGraph là thư viện stateful."},
+                {
+                    "title": "Good",
+                    "url": "https://z.com/c",
+                    "content": "LangGraph là thư viện stateful.",
+                },
             ]
         }
 
     monkeypatch.setattr(research_mod, "_call_web_extract", fake_extract)
     agent = WebSearchAgent()
-    extracted = await agent.extract([{"title": "Blocked page", "url": "https://sider.ai/x"}, {"title": "Good", "url": "https://z.com/c"}])
+    extracted = await agent.extract(
+        [
+            {"title": "Blocked page", "url": "https://sider.ai/x"},
+            {"title": "Good", "url": "https://z.com/c"},
+        ]
+    )
     assert len(extracted) == 1
     assert extracted[0]["title"] == "Good"
 
@@ -81,16 +93,32 @@ async def test_extract_falls_back_to_search_snippets_when_all_blocked(monkeypatc
     async def fake_extract(urls, char_limit=5000):
         return {
             "results": [
-                {"title": "Blocked", "url": "https://sider.ai/x", "content": "[extract error: 403 Forbidden]"},
-                {"title": "Blocked2", "url": "https://viblo.asia/y", "content": "<html>spam</html>"},
+                {
+                    "title": "Blocked",
+                    "url": "https://sider.ai/x",
+                    "content": "[extract error: 403 Forbidden]",
+                },
+                {
+                    "title": "Blocked2",
+                    "url": "https://viblo.asia/y",
+                    "content": "<html>spam</html>",
+                },
             ]
         }
 
     monkeypatch.setattr(research_mod, "_call_web_extract", fake_extract)
     agent = WebSearchAgent()
     search_results = [
-        {"title": "Sider", "url": "https://sider.ai/x", "snippet": "LangGraph là framework xây dựng agent."},
-        {"title": "Viblo", "url": "https://viblo.asia/y", "snippet": "Dùng graph để quản lý state."},
+        {
+            "title": "Sider",
+            "url": "https://sider.ai/x",
+            "snippet": "LangGraph là framework xây dựng agent.",
+        },
+        {
+            "title": "Viblo",
+            "url": "https://viblo.asia/y",
+            "snippet": "Dùng graph để quản lý state.",
+        },
     ]
     extracted = await agent.extract(search_results)
     assert len(extracted) == 2

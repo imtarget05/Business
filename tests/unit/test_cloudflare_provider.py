@@ -47,7 +47,9 @@ async def test_missing_credentials_raises(monkeypatch) -> None:
     monkeypatch.delenv("CLOUDFLARE_API_TOKEN", raising=False)
     with pytest.raises(LLMProviderError):
         CloudflareAIProvider(
-            Settings(llm_provider="cloudflare_ai", cloudflare_account_id=None, cloudflare_api_token=None)
+            Settings(
+                llm_provider="cloudflare_ai", cloudflare_account_id=None, cloudflare_api_token=None
+            )
         )
 
 
@@ -159,9 +161,7 @@ async def test_non_transient_4xx_does_not_retry() -> None:
         calls["n"] += 1
         return httpx.Response(401, text="unauthorized")
 
-    p = CloudflareAIProvider(
-        make_settings(llm_max_retries=5), transport=transport_with(handler)
-    )
+    p = CloudflareAIProvider(make_settings(llm_max_retries=5), transport=transport_with(handler))
     with pytest.raises(LLMProviderError, match="401"):
         await p.generate("ping")
     assert calls["n"] == 1
@@ -173,9 +173,7 @@ async def test_api_success_false_raises_immediately() -> None:
         body = {"success": False, "errors": [{"code": 1234, "message": "bad model"}]}
         return httpx.Response(200, json=body)
 
-    p = CloudflareAIProvider(
-        make_settings(llm_max_retries=3), transport=transport_with(handler)
-    )
+    p = CloudflareAIProvider(make_settings(llm_max_retries=3), transport=transport_with(handler))
     with pytest.raises(LLMProviderError, match="bad model"):
         await p.generate("ping")
     await p.aclose()

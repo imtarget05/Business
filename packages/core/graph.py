@@ -12,7 +12,6 @@ from __future__ import annotations
 import asyncio
 from typing import Any, TypedDict
 
-from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.config import RunnableConfig
 from langgraph.constants import END, START
 from langgraph.graph import StateGraph
@@ -26,6 +25,7 @@ from packages.contracts.models import (
     TaskContext,
     TaskRequest,
 )
+from packages.core.checkpoint import get_checkpointer
 from packages.core.errors import (
     AgentTimeoutError,
     AgentUnavailableError,
@@ -38,7 +38,6 @@ from packages.core.errors import (
     ToolExecutionError,
 )
 from packages.core.persistence import NoopTaskRecorder, TaskRecorder
-from packages.core.checkpoint import get_checkpointer
 from packages.core.policy import AllowAllPolicy, PolicyChecker
 from packages.core.registry import InMemoryAgentRegistry
 from packages.llm.base import LLMProvider
@@ -92,9 +91,7 @@ def _emit_agent_result(agent: str, domain: object, status: object) -> None:
             status=str(getattr(status, "value", status)).lower(),
         )
     except Exception:  # noqa: BLE001 - telemetry must never break the pipeline
-        logger.debug(
-            "metrics_emit_failed", extra={"metric": "boas_agent_success_total"}
-        )
+        logger.debug("metrics_emit_failed", extra={"metric": "boas_agent_success_total"})
 
 
 def _emit_handoff(from_agent: str, to_agent: str) -> None:
@@ -174,9 +171,7 @@ async def route_node(
 
     # Policy check
     policy = await _get_policy(config)
-    decision = await policy.check(
-        capability=capability, context=state["request"].context
-    )
+    decision = await policy.check(capability=capability, context=state["request"].context)
     if not decision.allowed:
         raise AuthorizationError(
             decision.reason or "Capability not authorized", task_id=state["request"].task_id
@@ -345,9 +340,7 @@ async def handoff_node(
     # Policy check
     policy = await _get_policy(config)
     if policy:
-        decision = await policy.check(
-            capability=target_capability, context=handoff_request.context
-        )
+        decision = await policy.check(capability=target_capability, context=handoff_request.context)
         if not decision.allowed:
             raise AuthorizationError(
                 decision.reason or "Capability not authorized",
@@ -390,9 +383,7 @@ async def handoff_node(
 
     # Business metrics: the delegation itself + the hop's finalized response.
     _emit_handoff(current_agent, descriptor.qualified_name)
-    _emit_agent_result(
-        handoff_response.agent, descriptor.domain, handoff_response.status
-    )
+    _emit_agent_result(handoff_response.agent, descriptor.domain, handoff_response.status)
 
     # Merge handoff response
     merged_result = {**response.result}
@@ -449,9 +440,7 @@ async def dead_letter_node(
         error=ErrorDetail(code=error_code, message=error_message),
     )
 
-    _emit_agent_result(
-        error_response.agent, state["request"].domain, error_response.status
-    )
+    _emit_agent_result(error_response.agent, state["request"].domain, error_response.status)
 
     state["final_response"] = error_response
     state["terminal"] = True

@@ -75,6 +75,7 @@ def support_agent(org_id, test_session_factory) -> SupportAgent:
     # Pass test session factory to tools
     tools = create_support_tools(session_factory=test_session_factory)
     from packages.core.tools import ToolRegistry
+
     registry = ToolRegistry(*tools)
     agent = SupportAgent(llm=llm)
     # Replace the agent's registry with our test one

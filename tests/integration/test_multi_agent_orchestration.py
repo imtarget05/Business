@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Phase C — Multi-Agent Orchestration integration tests.
 
 Covers:
@@ -17,7 +16,6 @@ from packages.config.settings import LLMProviderKind, Settings
 from packages.contracts.enums import AgentResponseStatus, Domain
 from packages.contracts.models import TaskRequest
 from packages.core.bootstrap import build_container
-from packages.llm.mock import MockLLMProvider
 
 
 def _mock_settings(langgraph: bool = False) -> Settings:
@@ -41,6 +39,7 @@ def graph_container():
 # C1: RouterAgent free-text classification
 # ---------------------------------------------------------------------------
 
+
 async def test_orchestrator_classify_text_routes_support(classic_container) -> None:
     orchestrator = classic_container.orchestrator
     # Inject a scripted mock LLM so the router returns a confident intent.
@@ -59,6 +58,7 @@ async def test_orchestrator_has_router_wired(classic_container) -> None:
 # ---------------------------------------------------------------------------
 # C3: GraphOrchestrator end-to-end
 # ---------------------------------------------------------------------------
+
 
 async def test_graph_orchestrator_knowledge_query(graph_container) -> None:
     """LangGraph path executes a knowledge query successfully."""
@@ -86,6 +86,7 @@ async def test_graph_orchestrator_unknown_action_fails(graph_container) -> None:
 # ---------------------------------------------------------------------------
 # C4-C6: cross-agent handoff
 # ---------------------------------------------------------------------------
+
 
 async def test_handoff_support_to_knowledge(classic_container) -> None:
     """A support agent that requests a handoff to knowledge should merge results.
@@ -124,9 +125,7 @@ async def test_handoff_support_to_knowledge(classic_container) -> None:
         result={"summary": "customer asks about warranty"},
         metadata={"handoff": {"target_capability": "knowledge.query"}},
     )
-    handoff_resp = await orchestrator.handoff(
-        req, support_resp, "knowledge.query"
-    )
+    handoff_resp = await orchestrator.handoff(req, support_resp, "knowledge.query")
     # The handoff returns the *target* agent's response (knowledge-v1), proving
     # a cross-agent hop actually executed and returned from the knowledge agent.
     assert handoff_resp.agent == "knowledge-v1"

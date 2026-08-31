@@ -79,9 +79,7 @@ def _emit_agent_result(
             duration_s=duration_s,
         )
     except Exception:  # noqa: BLE001 - telemetry must never break the pipeline
-        logger.debug(
-            "metrics_emit_failed", extra={"metric": "boas_agent_success_total"}
-        )
+        logger.debug("metrics_emit_failed", extra={"metric": "boas_agent_success_total"})
 
 
 def _emit_handoff(from_agent: str, to_agent: str) -> None:
@@ -168,9 +166,7 @@ class Orchestrator:
         return result
 
     @staticmethod
-    async def _record(
-        recorder: TaskRecorder | None, task_id, status: TaskStatus
-    ) -> None:
+    async def _record(recorder: TaskRecorder | None, task_id, status: TaskStatus) -> None:
         """Persist a lifecycle transition when a recorder is provided."""
         if recorder is not None:
             await recorder.record_transition(task_id, status)
@@ -223,9 +219,7 @@ class Orchestrator:
         # Use per-hop timeout for each agent execution
         hop_timeout_s = self._settings.agent_hop_timeout_seconds
         try:
-            response = await asyncio.wait_for(
-                handler.handle(request), timeout=hop_timeout_s
-            )
+            response = await asyncio.wait_for(handler.handle(request), timeout=hop_timeout_s)
         except TimeoutError as exc:  # py>=3.11 alias of asyncio.TimeoutError
             raise AgentTimeoutError(
                 f"Agent {descriptor.qualified_name} timed out after {hop_timeout_s}s (hop budget)",
@@ -315,9 +309,7 @@ class Orchestrator:
         descriptor, handler = await self.route(target_capability)
 
         # Policy check
-        decision = await policy.check(
-            capability=target_capability, context=handoff_request.context
-        )
+        decision = await policy.check(capability=target_capability, context=handoff_request.context)
         if not decision.allowed:
             raise AuthorizationError(
                 decision.reason or "Capability not authorized",
@@ -348,9 +340,7 @@ class Orchestrator:
         )
         # Business metrics: the delegation itself + the hop's finalized response.
         _emit_handoff(current_agent, descriptor.qualified_name)
-        _emit_agent_result(
-            handoff_response.agent, descriptor.domain, handoff_response.status
-        )
+        _emit_agent_result(handoff_response.agent, descriptor.domain, handoff_response.status)
 
         return handoff_response
 
@@ -418,9 +408,7 @@ class Orchestrator:
             await self._record(recorder, request.task_id, TaskStatus.ROUTING)
             descriptor, handler = await self.route(capability)
 
-            decision = await policy.check(
-                capability=capability, context=request.context
-            )
+            decision = await policy.check(capability=capability, context=request.context)
             if not decision.allowed:
                 raise AuthorizationError(
                     decision.reason or "Capability not authorized",
@@ -569,9 +557,7 @@ class Orchestrator:
                         message=f"Input rejected by filter: {filtered.block_reason}",
                     ),
                 )
-                _emit_agent_result(
-                    rejected.agent, request.domain, rejected.status
-                )
+                _emit_agent_result(rejected.agent, request.domain, rejected.status)
                 return rejected
 
         await self._audit_emit(
@@ -599,9 +585,11 @@ class Orchestrator:
                     agent=response.agent,
                 )
                 # Fire-and-forget auto-critique (ADR-010) — must not block the response.
-                response_text = getattr(response, "text", None) or getattr(
-                    response, "content", None
-                ) or str(getattr(response, "payload", ""))
+                response_text = (
+                    getattr(response, "text", None)
+                    or getattr(response, "content", None)
+                    or str(getattr(response, "payload", ""))
+                )
                 await self._reflection_emit(
                     request,
                     response_text,

@@ -20,23 +20,22 @@ import pytest
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from fastapi.testclient import TestClient
-from sqlalchemy import text
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 import packages.core.bootstrap as bootstrap_mod
 from agents.knowledge.agent import KnowledgeAgent
+
+# Imported so we can key dependency_overrides on the *same* callable object
+# that the route's ``Depends(current_org)`` captured at import time.
+from apps.api.deps import current_org
 from packages.contracts.enums import Domain
 from packages.contracts.models import AgentDescriptor
 from packages.core.errors import AuthenticationError, BusinessOpsError
 from packages.core.knowledge_base import KnowledgeBase
 from packages.llm.mock import MockLLMProvider
 
-# Imported so we can key dependency_overrides on the *same* callable object
-# that the route's ``Depends(current_org)`` captured at import time.
-from apps.api.deps import current_org
-
-
 # --- auth dependency stand-ins (offline) -----------------------------------
+
 
 async def _auth_ok() -> _uuid.UUID:
     """Simulates a successfully authenticated caller (returns an org id)."""
@@ -86,9 +85,7 @@ def _build_app(tmp_path, monkeypatch, auth_override) -> FastAPI:
     )
     asyncio.run(kb.add_document(doc))
 
-    llm = MockLLMProvider(
-        scripted=[{"answer": "Refunds within 14 days.", "confidence": 0.9}]
-    )
+    llm = MockLLMProvider(scripted=[{"answer": "Refunds within 14 days.", "confidence": 0.9}])
     container = _FakeContainer(kb, llm)
     monkeypatch.setattr(bootstrap_mod, "get_container", lambda: container)
 

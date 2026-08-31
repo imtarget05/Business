@@ -1,11 +1,10 @@
-# -*- coding: utf-8 -*-
 """Tests: daily report now reflects real system activity (RAG, LLM cost, health)."""
+
 from __future__ import annotations
 
 import json
-from pathlib import Path
-
 import sys
+from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
@@ -16,7 +15,7 @@ from agents.monitoring import progress_report as pr
 def test_llm_cost_summary_missing_ledger(tmp_path):
     ledger = tmp_path / "llm_usage.jsonl"
     # not created -> absent
-    out = pr.get_llm_cost_summary.__wrapped__ if hasattr(pr.get_llm_cost_summary, "__wrapped__") else None
+    pr.get_llm_cost_summary.__wrapped__ if hasattr(pr.get_llm_cost_summary, "__wrapped__") else None
     # call via monkey-patching the default path by writing nothing; use env override
     import os
 

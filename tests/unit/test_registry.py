@@ -67,4 +67,3 @@ def test_no_if_else_routing_needed() -> None:
     )
     descriptor, _ = reg.get_by_capability("support.sourcing")
     assert descriptor.name == "recruiting"
-

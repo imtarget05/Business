@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Task 4 — Email-to-Proposal Automation unit tests.
 
 Covers:

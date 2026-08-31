@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Circuit breaker for supply chain guardrails (Phase D — resilience).
 
 Wraps a guardrail validation call so that repeated failures (or repeated
@@ -16,11 +15,11 @@ from __future__ import annotations
 
 import asyncio
 import time
-from dataclasses import dataclass, field
-from enum import Enum
+from dataclasses import dataclass
+from enum import StrEnum
 
 
-class CircuitState(str, Enum):
+class CircuitState(StrEnum):
     CLOSED = "closed"
     OPEN = "open"
     HALF_OPEN = "half_open"

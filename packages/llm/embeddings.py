@@ -1,4 +1,4 @@
-﻿"""Embedding providers for semantic (vector) search - Feature 1.
+"""Embedding providers for semantic (vector) search - Feature 1.
 
 Defines concrete implementations of the ``EmbeddingProvider`` protocol:
 
@@ -65,7 +65,7 @@ def cosine_similarity(a: list[float], b: list[float]) -> float:
     """
     if not a or not b or len(a) != len(b):
         return 0.0
-    dot = sum(x * y for x, y in zip(a, b))
+    dot = sum(x * y for x, y in zip(a, b, strict=False))
     na = math.sqrt(sum(x * x for x in a))
     nb = math.sqrt(sum(y * y for y in b))
     if na == 0.0 or nb == 0.0:
@@ -90,21 +90,15 @@ class OllamaEmbeddingProvider:
         self,
         settings: Settings,
         *,
-        transport: "httpx.AsyncBaseTransport | None" = None,
+        transport: httpx.AsyncBaseTransport | None = None,
     ) -> None:
         self._settings = settings
         self._base_url = settings.ollama_base_url or "http://localhost:11434"
         # NEVER fall back to the chat (LLM) model for embeddings.
         self.model = settings.embedding_model or "bge-m3"
         # Expected embedding dimension; validated against real responses.
-        self._dim = (
-            settings.embedding_dimensions
-            or getattr(settings, "embedding_dim", None)
-            or 768
-        )
-        self._timeout = httpx.Timeout(
-            settings.embedding_request_timeout_seconds, connect=5.0
-        )
+        self._dim = settings.embedding_dimensions or getattr(settings, "embedding_dim", None) or 768
+        self._timeout = httpx.Timeout(settings.embedding_request_timeout_seconds, connect=5.0)
         self._client = httpx.AsyncClient(
             base_url=self._base_url, timeout=self._timeout, transport=transport
         )
@@ -128,9 +122,7 @@ class OllamaEmbeddingProvider:
     async def _embed_batch(self, texts: list[str]) -> list[list[float]] | None:
         """Try the modern batch endpoint ``/api/embed`` (key ``embeddings``)."""
         try:
-            resp = await self._client.post(
-                "/api/embed", json={"model": self.model, "input": texts}
-            )
+            resp = await self._client.post("/api/embed", json={"model": self.model, "input": texts})
             resp.raise_for_status()
         except httpx.HTTPError:
             return None
@@ -153,12 +145,10 @@ class OllamaEmbeddingProvider:
                 data = resp.json()
                 embedding = data.get("embedding")
                 if not isinstance(embedding, list):
-                    raise provider_error(
-                        self.name, f"unexpected embeddings response: {data!r}"
-                    )
+                    raise provider_error(self.name, f"unexpected embeddings response: {data!r}")
                 vectors.append([float(v) for v in embedding])
         except httpx.HTTPError as exc:  # noqa: BLE001
-            raise provider_error(self.name, f"Ollama embeddings failed: {exc}")
+            raise provider_error(self.name, f"Ollama embeddings failed: {exc}") from exc
         return vectors
 
     def _assert_dimensions(self, vectors: list[list[float]]) -> None:
@@ -190,7 +180,7 @@ class CloudflareEmbeddingProvider:
         self,
         settings: Settings,
         *,
-        transport: "httpx.AsyncBaseTransport | None" = None,
+        transport: httpx.AsyncBaseTransport | None = None,
     ) -> None:
         if not settings.cloudflare_account_id or not settings.cloudflare_api_token:
             raise provider_error(
@@ -233,14 +223,10 @@ class CloudflareEmbeddingProvider:
                     body = resp.json()
                     if not body.get("success"):
                         errors = "; ".join(str(e) for e in body.get("errors", []))
-                        raise provider_error(
-                            self.name, f"API failure: {errors or body!r}"
-                        )
+                        raise provider_error(self.name, f"API failure: {errors or body!r}")
                     data = body.get("result", {}).get("data")
                     if not isinstance(data, list) or not data:
-                        raise provider_error(
-                            self.name, f"unexpected shape: {body!r}"
-                        )
+                        raise provider_error(self.name, f"unexpected shape: {body!r}")
                     return [[float(v) for v in vec] for vec in data]
             if attempt < self._retries:
                 await asyncio.sleep(self._backoff * (2**attempt))

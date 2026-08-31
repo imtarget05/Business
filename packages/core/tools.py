@@ -107,9 +107,7 @@ async def execute_tool_loop(
             (name: str, arguments: dict, result: str, mode: str | None).
             Allows callers to capture action metadata without duplicating the loop.
     """
-    conversation: list[dict[str, Any]] = [
-        {"role": "user", "content": prompt}
-    ]
+    conversation: list[dict[str, Any]] = [{"role": "user", "content": prompt}]
     for _ in range(max(1, max_rounds)):
         response = await provider.complete_with_tools(
             conversation,
@@ -122,9 +120,7 @@ async def execute_tool_loop(
         if not tool_calls:
             content = response.get("content")
             if not isinstance(content, str):
-                raise AgentExecutionError(
-                    "provider returned neither tool_calls nor text content"
-                )
+                raise AgentExecutionError("provider returned neither tool_calls nor text content")
             return content
         conversation.append(
             {
@@ -166,9 +162,7 @@ async def execute_tool_loop(
                     "content": result,
                 }
             )
-    raise AgentExecutionError(
-        f"tool-call loop did not converge after {max_rounds} rounds"
-    )
+    raise AgentExecutionError(f"tool-call loop did not converge after {max_rounds} rounds")
 
 
 async def _dispatch(registry: ToolRegistry, call: dict[str, Any]) -> str:
@@ -178,8 +172,7 @@ async def _dispatch(registry: ToolRegistry, call: dict[str, Any]) -> str:
     arguments = call.get("arguments") or {}
     if not isinstance(arguments, dict):
         raise AgentExecutionError(
-            f"tool_call {name!r} arguments must be a dict, got "
-            f"{type(arguments).__name__}"
+            f"tool_call {name!r} arguments must be a dict, got {type(arguments).__name__}"
         )
     tool = registry.get(name)
     return await tool.run(arguments)

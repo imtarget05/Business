@@ -9,8 +9,7 @@ Covers:
 
 from __future__ import annotations
 
-import json
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 from uuid import uuid4
 
 import pytest
@@ -210,9 +209,7 @@ class TestReportingAgent:
         assert resp.error.code == "VALIDATION_ERROR"
 
     @pytest.mark.asyncio
-    async def test_step_failure_returns_typed_error_no_partial(
-        self, agent: ReportingAgent
-    ) -> None:
+    async def test_step_failure_returns_typed_error_no_partial(self, agent: ReportingAgent) -> None:
         """Step failure -> typed error, no partial report claimed as complete."""
         # Create an LLM that fails on the second call (root_cause)
         failing_llm = MockLLMProvider(scripted=[ANALYZE_RESP, Exception("LLM timeout")])
@@ -279,9 +276,7 @@ class TestReportingAgent:
         settings = get_settings()
         assert settings.reporting_sheet_log_enabled is False  # default
 
-        with patch(
-            "agents.reporting.agent.sheet_log_row", new_callable=AsyncMock
-        ) as mock_sheet:
+        with patch("agents.reporting.agent.sheet_log_row", new_callable=AsyncMock) as mock_sheet:
             llm = MockLLMProvider(scripted=SCRIPTED_RESPONSES)
             agent = ReportingAgent(llm=llm)
 
@@ -322,11 +317,11 @@ class TestReportingAgentIntegration:
     @pytest.mark.asyncio
     async def test_orchestrator_routes_report_generate(self) -> None:
         """End-to-end: orchestrator routes report.generate to ReportingAgent."""
+        from packages.config.settings import Settings
         from packages.core.bootstrap import build_container, set_container
 
         # Build a test container with mock LLM
         from packages.llm.mock import MockLLMProvider
-        from packages.config.settings import Settings
 
         test_settings = Settings(
             llm_provider="mock",

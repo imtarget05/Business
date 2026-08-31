@@ -19,11 +19,11 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.ext.asyncio import create_async_engine
 
-import packages.database.session as session_mod
 import packages.config.settings as settings_mod
+import packages.database.session as session_mod
 from apps.api.main import create_app
 from apps.api.routes.tasks import get_task_store
-from packages.config.settings import Settings, LLMProviderKind
+from packages.config.settings import LLMProviderKind, Settings
 from packages.contracts.enums import AgentResponseStatus, Domain, TaskStatus
 from packages.contracts.models import (
     AgentDescriptor,
@@ -86,9 +86,13 @@ def client(tmp_path, monkeypatch):
     monkeypatch.setattr(live, "database_url", url)
     monkeypatch.setattr(live, "persistence_enabled", True)
     monkeypatch.setattr(live, "llm_provider", LLMProviderKind.MOCK)
-    monkeypatch.setattr(live, "tenant_api_keys", {
-        "tenant-key-a": "00000000-0000-0000-0000-000000000001",
-    })
+    monkeypatch.setattr(
+        live,
+        "tenant_api_keys",
+        {
+            "tenant-key-a": "00000000-0000-0000-0000-000000000001",
+        },
+    )
     monkeypatch.setattr(live, "rate_limit_per_minute", 1000)
 
     async def _setup() -> None:
@@ -134,9 +138,7 @@ class _MemTaskStore:
             return TaskResolution(created=True)
         row = self._rows[key]
         if row.status in _TERMINAL:
-            return TaskResolution(
-                created=False, response=AgentResponse.model_validate(row.result)
-            )
+            return TaskResolution(created=False, response=AgentResponse.model_validate(row.result))
         raise TaskStateError("already in flight", task_id=request.task_id)
 
     async def complete(self, task_id, response: AgentResponse) -> None:
@@ -238,7 +240,9 @@ async def test_store_persists_and_replays(sqlite_store: SqlAlchemyTaskStore) -> 
         domain=Domain.KNOWLEDGE,
         action="query",
         payload={"question": "test"},
-        context=TaskContext(channel="web", organization_id=_uuid.UUID("00000000-0000-0000-0000-000000000001")),
+        context=TaskContext(
+            channel="web", organization_id=_uuid.UUID("00000000-0000-0000-0000-000000000001")
+        ),
     )
     res = await sqlite_store.resolve(req)
     assert res.created is True
@@ -267,7 +271,9 @@ async def test_store_records_transitions(sqlite_store: SqlAlchemyTaskStore) -> N
         domain=Domain.SUPPORT,
         action="triage",
         payload={"subject": "test"},
-        context=TaskContext(channel="web", organization_id=_uuid.UUID("00000000-0000-0000-0000-000000000001")),
+        context=TaskContext(
+            channel="web", organization_id=_uuid.UUID("00000000-0000-0000-0000-000000000001")
+        ),
     )
     await sqlite_store.resolve(req)
     await sqlite_store.record_transition(req.task_id, TaskStatus.CLASSIFYING)
@@ -347,7 +353,9 @@ async def test_sqlite_store_rollback_on_failure(sqlite_store: SqlAlchemyTaskStor
         domain=Domain.SUPPORT,
         action="triage",
         payload={"subject": "fail"},
-        context=TaskContext(channel="web", organization_id=_uuid.UUID("00000000-0000-0000-0000-000000000001")),
+        context=TaskContext(
+            channel="web", organization_id=_uuid.UUID("00000000-0000-0000-0000-000000000001")
+        ),
     )
     await sqlite_store.resolve(req)
     # Simulate failure by rolling back

@@ -1,5 +1,5 @@
-# -*- coding: utf-8 -*-
 """Unit tests: LLM cost tracking + prompt cache (AI-Engineer point 3)."""
+
 from __future__ import annotations
 
 import sys
@@ -26,6 +26,7 @@ def test_estimate_tokens_rough():
 
 def test_log_llm_usage_appends_ledger(tmp_path, monkeypatch):
     import packages.core.llm_cost as lc
+
     ledger = tmp_path / "usage.jsonl"
     monkeypatch.setattr(lc, "_LEDGER", ledger)
     rec = log_llm_usage("qwen3:1.7b", "prompt text here", "answer text", 1.23, tag="food")
@@ -36,6 +37,7 @@ def test_log_llm_usage_appends_ledger(tmp_path, monkeypatch):
 
 def test_prompt_cache_roundtrip(tmp_path, monkeypatch):
     import packages.core.llm_cost as lc
+
     cache = tmp_path / "cache"
     monkeypatch.setattr(lc, "_CACHE_DIR", cache)
     key = prompt_cache_key("same prompt", "same system")
@@ -47,6 +49,7 @@ def test_prompt_cache_roundtrip(tmp_path, monkeypatch):
 def test_summarize_food_uses_cache_second_call(tmp_path, monkeypatch):
     """Second identical call must hit cache (no 2nd LLM call) and still return text."""
     import asyncio
+
     import packages.core.llm_cost as lc
     from agents.monitoring.telegram_bot import _summarize_food
 
@@ -72,4 +75,6 @@ def test_summarize_food_uses_cache_second_call(tmp_path, monkeypatch):
     # Ledger should have 1 miss + 1 hit
     lines = ledger.read_text(encoding="utf-8").strip().splitlines()
     assert len(lines) == 2
-    assert any('"cache_hit": true' in l for l in lines)
+    assert any('"cache_hit": true' in line for line in lines)
+
+

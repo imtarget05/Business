@@ -30,7 +30,13 @@ class TestRootCauseAgent:
         agent = create_root_cause_agent(llm=MockLLMProvider())
         tid = uuid4()
         agent.set_audit_events(
-            [{"task_id": str(tid), "event": "action_failed", "payload": {"capability": "gmail.send"}}]
+            [
+                {
+                    "task_id": str(tid),
+                    "event": "action_failed",
+                    "payload": {"capability": "gmail.send"},
+                }
+            ]
         )
         resp = await agent.handle(_req(tid))
         assert resp.status == AgentResponseStatus.SUCCESS
@@ -38,9 +44,7 @@ class TestRootCauseAgent:
 
     async def test_get_metrics_capability(self) -> None:
         agent = create_root_cause_agent(llm=MockLLMProvider())
-        req = TaskRequest(
-            task_id=uuid4(), domain=Domain.OPS, action="get_metrics", payload={}
-        )
+        req = TaskRequest(task_id=uuid4(), domain=Domain.OPS, action="get_metrics", payload={})
         resp = await agent.handle(req)
         assert resp.status == AgentResponseStatus.SUCCESS
         assert "metrics" in resp.result

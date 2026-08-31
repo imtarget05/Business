@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Unit tests for supply_chain inventory monitoring (Phase SC).
 
 Validates the InventoryMonitor agent's ability to track stock levels,
@@ -8,7 +7,6 @@ and provide summary reports for supply chain operations.
 
 from __future__ import annotations
 
-import asyncio
 import time
 
 import pytest
@@ -18,14 +16,14 @@ from agents.supply_chain.inventory import (
     InventoryAlertType,
     InventoryItem,
     InventoryMonitor,
-    InventoryStatus,
     InventorySnapshot,
+    InventoryStatus,
 )
-
 
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
+
 
 @pytest.fixture
 def inventory_monitor() -> InventoryMonitor:
@@ -88,6 +86,7 @@ def sample_inventory_items() -> list[InventoryItem]:
 # ---------------------------------------------------------------------------
 # InventoryItem tests
 # ---------------------------------------------------------------------------
+
 
 def test_inventory_item_basic():
     """Basic inventory item creation."""
@@ -162,13 +161,16 @@ def test_inventory_item_status():
     assert item3.status == InventoryStatus.OUT_OF_STOCK
 
     # Overstock
-    item4 = InventoryItem(sku="SKU-004", quantity_on_hand=150, reorder_point=20, max_stock_level=100)
+    item4 = InventoryItem(
+        sku="SKU-004", quantity_on_hand=150, reorder_point=20, max_stock_level=100
+    )
     assert item4.status == InventoryStatus.OVERSTOCK
 
 
 # ---------------------------------------------------------------------------
 # InventoryMonitor add / snapshot tests
 # ---------------------------------------------------------------------------
+
 
 def test_add_single_item(inventory_monitor):
     """Adding a single item updates the snapshot."""
@@ -202,6 +204,7 @@ def test_get_snapshot_includes_alerts(inventory_monitor, sample_inventory_items)
 # ---------------------------------------------------------------------------
 # Alert generation tests
 # ---------------------------------------------------------------------------
+
 
 def test_alert_out_of_stock(inventory_monitor):
     """Out of stock items generate critical alerts."""
@@ -272,6 +275,7 @@ def test_multiple_alerts_same_item(inventory_monitor):
 # Alert filtering tests
 # ---------------------------------------------------------------------------
 
+
 def test_get_critical_alerts(inventory_monitor, sample_inventory_items):
     """Critical alerts filter returns only out-of-stock items."""
     inventory_monitor.add_items(sample_inventory_items)
@@ -293,6 +297,7 @@ def test_get_warning_alerts(inventory_monitor, sample_inventory_items):
 # ---------------------------------------------------------------------------
 # Summary tests
 # ---------------------------------------------------------------------------
+
 
 def test_get_summary_basic(inventory_monitor):
     """Summary returns counts for each status."""
@@ -330,13 +335,15 @@ def test_get_summary_empty(inventory_monitor):
 # InventoryMonitor handle() — agent contract tests (async)
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_handle_check_inventory_no_items():
     """check_inventory with no items returns success with empty data."""
     from uuid import uuid4
-    from packages.contracts.models import TaskRequest, TaskContext
-    from packages.contracts.enums import Domain
+
     from agents.supply_chain.inventory import InventoryMonitor
+    from packages.contracts.enums import Domain
+    from packages.contracts.models import TaskContext, TaskRequest
 
     request = TaskRequest(
         task_id=uuid4(),
@@ -359,9 +366,10 @@ async def test_handle_check_inventory_no_items():
 async def test_handle_check_inventory_with_items():
     """check_inventory with items updates snapshot and returns results."""
     from uuid import uuid4
-    from packages.contracts.models import TaskRequest, TaskContext
-    from packages.contracts.enums import Domain
+
     from agents.supply_chain.inventory import InventoryMonitor
+    from packages.contracts.enums import Domain
+    from packages.contracts.models import TaskContext, TaskRequest
 
     items_data = [
         {
@@ -419,9 +427,10 @@ async def test_handle_check_inventory_with_items():
 async def test_handle_get_alerts():
     """get_alerts returns current alerts."""
     from uuid import uuid4
-    from packages.contracts.models import TaskRequest, TaskContext
-    from packages.contracts.enums import Domain
+
     from agents.supply_chain.inventory import InventoryMonitor
+    from packages.contracts.enums import Domain
+    from packages.contracts.models import TaskContext, TaskRequest
 
     item = InventoryItem(sku="SKU-ALERT", quantity_on_hand=0, reorder_point=10)
     monitor = InventoryMonitor()
@@ -448,9 +457,10 @@ async def test_handle_get_alerts():
 async def test_handle_get_summary():
     """get_summary returns inventory summary."""
     from uuid import uuid4
-    from packages.contracts.models import TaskRequest, TaskContext
-    from packages.contracts.enums import Domain
+
     from agents.supply_chain.inventory import InventoryMonitor
+    from packages.contracts.enums import Domain
+    from packages.contracts.models import TaskContext, TaskRequest
 
     items = [
         InventoryItem(sku="SKU-001", quantity_on_hand=100, reorder_point=20, max_stock_level=150),
@@ -480,9 +490,10 @@ async def test_handle_get_summary():
 async def test_handle_unsupported_action():
     """Unsupported actions are rejected."""
     from uuid import uuid4
-    from packages.contracts.models import TaskRequest, TaskContext
-    from packages.contracts.enums import Domain
+
     from agents.supply_chain.inventory import InventoryMonitor
+    from packages.contracts.enums import Domain
+    from packages.contracts.models import TaskContext, TaskRequest
 
     request = TaskRequest(
         task_id=uuid4(),
@@ -503,6 +514,7 @@ async def test_handle_unsupported_action():
 # ---------------------------------------------------------------------------
 # Integration-style: inventory with PO Agent output format
 # ---------------------------------------------------------------------------
+
 
 def test_inventory_from_po_agent_format():
     """Inventory monitor can consume PO Agent-style output data.
@@ -562,6 +574,7 @@ def test_inventory_from_po_agent_format():
 # ---------------------------------------------------------------------------
 # Data structure tests
 # ---------------------------------------------------------------------------
+
 
 def test_inventory_alert_fields():
     """InventoryAlert has all required fields."""

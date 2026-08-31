@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Supply Chain Reporting Agent (Phase SC).
 
 Generates summary reports and dashboards for supply chain operations.
@@ -128,14 +127,16 @@ class SupplyChainReporter:
         po_type: str,
         processed_at: str | None = None,
     ) -> None:
-        self._mock_po_data.append({
-            "po_number": po_number,
-            "vendor": vendor,
-            "total": total,
-            "route": route,
-            "po_type": po_type,
-            "processed_at": processed_at or "",
-        })
+        self._mock_po_data.append(
+            {
+                "po_number": po_number,
+                "vendor": vendor,
+                "total": total,
+                "route": route,
+                "po_type": po_type,
+                "processed_at": processed_at or "",
+            }
+        )
 
     def add_mock_approval(
         self,
@@ -144,12 +145,14 @@ class SupplyChainReporter:
         decided_by: str | None = None,
         decided_at: str | None = None,
     ) -> None:
-        self._mock_approval_data.append({
-            "po_number": po_number,
-            "decision": decision,
-            "decided_by": decided_by or "",
-            "decided_at": decided_at or "",
-        })
+        self._mock_approval_data.append(
+            {
+                "po_number": po_number,
+                "decision": decision,
+                "decided_by": decided_by or "",
+                "decided_at": decided_at or "",
+            }
+        )
 
     def add_mock_inventory_item(
         self,
@@ -161,15 +164,17 @@ class SupplyChainReporter:
         unit_cost: float,
         status: str = "normal",
     ) -> None:
-        self._mock_inventory_data.append({
-            "sku": sku,
-            "description": description,
-            "quantity_on_hand": quantity_on_hand,
-            "reorder_point": reorder_point,
-            "max_stock_level": max_stock_level,
-            "unit_cost": unit_cost,
-            "status": status,
-        })
+        self._mock_inventory_data.append(
+            {
+                "sku": sku,
+                "description": description,
+                "quantity_on_hand": quantity_on_hand,
+                "reorder_point": reorder_point,
+                "max_stock_level": max_stock_level,
+                "unit_cost": unit_cost,
+                "status": status,
+            }
+        )
 
     def clear_data(self) -> None:
         self._mock_po_data = []
@@ -247,8 +252,7 @@ class SupplyChainReporter:
         items = self._mock_inventory_data
         total_items = len(items)
         total_value = sum(
-            item.get("quantity_on_hand", 0) * item.get("unit_cost", 0.0)
-            for item in items
+            item.get("quantity_on_hand", 0) * item.get("unit_cost", 0.0) for item in items
         )
 
         status_counts: dict[str, int] = {}
@@ -346,7 +350,7 @@ class SupplyChainReporter:
                 "total_alerts": daily["inventory_alerts"]["total_alerts"],
                 "critical_alerts": daily["inventory_alerts"]["out_of_stock_count"],
                 "warning_alerts": daily["inventory_alerts"]["low_stock_count"]
-                    + daily["inventory_alerts"]["overstock_count"],
+                + daily["inventory_alerts"]["overstock_count"],
             },
             "insights": daily["insights"],
             "warnings": daily["warnings"],
@@ -408,9 +412,7 @@ class SupplyChainReporter:
                 ),
             )
 
-    async def _generate_report(
-        self, request: TaskRequest, report_type: str
-    ) -> AgentResponse:
+    async def _generate_report(self, request: TaskRequest, report_type: str) -> AgentResponse:
         if report_type == "daily_summary":
             report = self.generate_daily_summary()
         elif report_type == "po_processing":
@@ -445,16 +447,16 @@ class SupplyChainReporter:
 # Factory for registry
 # ---------------------------------------------------------------------------
 
-SUPPLY_CHAIN_REPORTING_CAPABILITIES = frozenset({
-    "supply_chain.generate_report",
-    "supply_chain.get_dashboard",
-    "supply_chain.get_po_report",
-    "supply_chain.get_approval_report",
-    "supply_chain.get_inventory_report",
-})
+SUPPLY_CHAIN_REPORTING_CAPABILITIES = frozenset(
+    {
+        "supply_chain.generate_report",
+        "supply_chain.get_dashboard",
+        "supply_chain.get_po_report",
+        "supply_chain.get_approval_report",
+        "supply_chain.get_inventory_report",
+    }
+)
 
 
-def create_supply_chain_reporter(
-    llm=None, settings=None
-) -> SupplyChainReporter:
+def create_supply_chain_reporter(llm=None, settings=None) -> SupplyChainReporter:
     return SupplyChainReporter()

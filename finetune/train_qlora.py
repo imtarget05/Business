@@ -53,10 +53,10 @@ def main() -> None:
         return
     print(f"Training on {len(data)} samples, LoRA r={args.rank}, {args.epochs} epochs")
 
-    from unsloth import FastLanguageModel
     from datasets import Dataset
-    from trl import SFTTrainer
     from transformers import TrainingArguments
+    from trl import SFTTrainer
+    from unsloth import FastLanguageModel
 
     model, tokenizer = FastLanguageModel.from_pretrained(
         model_name="unsloth/Llama-3.2-3B-Instruct",
@@ -68,7 +68,15 @@ def main() -> None:
         r=args.rank,
         lora_alpha=args.rank * 2,
         lora_dropout=0.05,
-        target_modules=["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"],
+        target_modules=[
+            "q_proj",
+            "k_proj",
+            "v_proj",
+            "o_proj",
+            "gate_proj",
+            "up_proj",
+            "down_proj",
+        ],
         use_gradient_checkpointing="unsloth",
     )
 

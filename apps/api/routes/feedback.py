@@ -54,7 +54,6 @@ async def feedback_stats() -> dict[str, Any]:
     return {
         "rules_total": len(rules),
         "rules": [
-            {"keyword": r.keyword, "capability": r.capability, "hits": r.hits}
-            for r in rules[:50]
+            {"keyword": r.keyword, "capability": r.capability, "hits": r.hits} for r in rules[:50]
         ],
     }

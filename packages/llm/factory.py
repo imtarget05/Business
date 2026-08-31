@@ -1,4 +1,4 @@
-﻿"""Provider factory - the single place that maps config -> implementation.
+"""Provider factory - the single place that maps config -> implementation.
 
 Implements the LLM fallback policy (Phase F): when the configured provider is a
 real one (Ollama / Cloudflare / external), it is wrapped in a FallbackLLMProvider

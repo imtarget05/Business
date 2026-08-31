@@ -1,4 +1,4 @@
-﻿"""RAG eval harness — sweep top_k & chunk_size, report retrieval hit-rate.
+"""RAG eval harness — sweep top_k & chunk_size, report retrieval hit-rate.
 
 Usage:
     python scripts/eval_rag.py            # default corpus + QA set
@@ -65,9 +65,7 @@ def lexical_score(query: str, chunk: str) -> float:
     return len(q_terms & c_terms) / len(q_terms)
 
 
-def retrieve(
-    query: str, top_k: int, chunk_size: int, overlap: int
-) -> list[tuple[str, float]]:
+def retrieve(query: str, top_k: int, chunk_size: int, overlap: int) -> list[tuple[str, float]]:
     chunks = []
     for doc_id, text in DOCS.items():
         for c in chunk_text(text, chunk_size, overlap):
@@ -94,10 +92,7 @@ def evaluate(top_k: int, chunk_size: int, overlap: int) -> dict:
 
 
 def main() -> None:
-    print(
-        f"{'top_k':>5} {'chunk':>6} {'overlap':>7} "
-        f"{'hit@k':>7} {'MRR':>6} {'ms':>7}"
-    )
+    print(f"{'top_k':>5} {'chunk':>6} {'overlap':>7} {'hit@k':>7} {'MRR':>6} {'ms':>7}")
     best, best_cfg = -1.0, None
     for top_k in (1, 3, 5, 8):
         for chunk_size in (100, 200, 500):

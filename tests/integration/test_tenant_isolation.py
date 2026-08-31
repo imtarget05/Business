@@ -23,11 +23,11 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
-import packages.database.session as session_mod
 import packages.config.settings as settings_mod
-from apps.api.main import create_app
+import packages.database.session as session_mod
 from agents.support.tools import CreateTicketTool, SendEmailReplyTool
-from packages.config.settings import Settings, LLMProviderKind
+from apps.api.main import create_app
+from packages.config.settings import LLMProviderKind, Settings
 from packages.core.errors import ToolExecutionError
 from packages.database import models
 from packages.database.base import Base
@@ -68,10 +68,11 @@ def client(tmp_path, monkeypatch):
     monkeypatch.setattr(live, "tenant_api_keys", {KEY_A: ORG_A, KEY_B: ORG_B})
     monkeypatch.setattr(live, "rate_limit_per_minute", 1000)
     # Routes read the cached singleton; mirror our sqlite/persistence config.
-    monkeypatch.setattr(live, "database_url", f"sqlite+aiosqlite:///{(tmp_path / 'tenants.db').as_posix()}")
+    monkeypatch.setattr(
+        live, "database_url", f"sqlite+aiosqlite:///{(tmp_path / 'tenants.db').as_posix()}"
+    )
     monkeypatch.setattr(live, "persistence_enabled", True)
 
-    import os
     # Set rate limit env var before creating TestClient
     os.environ["RATE_LIMIT_PER_MINUTE"] = "1000"
 
@@ -142,9 +143,7 @@ def test_client_supplied_org_id_ignored_on_create(client):
     # Bound to the CALLER's org (A), not the body-supplied B.
     assert str(data["organization_id"]) == ORG_A
     # And tenant B cannot see it.
-    r = client.get(
-        f"/v1/conversations/{data['conversation_id']}", headers={"X-API-Key": KEY_B}
-    )
+    r = client.get(f"/v1/conversations/{data['conversation_id']}", headers={"X-API-Key": KEY_B})
     assert r.status_code == 404
 
 
@@ -284,12 +283,8 @@ async def test_send_email_allows_allowlisted_recipient_check(tool_db, monkeypatc
     tool = SendEmailReplyTool(tool_db)
     tool.bind_organization(_uuid.UUID(ORG_A))
 
-    assert await tool._recipient_allowed(
-        _uuid.UUID(ORG_A), "vip@example.com", None
-    )
-    assert not await tool._recipient_allowed(
-        _uuid.UUID(ORG_A), "nope@example.com", None
-    )
+    assert await tool._recipient_allowed(_uuid.UUID(ORG_A), "vip@example.com", None)
+    assert not await tool._recipient_allowed(_uuid.UUID(ORG_A), "nope@example.com", None)
 
 
 @pytest.mark.asyncio
@@ -321,7 +316,5 @@ def test_app_refuses_to_start_without_key_outside_local(monkeypatch):
 
 
 def test_unknown_tenant_key_rejected(client):
-    resp = client.get(
-        "/v1/conversations", headers={"X-API-Key": "not-a-tenant-key"}
-    )
+    resp = client.get("/v1/conversations", headers={"X-API-Key": "not-a-tenant-key"})
     assert resp.status_code == 401

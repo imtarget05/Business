@@ -1,4 +1,4 @@
-﻿"""Task 1 - KnowledgeBase unit tests (full-text + vector, sqlite mock)."""
+"""Task 1 - KnowledgeBase unit tests (full-text + vector, sqlite mock)."""
 
 from __future__ import annotations
 
@@ -147,8 +147,7 @@ async def test_add_document_is_idempotent_on_reindex(kb) -> None:
         ).scalar()
 
     assert row_count == first["chunks"] == second["chunks"], (
-        f"re-index duplicated chunks: {row_count} rows for {source} "
-        f"(expected {first['chunks']})"
+        f"re-index duplicated chunks: {row_count} rows for {source} (expected {first['chunks']})"
     )
 
 
@@ -163,17 +162,13 @@ async def test_index_directory_twice_is_idempotent(kb) -> None:
     assert first == 2
 
     async with kb._factory() as session:
-        after_first = (
-            await session.execute(text("SELECT COUNT(*) FROM kb_chunks"))
-        ).scalar()
+        after_first = (await session.execute(text("SELECT COUNT(*) FROM kb_chunks"))).scalar()
 
     second = await kb.index_directory(d)
     assert second == 2
 
     async with kb._factory() as session:
-        after_second = (
-            await session.execute(text("SELECT COUNT(*) FROM kb_chunks"))
-        ).scalar()
+        after_second = (await session.execute(text("SELECT COUNT(*) FROM kb_chunks"))).scalar()
 
     assert after_second == after_first, "re-indexing the directory duplicated chunks"
 
@@ -190,9 +185,7 @@ async def test_add_document_stores_embedding_column(kb_vec) -> None:
         f.write("Refund policy allows refunds within 14 days.")
     await kb_vec.add_document(path)
     async with kb_vec._factory() as session:
-        emb = (
-            await session.execute(text("SELECT embedding FROM kb_chunks LIMIT 1"))
-        ).scalar()
+        emb = (await session.execute(text("SELECT embedding FROM kb_chunks LIMIT 1"))).scalar()
     assert emb is not None
     assert emb.startswith("[")
 

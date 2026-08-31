@@ -35,9 +35,7 @@ def upgrade() -> None:
     bind = op.get_bind()
 
     # Backfill: drop orphaned task rows before making organization_id NOT NULL.
-    bind.execute(
-        sa.text("DELETE FROM tasks WHERE organization_id IS NULL")
-    )
+    bind.execute(sa.text("DELETE FROM tasks WHERE organization_id IS NULL"))
 
     with op.batch_alter_table("tasks") as batch:
         batch.alter_column(
@@ -56,9 +54,7 @@ def upgrade() -> None:
             "uq_message_sequence", "messages", ["conversation_id", "sequence"]
         )
     if "uq_task_step_sequence" not in step_uc:
-        op.create_unique_constraint(
-            "uq_task_step_sequence", "task_steps", ["task_id", "sequence"]
-        )
+        op.create_unique_constraint("uq_task_step_sequence", "task_steps", ["task_id", "sequence"])
 
 
 def downgrade() -> None:

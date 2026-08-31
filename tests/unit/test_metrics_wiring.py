@@ -1,4 +1,4 @@
-﻿"""F13 regression guard: the boas_* counters must be fed by REAL app code.
+"""F13 regression guard: the boas_* counters must be fed by REAL app code.
 
 ``tests/unit/test_prometheus_metrics.py`` proves the ``record_*`` helpers work
 when called directly. These tests prove the production call sites (classic
@@ -87,11 +87,7 @@ class _StubAgent:
         self._handoff_to = handoff_to
 
     async def handle(self, request: TaskRequest) -> AgentResponse:
-        metadata = (
-            {"handoff": {"target_capability": self._handoff_to}}
-            if self._handoff_to
-            else {}
-        )
+        metadata = {"handoff": {"target_capability": self._handoff_to}} if self._handoff_to else {}
         return AgentResponse(
             task_id=request.task_id,
             agent=self.descriptor.qualified_name,
@@ -255,9 +251,7 @@ def test_log_llm_usage_increments_cost_counter(tmp_path, monkeypatch) -> None:
     rec = log_llm_usage(model, "x" * 4000, "y" * 2000, 1.5, tag="f13-probe")
 
     assert rec["est_cost_usd"] > 0.0
-    assert _sample(COST_COUNTER, model=model, tag="f13-probe") == pytest.approx(
-        rec["est_cost_usd"]
-    )
+    assert _sample(COST_COUNTER, model=model, tag="f13-probe") == pytest.approx(rec["est_cost_usd"])
 
 
 def test_cache_hit_is_recorded_as_zero_spend(tmp_path, monkeypatch) -> None:

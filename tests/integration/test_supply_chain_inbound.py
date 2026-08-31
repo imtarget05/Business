@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Phase D2 — Inbound PO email integration tests.
 
 Verifies the inbound handler parses a real PO email string end-to-end through
@@ -9,10 +8,7 @@ from __future__ import annotations
 
 from uuid import uuid4
 
-import pytest
-
-from agents.supply_chain.inbound import process_inbound_email, process_inbound_batch
-
+from agents.supply_chain.inbound import process_inbound_batch, process_inbound_email
 
 SAMPLE_PO_EMAIL = (
     "PO NUMBER: PO-2024-901\n"
@@ -47,9 +43,7 @@ async def test_process_inbound_email_rejects_empty() -> None:
 
 async def test_process_inbound_email_rejects_non_po() -> None:
     """A non-PO email is not silently accepted."""
-    resp = await process_inbound_email(
-        "Hey, just checking in about our meeting tomorrow."
-    )
+    resp = await process_inbound_email("Hey, just checking in about our meeting tomorrow.")
     # Either a parse failure or an explicit rejection — never a fabricated PO.
     assert resp.status in ("failed", "escalated")
     assert resp.error is not None or resp.result.get("route") in (

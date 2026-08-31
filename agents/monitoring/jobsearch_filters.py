@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Pure, testable filters for the JobSearch verification pipeline.
 
 Extracted from ``telegram_bot._do_jobsearch_confirm`` so the spam-prone logic
@@ -144,11 +143,52 @@ def verify_job_listing(url: str, html: str, now: str, fallback_title: str = "") 
 
 
 _STOPWORDS = (
-    "tìm", "job", "việc", "tuyển", "gửi", "về", "mail", "trên", "mọi", "nền",
-    "tảng", "đang", "nhiều", "cho", "tôi", "với", "các", "những", "để",
-    "nhận", "báo", "cáo", "tại", "vị", "trí", "làm", "tim", "viec", "tuyen",
-    "tìm kiếm", "search", "agent", "gần đây", "gần", "đây", "các bạn", "cho tôi",
-    "còn", "apply", "được", "có", "thể", "những", "đâu", "nào", "gì",
+    "tìm",
+    "job",
+    "việc",
+    "tuyển",
+    "gửi",
+    "về",
+    "mail",
+    "trên",
+    "mọi",
+    "nền",
+    "tảng",
+    "đang",
+    "nhiều",
+    "cho",
+    "tôi",
+    "với",
+    "các",
+    "những",
+    "để",
+    "nhận",
+    "báo",
+    "cáo",
+    "tại",
+    "vị",
+    "trí",
+    "làm",
+    "tim",
+    "viec",
+    "tuyen",
+    "tìm kiếm",
+    "search",
+    "agent",
+    "gần đây",
+    "gần",
+    "đây",
+    "các bạn",
+    "cho tôi",
+    "còn",
+    "apply",
+    "được",
+    "có",
+    "thể",
+    "những",
+    "đâu",
+    "nào",
+    "gì",
 )
 
 
@@ -232,7 +272,10 @@ async def extract_page_text(url: str, web_provider=None) -> str:
     # Fallback: raw GET (kept intentionally — last-resort, not primary path).
     try:
         import httpx
-        with httpx.Client(timeout=10, follow_redirects=True, headers={"User-Agent": "Mozilla/5.0"}) as _c:
+
+        with httpx.Client(
+            timeout=10, follow_redirects=True, headers={"User-Agent": "Mozilla/5.0"}
+        ) as _c:
             _r = _c.get(url)
             if _r.status_code == 200:
                 return _r.text
@@ -296,6 +339,7 @@ def select_candidates(verified: list[dict], uncertain: list[dict], limit: int = 
 # ---------------------------------------------------------------------------
 # Post-audit helpers (silent contract violations, 2026-08-30)
 # ---------------------------------------------------------------------------
+
 
 def searching_label(count: int | str) -> str:
     """State-machine label for the SEARCHING phase — must NOT claim VERIFIED.

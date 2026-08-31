@@ -1,4 +1,3 @@
-﻿# -*- coding: utf-8 -*-
 """E2E: Supply-chain LangGraph flow reaches an approved terminal state (offline).
 
 Drives the full graph: inbound PO email -> PO agent -> (auto-approve low amount /
@@ -9,8 +8,9 @@ stays green with no Postgres.
 
 from __future__ import annotations
 
-import pytest
 from uuid import uuid4
+
+import pytest
 
 from agents.supply_chain.graph import SupplyChainGraphOrchestrator
 from packages.config.settings import Settings

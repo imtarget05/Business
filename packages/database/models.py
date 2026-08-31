@@ -130,9 +130,7 @@ class Agent(Base, TimestampMixin):
 
 class AgentCapability(Base, TimestampMixin):
     __tablename__ = "agent_capabilities"
-    __table_args__ = (
-        Index("uq_agent_capability", "agent_id", "capability", unique=True),
-    )
+    __table_args__ = (Index("uq_agent_capability", "agent_id", "capability", unique=True),)
 
     id: Mapped[UUID] = _uuid_pk()
     agent_id: Mapped[UUID] = mapped_column(
@@ -181,9 +179,7 @@ class Task(Base, TimestampMixin):
     error_code: Mapped[str | None] = mapped_column(String(64))
     error_message: Mapped[str | None] = mapped_column(Text)
     correlation_id: Mapped[str | None] = mapped_column(String(64), index=True)
-    created_by: Mapped[UUID | None] = mapped_column(
-        ForeignKey("users.id", ondelete="SET NULL")
-    )
+    created_by: Mapped[UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
 
     steps: Mapped[list[TaskStep]] = relationship(
         back_populates="task", cascade="all, delete-orphan"
@@ -201,9 +197,7 @@ class TaskStepStatus(StrEnum):
 class TaskStep(Base, TimestampMixin):
     __tablename__ = "task_steps"
 
-    __table_args__ = (
-        UniqueConstraint("task_id", "sequence", name="uq_task_step_sequence"),
-    )
+    __table_args__ = (UniqueConstraint("task_id", "sequence", name="uq_task_step_sequence"),)
 
     id: Mapped[UUID] = _uuid_pk()
     task_id: Mapped[UUID] = mapped_column(
@@ -219,9 +213,7 @@ class TaskStep(Base, TimestampMixin):
     input: Mapped[dict | None] = mapped_column(JSON)
     output: Mapped[dict | None] = mapped_column(JSON)
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    correlation_id: Mapped[str | None] = mapped_column(
-        String(64), index=True, default=None
-    )
+    correlation_id: Mapped[str | None] = mapped_column(String(64), index=True, default=None)
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     task: Mapped[Task] = relationship(back_populates="steps")
@@ -314,9 +306,7 @@ EMBEDDING_DIMENSIONS = 768  # Cloudflare @cf/baai/bge-base-en-v1.5 (Phase 2 defa
 
 class DocumentChunk(Base):
     __tablename__ = "document_chunks"
-    __table_args__ = (
-        Index("uq_document_chunk_index", "document_id", "chunk_index", unique=True),
-    )
+    __table_args__ = (Index("uq_document_chunk_index", "document_id", "chunk_index", unique=True),)
 
     id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
     document_id: Mapped[UUID] = mapped_column(
@@ -378,9 +368,7 @@ class MessageRole(StrEnum):
 class Message(Base, TimestampMixin):
     __tablename__ = "messages"
 
-    __table_args__ = (
-        UniqueConstraint("conversation_id", "sequence", name="uq_message_sequence"),
-    )
+    __table_args__ = (UniqueConstraint("conversation_id", "sequence", name="uq_message_sequence"),)
 
     id: Mapped[UUID] = _uuid_pk()
     conversation_id: Mapped[UUID] = mapped_column(

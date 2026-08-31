@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env python3
+#!/usr/bin/env python3
 """Demo: AI Workflow Automation with Ollama.
 
 This script demonstrates how to use local Ollama for:
@@ -38,9 +38,7 @@ SUMMARIZATION_PROMPT = (
 )
 
 
-async def call_ollama(
-    prompt: str, model: str = OLLAMA_MODEL
-) -> dict:
+async def call_ollama(prompt: str, model: str = OLLAMA_MODEL) -> dict:
     """Call Ollama API with a prompt and return the response."""
     async with httpx.AsyncClient(timeout=30.0) as client:
         response = await client.post(
@@ -55,9 +53,7 @@ async def call_ollama(
         return response.json()
 
 
-async def classify_content(
-    text: str, model: str = OLLAMA_MODEL
-) -> dict:
+async def classify_content(text: str, model: str = OLLAMA_MODEL) -> dict:
     """Use Ollama to classify content into categories.
 
     Returns:
@@ -85,9 +81,7 @@ async def classify_content(
         }
 
 
-async def summarize_content(
-    text: str, model: str = OLLAMA_MODEL
-) -> str:
+async def summarize_content(text: str, model: str = OLLAMA_MODEL) -> str:
     """Use Ollama to generate a summary.
 
     Returns:
@@ -116,14 +110,10 @@ def route_by_classification(classification: dict) -> str:
         "general": "POST /v1/tasks — Save to database",
     }
 
-    return routing_map.get(
-        category, "POST /v1/tasks — Save to database (default)"
-    )
+    return routing_map.get(category, "POST /v1/tasks — Save to database (default)")
 
 
-async def process_document(
-    text: str, model: str = OLLAMA_MODEL
-) -> dict:
+async def process_document(text: str, model: str = OLLAMA_MODEL) -> dict:
     """Full pipeline: classify -> summarize -> route.
 
     Returns:
@@ -142,9 +132,7 @@ async def process_document(
 
 async def main() -> int:
     """Run the demo."""
-    parser = argparse.ArgumentParser(
-        description="AI Workflow Automation Demo with Ollama"
-    )
+    parser = argparse.ArgumentParser(description="AI Workflow Automation Demo with Ollama")
     parser.add_argument(
         "--text",
         type=str,
@@ -257,9 +245,7 @@ async def main() -> int:
         print(f"Classification: {result['classification']}")
         print(f"Summary: {result['summary'][:120]}...")
         print(f"Action: {result['action']}")
-        match = (
-            "Y" if result["classification"] == sample["expected"] else "N"
-        )
+        match = "Y" if result["classification"] == sample["expected"] else "N"
         print(f"Match: {match}")
         print()
 

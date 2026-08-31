@@ -94,9 +94,7 @@ class ConversationRepository:
         await self._session.flush()
         return msg
 
-    async def list_messages(
-        self, organization_id: UUID, conversation_id: UUID
-    ) -> list[Message]:
+    async def list_messages(self, organization_id: UUID, conversation_id: UUID) -> list[Message]:
         """Messages in order (by sequence). Org-scoped via parent lookup."""
         conv = await self.get_conversation(organization_id, conversation_id)
         if conv is None:
@@ -133,9 +131,7 @@ class ConversationRepository:
         # sequence and produce duplicate sequence numbers. A proper fix would
         # require a database-level sequence or SELECT FOR UPDATE, but is deferred
         # per YAGNI (schema change not needed for current load profile).
-        stmt = select(func.max(Message.sequence)).where(
-            Message.conversation_id == conversation_id
-        )
+        stmt = select(func.max(Message.sequence)).where(Message.conversation_id == conversation_id)
         current = (await self._session.execute(stmt)).scalar_one()
         return (current or 0) + 1
 

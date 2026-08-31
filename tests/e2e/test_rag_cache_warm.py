@@ -1,4 +1,3 @@
-﻿# -*- coding: utf-8 -*-
 """E2E: RAG cache warm path + vector fallback (offline, mock embedding).
 
 Covers:
@@ -12,7 +11,8 @@ Covers:
 from __future__ import annotations
 
 import pytest
-from sqlalchemy import create_engine, text as _text
+from sqlalchemy import create_engine
+from sqlalchemy import text as _text
 
 from packages.core.rag_cache import rag_get, rag_store
 from packages.llm.mock_embedding import MockEmbeddingProvider

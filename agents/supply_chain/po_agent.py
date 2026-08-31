@@ -15,7 +15,6 @@ from __future__ import annotations
 import logging
 import re
 from dataclasses import dataclass, field
-from typing import Any
 
 from packages.config.settings import Settings
 from packages.contracts.enums import AgentResponseStatus, Domain
@@ -24,7 +23,6 @@ from packages.contracts.models import (
     AgentResponse,
     ErrorDetail,
     TaskRequest,
-    TaskContext,
 )
 from packages.llm.base import LLMProvider
 
@@ -33,6 +31,7 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 # Data structures
 # ---------------------------------------------------------------------------
+
 
 @dataclass
 class POItem:
@@ -227,7 +226,13 @@ class PurchaseOrderAgent:
                                     "unit_price": {"type": "number"},
                                     "total_price": {"type": "number"},
                                 },
-                                "required": ["sku", "description", "quantity", "unit_price", "total_price"],
+                                "required": [
+                                    "sku",
+                                    "description",
+                                    "quantity",
+                                    "unit_price",
+                                    "total_price",
+                                ],
                             },
                         },
                         "total": {"type": "number"},
@@ -278,7 +283,7 @@ class PurchaseOrderAgent:
 
     def _rule_parse_po(self, text: str) -> PurchaseOrder | None:
         """Rule-based PO parsing fallback using regex."""
-        lines = text.splitlines()
+        text.splitlines()
 
         po_number = "UNKNOWN"
         vendor = "Unknown Vendor"
@@ -289,9 +294,9 @@ class PurchaseOrderAgent:
 
         # PO number patterns — try the most specific format first
         candidates = [
-            r"\b(PO-\d{4}-\w+(?:-\w+)*)\b",   # PO-2024-FALLBACK-TEST, PO-2024-001
-            r"\b(PO[-]?\s*\d+(?:[-]?\w+)*)\b", # PO 2024, PO-2024-001
-            r"\b(PO\s*\d{4,})\b",              # PO 2024...
+            r"\b(PO-\d{4}-\w+(?:-\w+)*)\b",  # PO-2024-FALLBACK-TEST, PO-2024-001
+            r"\b(PO[-]?\s*\d+(?:[-]?\w+)*)\b",  # PO 2024, PO-2024-001
+            r"\b(PO\s*\d{4,})\b",  # PO 2024...
         ]
         for pat in candidates:
             m = re.search(pat, text)
@@ -332,7 +337,9 @@ class PurchaseOrderAgent:
             line_total = float(total_match.group(1)) if total_match else 0.0
 
             # Description: everything before the QTY/price portion
-            desc_match = re.match(r"(.+?)(?:\s*,\s*QTY:|\s*-\s*\d+\s*units)", remainder, re.IGNORECASE)
+            desc_match = re.match(
+                r"(.+?)(?:\s*,\s*QTY:|\s*-\s*\d+\s*units)", remainder, re.IGNORECASE
+            )
             desc = desc_match.group(1).strip() if desc_match else remainder.strip()
 
             items.append(

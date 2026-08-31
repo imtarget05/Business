@@ -38,17 +38,13 @@ class KnowledgeRepository:
     # Documents
     # ------------------------------------------------------------------
 
-    async def get_document(
-        self, organization_id: UUID, document_id: UUID
-    ) -> Document | None:
+    async def get_document(self, organization_id: UUID, document_id: UUID) -> Document | None:
         doc = await self._session.get(Document, document_id)
         if doc is None or doc.organization_id != organization_id:
             return None
         return doc
 
-    async def find_document_by_title(
-        self, organization_id: UUID, title: str
-    ) -> Document | None:
+    async def find_document_by_title(self, organization_id: UUID, title: str) -> Document | None:
         stmt = select(Document).where(
             Document.organization_id == organization_id,
             Document.title == title,

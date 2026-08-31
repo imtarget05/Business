@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Guardrails cho Reporting Agent node.
 
 Triển khai 3 tầng:
@@ -22,22 +21,26 @@ class ReportingGuardrails:
     """Guardrails wrapper cho SupplyChainReporter node trong LangGraph."""
 
     # Valid report types
-    VALID_REPORT_TYPES = frozenset({
-        "daily_summary",
-        "po_processing",
-        "approval_stats",
-        "inventory_alerts",
-        "full_dashboard",
-    })
+    VALID_REPORT_TYPES = frozenset(
+        {
+            "daily_summary",
+            "po_processing",
+            "approval_stats",
+            "inventory_alerts",
+            "full_dashboard",
+        }
+    )
 
     # Valid actions for reporting node
-    VALID_ACTIONS = frozenset({
-        "supply_chain_generate_report",
-        "supply_chain_get_dashboard",
-        "supply_chain_get_po_report",
-        "supply_chain_get_approval_report",
-        "supply_chain_get_inventory_report",
-    })
+    VALID_ACTIONS = frozenset(
+        {
+            "supply_chain_generate_report",
+            "supply_chain_get_dashboard",
+            "supply_chain_get_po_report",
+            "supply_chain_get_approval_report",
+            "supply_chain_get_inventory_report",
+        }
+    )
 
     def __init__(self) -> None:
         # Circuit breaker guards the report generation (DB-backed aggregation).
@@ -100,25 +103,23 @@ class ReportingGuardrails:
         action = request.action
 
         if action not in self.VALID_ACTIONS:
-            raise PermissionError(
-                f"unauthorized action for reporting node: {action!r}"
-            )
+            raise PermissionError(f"unauthorized action for reporting node: {action!r}")
 
         # Reporting node là read-only — không có write actions
-        write_actions = frozenset({
-            "supply_chain.create_po",
-            "supply_chain.approve_po",
-            "supply_chain.reject_po",
-            "supply_chain.update_inventory",
-            "supply_chain.adjust_stock",
-            "supply_chain.place_order",
-            "supply_chain.delete_record",
-        })
+        write_actions = frozenset(
+            {
+                "supply_chain.create_po",
+                "supply_chain.approve_po",
+                "supply_chain.reject_po",
+                "supply_chain.update_inventory",
+                "supply_chain.adjust_stock",
+                "supply_chain.place_order",
+                "supply_chain.delete_record",
+            }
+        )
 
         if action in write_actions:
-            raise PermissionError(
-                f"reporting node cannot perform write action: {action!r}"
-            )
+            raise PermissionError(f"reporting node cannot perform write action: {action!r}")
 
         logger.debug(f"ReportingGuardrails: permission check passed for task {request.task_id}")
 
@@ -131,9 +132,7 @@ class ReportingGuardrails:
         """
         # Response phải có status và result
         if not hasattr(response, "status") or not hasattr(response, "result"):
-            raise ValueError(
-                "reporting output must have 'status' and 'result' attributes"
-            )
+            raise ValueError("reporting output must have 'status' and 'result' attributes")
 
         result = response.result
         if not isinstance(result, dict):
@@ -159,8 +158,6 @@ class ReportingGuardrails:
         sensitive_fields = {"api_keys", "secrets", "passwords", "credentials"}
         for key in result.keys():
             if key.lower() in sensitive_fields:
-                raise PermissionError(
-                    f"reporting output contains sensitive field: {key!r}"
-                )
+                raise PermissionError(f"reporting output contains sensitive field: {key!r}")
 
-        logger.debug(f"ReportingGuardrails: output validation passed")
+        logger.debug("ReportingGuardrails: output validation passed")

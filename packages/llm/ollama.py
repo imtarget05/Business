@@ -5,12 +5,12 @@ OPTIONAL (ADR-001): activated via `LLM_PROVIDER=ollama` + `LLM_MODEL=<model>`.
 
 from __future__ import annotations
 
-import httpx
 from typing import Any
+
+import httpx
 
 from packages.config.settings import Settings
 from packages.llm.base import T, provider_error
-from packages.core.errors import LLMProviderError
 
 
 class OllamaProvider:
@@ -31,7 +31,7 @@ class OllamaProvider:
                 resp = client.get(f"{self._base_url}/api/tags")
                 resp.raise_for_status()
         except Exception as e:
-            raise provider_error(self.name, f"Ollama not reachable at {self._base_url}: {e}")
+            raise provider_error(self.name, f"Ollama not reachable at {self._base_url}: {e}") from e
 
     async def generate(self, prompt: str, **kwargs: Any) -> str:
         """Generate text completion from prompt."""
@@ -54,13 +54,13 @@ class OllamaProvider:
                 data = resp.json()
                 return data.get("response", "")
             except httpx.HTTPStatusError as e:
-                raise provider_error(self.name, f"Ollama API error {e.response.status_code}: {e.response.text}")
+                raise provider_error(
+                    self.name, f"Ollama API error {e.response.status_code}: {e.response.text}"
+                ) from e
             except Exception as e:
-                raise provider_error(self.name, f"Ollama request failed: {e}")
+                raise provider_error(self.name, f"Ollama request failed: {e}") from e
 
-    async def generate_structured(
-        self, prompt: str, schema: type[T], **kwargs: Any
-    ) -> T:
+    async def generate_structured(self, prompt: str, schema: type[T], **kwargs: Any) -> T:
         """Generate structured output matching schema (via JSON mode)."""
         import json
 
@@ -75,7 +75,9 @@ Respond ONLY with valid JSON matching this schema:
             parsed = json.loads(raw)
             return schema.model_validate(parsed)
         except Exception as e:
-            raise provider_error(self.name, f"Failed to parse structured output: {e}. Raw: {raw[:500]}")
+            raise provider_error(
+                self.name, f"Failed to parse structured output: {e}. Raw: {raw[:500]}"
+            ) from e
 
     async def complete_with_tools(
         self,
@@ -86,7 +88,9 @@ Respond ONLY with valid JSON matching this schema:
         """Chat completion with tool calling (Ollama doesn't support tools natively yet)."""
         # For now, flatten messages and generate with tool descriptions
         # Real tool calling would need a different approach (function calling models)
-        tools_desc = "\n".join([f"- {t['function']['name']}: {t['function'].get('description', '')}" for t in tools])
+        tools_desc = "\n".join(
+            [f"- {t['function']['name']}: {t['function'].get('description', '')}" for t in tools]
+        )
         prompt = f"""You are a helpful assistant. Available tools:
 {tools_desc}
 
@@ -102,6 +106,7 @@ Otherwise respond normally."""
         if "TOOL_CALL:" in raw:
             try:
                 import json
+
                 tool_part = raw.split("TOOL_CALL:")[1].strip()
                 tool_call = json.loads(tool_part.split("\n")[0])
                 return {"tool_calls": [tool_call], "content": None}
@@ -125,4 +130,4 @@ Otherwise respond normally."""
                     return [data["embedding"]]
                 return data.get("embeddings", [])
             except Exception as e:
-                raise provider_error(self.name, f"Ollama embeddings failed: {e}")
+                raise provider_error(self.name, f"Ollama embeddings failed: {e}") from e

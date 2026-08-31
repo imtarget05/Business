@@ -17,10 +17,10 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.ext.asyncio import create_async_engine
 
-import packages.database.session as session_mod
 import packages.config.settings as settings_mod
+import packages.database.session as session_mod
 from apps.api.main import create_app
-from packages.config.settings import Settings, LLMProviderKind
+from packages.config.settings import LLMProviderKind, Settings
 from packages.database import models
 from packages.database.base import Base
 from packages.database.session import get_session_factory
@@ -33,7 +33,7 @@ def tmp_db() -> str:
     return path.replace("\\", "/")
 
 
-@ pytest.fixture()
+@pytest.fixture()
 def client(tmp_path, monkeypatch):
     """Fresh module state per test: point the global engine at a temp sqlite db."""
     monkeypatch.setattr(session_mod, "_engine", None)
@@ -57,20 +57,24 @@ def client(tmp_path, monkeypatch):
     monkeypatch.setattr(live, "database_url", url)
     monkeypatch.setattr(live, "persistence_enabled", True)
     monkeypatch.setattr(live, "llm_provider", LLMProviderKind.MOCK)
-    monkeypatch.setattr(live, "tenant_api_keys", {
-        "tenant-key-a": "00000000-0000-0000-0000-000000000001",
-        "tenant-key-b": "00000000-0000-0000-0000-000000000002",
-    })
+    monkeypatch.setattr(
+        live,
+        "tenant_api_keys",
+        {
+            "tenant-key-a": "00000000-0000-0000-0000-000000000001",
+            "tenant-key-b": "00000000-0000-0000-0000-000000000002",
+        },
+    )
     monkeypatch.setattr(live, "rate_limit_per_minute", 1000)
 
     # Create a shared mock LLM provider for this test
     shared_mock_llm = MockLLMProvider()
-    
+
     # Patch the factory to return our shared mock
     # Need to patch where it's imported/used: apps.api.routes.conversations.get_llm_provider
     def mock_get_llm_provider(s: Settings) -> MockLLMProvider:
         return shared_mock_llm
-    
+
     monkeypatch.setattr("apps.api.routes.conversations.get_llm_provider", mock_get_llm_provider)
 
     async def _setup() -> None:
@@ -352,9 +356,7 @@ def test_client_supplied_organization_id_is_ignored(client) -> None:
     )
     assert resp.status_code == 200, resp.text
     # Still bound to the caller's (first/default) org, not the claimed one.
-    assert str(resp.json()["organization_id"]) == (
-        "00000000-0000-0000-0000-000000000001"
-    )
+    assert str(resp.json()["organization_id"]) == ("00000000-0000-0000-0000-000000000001")
 
 
 def test_org_scoping_append_message_cross_org(client) -> None:

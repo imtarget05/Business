@@ -1,4 +1,4 @@
-﻿"""Unit tests for the embedding providers (Feature 1)."""
+"""Unit tests for the embedding providers (Feature 1)."""
 
 from __future__ import annotations
 
@@ -6,6 +6,8 @@ import httpx
 import pytest
 
 from packages.config.settings import Settings
+from packages.core.errors import LLMProviderError
+from packages.database.models import EMBEDDING_DIMENSIONS
 from packages.llm.embeddings import (
     CloudflareEmbeddingProvider,
     MockEmbeddingProvider,
@@ -14,7 +16,6 @@ from packages.llm.embeddings import (
     _vector_to_pg,
     cosine_similarity,
 )
-from packages.database.models import EMBEDDING_DIMENSIONS
 
 
 async def test_mock_returns_correct_dimension() -> None:
@@ -95,7 +96,7 @@ async def test_ollama_provider_embed_falls_back_to_legacy_endpoint() -> None:
 
 def test_cloudflare_provider_requires_credentials() -> None:
     settings = Settings(cloudflare_account_id=None, cloudflare_api_token=None)
-    with pytest.raises(Exception):
+    with pytest.raises(LLMProviderError):
         CloudflareEmbeddingProvider(settings)
 
 

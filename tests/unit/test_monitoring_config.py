@@ -1,16 +1,11 @@
-# -*- coding: utf-8 -*-
 """Unit tests for monitoring config loader."""
 
 from __future__ import annotations
-
-import os
 
 import pytest
 
 from agents.monitoring.config import (
     MonitoringConfig,
-    SchedulerConfig,
-    TelegramConfig,
     load_monitoring_config,
 )
 
@@ -67,7 +62,7 @@ async def test_env_override(monkeypatch):
     monkeypatch.setenv("TELEGRAM_CHAT_ID", "env_chat_456")
     monkeypatch.setenv("HEALTH_CHECK_INTERVAL_MINUTES", "45")
 
-    cfg = load_monitoring_config(path=str("/nonexistent.yaml"))
+    cfg = load_monitoring_config(path="/nonexistent.yaml")
     assert cfg.telegram.bot_token == "env_token_123"
     assert cfg.telegram.chat_id == "env_chat_456"
     assert cfg.telegram.enabled is True

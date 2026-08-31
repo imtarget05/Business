@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Unit tests for Telegram monitoring bot — uses stub bot (no network/telegram needed).
 
 Tests cover:
@@ -12,23 +11,22 @@ Tests cover:
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any
 
 import pytest
 
 from agents.monitoring.telegram_bot import MonitoringBot, TelegramConfig
 
-
 # ---------------------------------------------------------------------------
 # Mock Telegram types (mirror telegram.Update/Message surface used by handlers)
 # ---------------------------------------------------------------------------
+
 
 @dataclass
 class MockMessage:
     text: str = ""
     chat_id: int = 123456
 
-    async def reply_text(self, text: str, parse_mode: str = "Markdown") -> "MockMessage":
+    async def reply_text(self, text: str, parse_mode: str = "Markdown") -> MockMessage:
         self.text = text
         return self
 
@@ -44,7 +42,7 @@ class MockUpdate:
     effective_chat: MockChat | None = None
 
     @classmethod
-    def from_message(cls, text: str, chat_id: int = 123456) -> "MockUpdate":
+    def from_message(cls, text: str, chat_id: int = 123456) -> MockUpdate:
         return cls(
             message=MockMessage(text=text, chat_id=chat_id),
             effective_chat=MockChat(id=chat_id),
@@ -59,6 +57,7 @@ class MockContext:
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
+
 
 @pytest.fixture
 def bot() -> MonitoringBot:
@@ -76,8 +75,12 @@ def captured() -> list[str]:
 @pytest.fixture
 def bot_with_capture(bot: MonitoringBot, captured: list[str]) -> MonitoringBot:
     """Bot whose send_message records into `captured`."""
-    async def _mock_send(text: str, chat_id: int | None = None, parse_mode: str = "Markdown") -> None:
+
+    async def _mock_send(
+        text: str, chat_id: int | None = None, parse_mode: str = "Markdown"
+    ) -> None:
         captured.append(text)
+
     bot.send_message = _mock_send  # type: ignore[method-assign]
     return bot
 
@@ -85,6 +88,7 @@ def bot_with_capture(bot: MonitoringBot, captured: list[str]) -> MonitoringBot:
 # ---------------------------------------------------------------------------
 # Command handler tests (handlers reply via update.message.reply_text)
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_health_command(bot):
@@ -143,11 +147,16 @@ async def test_research_command_with_query(bot):
 # send_message / alert routing tests
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_send_message_routes_to_chat(bot, captured):
     """send_message delivers to configured chat_id."""
-    async def _mock_send(text: str, chat_id: int | None = None, parse_mode: str = "Markdown") -> None:
+
+    async def _mock_send(
+        text: str, chat_id: int | None = None, parse_mode: str = "Markdown"
+    ) -> None:
         captured.append(text)
+
     bot.send_message = _mock_send  # type: ignore[method-assign]
     await bot.send_message("hello")
     assert captured == ["hello"]
@@ -156,8 +165,12 @@ async def test_send_message_routes_to_chat(bot, captured):
 @pytest.mark.asyncio
 async def test_send_health_alert_skips_when_ok(bot, captured):
     """send_health_alert does nothing when overall == ok."""
-    async def _mock_send(text: str, chat_id: int | None = None, parse_mode: str = "Markdown") -> None:
+
+    async def _mock_send(
+        text: str, chat_id: int | None = None, parse_mode: str = "Markdown"
+    ) -> None:
         captured.append(text)
+
     bot.send_message = _mock_send  # type: ignore[method-assign]
     await bot.send_health_alert({"overall": "ok", "checks": []})
     assert captured == []
@@ -166,13 +179,19 @@ async def test_send_health_alert_skips_when_ok(bot, captured):
 @pytest.mark.asyncio
 async def test_send_health_alert_sends_when_degraded(bot, captured):
     """send_health_alert sends when overall != ok."""
-    async def _mock_send(text: str, chat_id: int | None = None, parse_mode: str = "Markdown") -> None:
+
+    async def _mock_send(
+        text: str, chat_id: int | None = None, parse_mode: str = "Markdown"
+    ) -> None:
         captured.append(text)
+
     bot.send_message = _mock_send  # type: ignore[method-assign]
-    await bot.send_health_alert({
-        "overall": "error",
-        "checks": [{"name": "api", "status": "error", "message": "down"}],
-    })
+    await bot.send_health_alert(
+        {
+            "overall": "error",
+            "checks": [{"name": "api", "status": "error", "message": "down"}],
+        }
+    )
     assert len(captured) == 1
     assert "Health Alert" in captured[0]
 
@@ -180,8 +199,12 @@ async def test_send_health_alert_sends_when_degraded(bot, captured):
 @pytest.mark.asyncio
 async def test_send_daily_report(bot, captured):
     """send_daily_report delegates to send_message."""
-    async def _mock_send(text: str, chat_id: int | None = None, parse_mode: str = "Markdown") -> None:
+
+    async def _mock_send(
+        text: str, chat_id: int | None = None, parse_mode: str = "Markdown"
+    ) -> None:
         captured.append(text)
+
     bot.send_message = _mock_send  # type: ignore[method-assign]
     await bot.send_daily_report("# Daily Report\nContent")
     assert captured == ["# Daily Report\nContent"]

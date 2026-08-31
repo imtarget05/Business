@@ -9,10 +9,10 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
-import packages.database.session as session_mod
 import packages.config.settings as settings_mod
+import packages.database.session as session_mod
 from apps.api.main import create_app
-from packages.config.settings import Settings, LLMProviderKind
+from packages.config.settings import LLMProviderKind, Settings
 from packages.database import models
 from packages.database.base import Base
 from packages.database.repositories.api_keys import ApiKeyRepository
@@ -73,11 +73,11 @@ def client(tmp_path, monkeypatch):
         await eng.dispose()
 
     asyncio.run(_setup())
-    
+
     app = create_app()
     with TestClient(app) as test_client:
         yield test_client
-    
+
     session_mod._engine = None
     session_mod._session_factory = None
 

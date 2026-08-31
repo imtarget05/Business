@@ -55,9 +55,13 @@ def client(tmp_path, monkeypatch):
     monkeypatch.setattr(live, "database_url", url)
     monkeypatch.setattr(live, "persistence_enabled", True)
     monkeypatch.setattr(live, "llm_provider", LLMProviderKind.MOCK)
-    monkeypatch.setattr(live, "tenant_api_keys", {
-        "test-key": "00000000-0000-0000-0000-000000000001",
-    })
+    monkeypatch.setattr(
+        live,
+        "tenant_api_keys",
+        {
+            "test-key": "00000000-0000-0000-0000-000000000001",
+        },
+    )
     monkeypatch.setattr(live, "rate_limit_per_minute", 1000)
 
     from packages.core.bootstrap import set_container

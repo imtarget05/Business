@@ -38,6 +38,7 @@ class DynamicRule(BaseModel):
     hits: int = 1
     updated_at: str = Field(default_factory=lambda: datetime.now(UTC).isoformat())
 
+
 class LearningEngine:
     """Records feedback, derives dynamic routing rules, runs the cycle."""
 
@@ -95,9 +96,7 @@ class LearningEngine:
         `feedback_batch` comes from the task_feedback store when persistence
         is enabled; without it the cycle only reports the current rule set.
         """
-        ratings = Counter(
-            f.get("rating") for f in (feedback_batch or []) if f.get("rating")
-        )
+        ratings = Counter(f.get("rating") for f in (feedback_batch or []) if f.get("rating"))
         for f in feedback_batch or []:
             await self.record_feedback(f)
         # Feedback-rate metric so the friendly-feedback loop is measurable.
@@ -123,5 +122,3 @@ class LearningEngine:
 
 
 __all__ = ["LearningEngine", "DynamicRule", "RULES_PATH"]
-
-

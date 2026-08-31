@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Text formatting helpers for Telegram output.
 
 Keeps Vietnamese diacritics + emoji intact while applying Telegram bold, using
@@ -6,6 +5,7 @@ the HTML mode (<b>...</b>) which is the most robust against "lỗi phông chữ"
 stray-asterisk rendering (the old MARKDOWN mode prints literal *...* when it
 fails to parse). Emoji and diacritics are preserved.
 """
+
 from __future__ import annotations
 
 import re
@@ -26,11 +26,7 @@ def _nfc(text: str) -> str:
 
 
 def _esc_html(text: str) -> str:
-    return (
-        text.replace("&", "&amp;")
-        .replace("<", "&lt;")
-        .replace(">", "&gt;")
-    )
+    return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
 
 def format_michelin_bold(text: str, mode: str = "html") -> str:
@@ -48,7 +44,7 @@ def format_michelin_bold(text: str, mode: str = "html") -> str:
         if m:
             prefix, name, sep = m.group(1), m.group(2).strip(), m.group(3)
             name_esc = _esc_html(name) if mode == "html" else name
-            out_lines.append(f"{prefix}{opener}{name_esc}{closer}{sep}{line[m.end():]}")
+            out_lines.append(f"{prefix}{opener}{name_esc}{closer}{sep}{line[m.end() :]}")
         else:
             out_lines.append(line)
     return "\n".join(out_lines)

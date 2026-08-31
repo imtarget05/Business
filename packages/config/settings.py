@@ -58,9 +58,7 @@ class Settings(BaseSettings):
     rate_limit_per_minute: int = 60
 
     # --- Database (Neon PostgreSQL in production; pgvector-enabled locally) ---
-    database_url: str = (
-        "postgresql+psycopg://postgres:postgres@localhost:5432/business_ops"
-    )
+    database_url: str = "postgresql+psycopg://postgres:postgres@localhost:5432/business_ops"
     db_echo: bool = False
     persistence_enabled: bool = False
 

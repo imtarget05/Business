@@ -24,9 +24,7 @@ class ExternalOpenAICompatibleProvider:
         # TODO(PHASE-1): standard chat/completions HTTP call using llm_api_key.
         raise provider_error(self.name, "not implemented in Phase 0")
 
-    async def generate_structured(
-        self, prompt: str, schema: type[T], **kwargs: Any
-    ) -> T:
+    async def generate_structured(self, prompt: str, schema: type[T], **kwargs: Any) -> T:
         raise provider_error(self.name, "not implemented in Phase 0")
 
     async def complete_with_tools(

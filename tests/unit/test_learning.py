@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
 from packages.core.learning import LearningEngine
@@ -14,7 +13,11 @@ class TestLearningEngine:
     async def test_learn_rule_and_persist(self, tmp_path: Path) -> None:
         eng = LearningEngine(rules_path=tmp_path / "rules.json")
         await eng.record_feedback(
-            {"rating": "down", "corrected_capability": "report.generate", "comment": "vui lòng tổng hợp báo cáo tồn kho"}
+            {
+                "rating": "down",
+                "corrected_capability": "report.generate",
+                "comment": "vui lòng tổng hợp báo cáo tồn kho",
+            }
         )
         assert eng.get_rules()[0].capability == "report.generate"
         # persisted
@@ -24,7 +27,14 @@ class TestLearningEngine:
     async def test_run_cycle_report(self, tmp_path: Path) -> None:
         eng = LearningEngine(rules_path=tmp_path / "rules.json")
         report = await eng.run_cycle(
-            [{"rating": "up"}, {"rating": "down", "comment": "vui lòng tra cứu mail giúp", "corrected_capability": "gmail.search"}]
+            [
+                {"rating": "up"},
+                {
+                    "rating": "down",
+                    "comment": "vui lòng tra cứu mail giúp",
+                    "corrected_capability": "gmail.search",
+                },
+            ]
         )
         assert report["feedback_count"] == 2
         assert report["ratings"] == {"up": 1, "down": 1}

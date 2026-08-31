@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Business Ops Hub agent package (Task 2)."""
 
 from __future__ import annotations

@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Inventory Monitoring Agent (Phase SC).
 
 Monitors stock levels against defined thresholds and generates alerts
@@ -285,16 +284,13 @@ class InventoryMonitor:
         snapshot = self._snapshot
 
         low_stock_count = sum(
-            1 for item in snapshot.items
-            if item.status in (InventoryStatus.LOW_STOCK,)
+            1 for item in snapshot.items if item.status in (InventoryStatus.LOW_STOCK,)
         )
         out_of_stock_count = sum(
-            1 for item in snapshot.items
-            if item.status == InventoryStatus.OUT_OF_STOCK
+            1 for item in snapshot.items if item.status == InventoryStatus.OUT_OF_STOCK
         )
         overstock_count = sum(
-            1 for item in snapshot.items
-            if item.status == InventoryStatus.OVERSTOCK
+            1 for item in snapshot.items if item.status == InventoryStatus.OVERSTOCK
         )
         normal_count = snapshot.total_items - low_stock_count - out_of_stock_count - overstock_count
 
@@ -434,9 +430,7 @@ SUPPLY_CHAIN_INVENTORY_CAPABILITIES = frozenset(
 )
 
 
-def create_inventory_monitor(
-    llm=None, settings=None
-) -> InventoryMonitor:
+def create_inventory_monitor(llm=None, settings=None) -> InventoryMonitor:
     """Create an InventoryMonitor instance (factory for registry).
 
     Args:

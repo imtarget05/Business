@@ -24,7 +24,7 @@ def _hash_to_vector(text: str, dim: int) -> list[float]:
     for i in range(dim):
         # Use bytes from hash, combine to form a 32-bit integer for numeric stability
         byte_idx = (i * 4) % len(h)
-        val = int.from_bytes(h[byte_idx:byte_idx + 4], byteorder="little", signed=False)
+        val = int.from_bytes(h[byte_idx : byte_idx + 4], byteorder="little", signed=False)
         # Normalize to [-1.0, 1.0]
         vec.append((val / 2**32 - 0.5) * 2.0)
     return vec

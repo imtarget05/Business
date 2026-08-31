@@ -26,17 +26,13 @@ class PolicyDecision:
 class PolicyChecker(Protocol):
     """Decides whether a capability may run for a given task context."""
 
-    async def check(
-        self, *, capability: str, context: TaskContext
-    ) -> PolicyDecision: ...
+    async def check(self, *, capability: str, context: TaskContext) -> PolicyDecision: ...
 
 
 class AllowAllPolicy:
     """Default MVP: allow all capabilities once the caller is authenticated."""
 
-    async def check(
-        self, *, capability: str, context: TaskContext
-    ) -> PolicyDecision:
+    async def check(self, *, capability: str, context: TaskContext) -> PolicyDecision:
         return PolicyDecision(allowed=True)
 
 

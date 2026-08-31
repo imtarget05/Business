@@ -35,14 +35,12 @@ async def _resolve_org(requested: UUID | None, db: AsyncSession) -> UUID:
     from sqlalchemy import select
 
     row = (
-        await db.execute(select(Organization).order_by(Organization.created_at))
-    ).scalars().first()
+        (await db.execute(select(Organization).order_by(Organization.created_at))).scalars().first()
+    )
     if row is None:
         from packages.core.errors import ValidationError
 
-        raise ValidationError(
-            "organization_id is required (no default organization exists)"
-        )
+        raise ValidationError("organization_id is required (no default organization exists)")
     return row.id
 
 
@@ -72,7 +70,6 @@ async def current_org(request: Request, db: AsyncSession = Depends(get_session))
     settings = get_settings()
     supplied = request.headers.get("X-API-Key")
 
-
     if not supplied:
         # No key supplied at all
         if settings.tenant_api_keys and settings.environment is Environment.LOCAL:
@@ -94,15 +91,13 @@ async def current_org(request: Request, db: AsyncSession = Depends(get_session))
                 raise
             _ESCAPE_HATCH_ORG[engine_id] = org
             return org
-        raise AuthenticationError(
-            "Tenant authentication not configured for this environment"
-        )
+        raise AuthenticationError("Tenant authentication not configured for this environment")
 
     # Key was supplied - try DB verification first
     repo = ApiKeyRepository(db)
     try:
         org_id = await repo.verify(supplied)
-    except Exception as e:
+    except Exception:
         raise
     if org_id is not None:
         return org_id

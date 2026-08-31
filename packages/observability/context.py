@@ -16,9 +16,7 @@ class RequestContext:
     agent_run_id: UUID | None = None
 
 
-_current: ContextVar[RequestContext | None] = ContextVar(
-    "boas_request_context", default=None
-)
+_current: ContextVar[RequestContext | None] = ContextVar("boas_request_context", default=None)
 
 
 def new_request_id() -> str:

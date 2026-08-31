@@ -58,9 +58,7 @@ def upgrade() -> None:
         op.create_index(
             "uq_customer_email_org", "customers", ["email", "organization_id"], unique=True
         )
-        op.create_index(
-            "ix_customer_org_name", "customers", ["organization_id", "name"]
-        )
+        op.create_index("ix_customer_org_name", "customers", ["organization_id", "name"])
 
     if not _table_exists(bind, "tickets"):
         op.create_table(
@@ -108,9 +106,7 @@ def upgrade() -> None:
                 nullable=False,
             ),
         )
-        op.create_index(
-            "ix_ticket_org_status", "tickets", ["organization_id", "status"]
-        )
+        op.create_index("ix_ticket_org_status", "tickets", ["organization_id", "status"])
         op.create_index("ix_ticket_customer", "tickets", ["customer_id"])
 
 

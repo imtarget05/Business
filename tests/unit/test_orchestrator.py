@@ -63,4 +63,3 @@ async def test_mock_llm_was_called(container) -> None:
     # LLM calls: (1) router/capability classification, (2) the agent tool loop,
     # (3) reflection auto-critique fired after the task resolves (ADR-010).
     assert len(provider.calls) == before + 3
-

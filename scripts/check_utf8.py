@@ -6,6 +6,7 @@ Why: emoji in menu strings get silently corrupted to mojibake (e.g.
 encoding on Windows (cp1252). That makes menu emoji vanish after updates.
 This catches the corruption at CI time, before it ever ships.
 """
+
 from __future__ import annotations
 
 import sys

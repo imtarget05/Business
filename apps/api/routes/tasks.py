@@ -20,10 +20,10 @@ from fastapi import APIRouter, Depends, Request
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from apps.api.deps import current_org
 from packages.config.settings import get_settings
 from packages.contracts.enums import TaskStatus
 from packages.contracts.models import TaskRequest
-from apps.api.deps import current_org
 from packages.core.bootstrap import get_container
 from packages.core.errors import NotFoundError, ValidationError
 from packages.core.persistence import NoopTaskStore, TaskStore
@@ -108,52 +108,54 @@ async def get_task_timeline(
     org_id=Depends(current_org),
 ) -> dict:
     """Return a chronological timeline of events for a task.
-    
+
     Events are assembled from:
     - Task creation and status changes (from task_steps)
     - Agent runs (from agent_runs)
     - Audit log entries (from audit_logs)
-    
+
     All events are org-scoped - returns 404 if the task belongs to another org.
     """
     # Verify task exists and belongs to this org
     task = await db.get(Task, task_id)
     if task is None or task.organization_id != org_id:
         raise NotFoundError("Task not found", task_id=task_id)
-    
+
     events: list[dict] = []
-    
+
     # 1. Task creation event
-    events.append({
-        "time": task.created_at,
-        "stage": "task",
-        "status": "created",
-        "detail": f"Task created: {task.domain}.{task.action}",
-    })
-    
-    # 2. Task steps (status transitions)
-    stmt_steps = (
-        select(TaskStep)
-        .where(TaskStep.task_id == task_id)
-        .order_by(TaskStep.sequence)
+    events.append(
+        {
+            "time": task.created_at,
+            "stage": "task",
+            "status": "created",
+            "detail": f"Task created: {task.domain}.{task.action}",
+        }
     )
+
+    # 2. Task steps (status transitions)
+    stmt_steps = select(TaskStep).where(TaskStep.task_id == task_id).order_by(TaskStep.sequence)
     steps_result = await db.execute(stmt_steps)
     for step in steps_result.scalars().all():
         if step.started_at:
-            events.append({
-                "time": step.started_at,
-                "stage": "step",
-                "status": step.status.value,
-                "detail": f"Step {step.sequence}: {step.name}",
-            })
+            events.append(
+                {
+                    "time": step.started_at,
+                    "stage": "step",
+                    "status": step.status.value,
+                    "detail": f"Step {step.sequence}: {step.name}",
+                }
+            )
         if step.finished_at and step.finished_at != step.started_at:
-            events.append({
-                "time": step.finished_at,
-                "stage": "step",
-                "status": step.status.value,
-                "detail": f"Step {step.sequence}: {step.name} finished",
-            })
-    
+            events.append(
+                {
+                    "time": step.finished_at,
+                    "stage": "step",
+                    "status": step.status.value,
+                    "detail": f"Step {step.sequence}: {step.name} finished",
+                }
+            )
+
     # 3. Agent runs
     stmt_runs = (
         select(AgentRun)
@@ -163,27 +165,33 @@ async def get_task_timeline(
     runs_result = await db.execute(stmt_runs)
     for run in runs_result.scalars().all():
         if run.started_at:
-            events.append({
-                "time": run.started_at,
-                "stage": "agent_run",
-                "status": run.status,
-                "detail": f"Agent run attempt {run.attempt} started (agent: {run.agent_id})",
-            })
+            events.append(
+                {
+                    "time": run.started_at,
+                    "stage": "agent_run",
+                    "status": run.status,
+                    "detail": f"Agent run attempt {run.attempt} started (agent: {run.agent_id})",
+                }
+            )
         if run.finished_at:
-            events.append({
-                "time": run.finished_at,
-                "stage": "agent_run",
-                "status": run.status,
-                "detail": f"Agent run attempt {run.attempt} finished: {run.status}",
-            })
+            events.append(
+                {
+                    "time": run.finished_at,
+                    "stage": "agent_run",
+                    "status": run.status,
+                    "detail": f"Agent run attempt {run.attempt} finished: {run.status}",
+                }
+            )
         if run.error_code:
-            events.append({
-                "time": run.finished_at or run.started_at,
-                "stage": "agent_run",
-                "status": "error",
-                "detail": f"Agent run attempt {run.attempt} error: {run.error_code} - {run.error_message}",
-            })
-    
+            events.append(
+                {
+                    "time": run.finished_at or run.started_at,
+                    "stage": "agent_run",
+                    "status": "error",
+                    "detail": f"Agent run attempt {run.attempt} error: {run.error_code} - {run.error_message}",
+                }
+            )
+
     # 4. Audit logs related to this task
     stmt_audit = (
         select(AuditLog)
@@ -194,25 +202,27 @@ async def get_task_timeline(
     )
     audit_result = await db.execute(stmt_audit)
     for audit in audit_result.scalars().all():
-        events.append({
-            "time": audit.created_at,
-            "stage": "audit",
-            "status": audit.event,
-            "detail": audit.payload.get("detail", audit.event) if audit.payload else audit.event,
-        })
-    
+        events.append(
+            {
+                "time": audit.created_at,
+                "stage": "audit",
+                "status": audit.event,
+                "detail": audit.payload.get("detail", audit.event)
+                if audit.payload
+                else audit.event,
+            }
+        )
+
     # Sort all events chronologically
     events.sort(key=lambda e: e["time"] or datetime.min.replace(tzinfo=None))
-    
+
     return {"timeline": events}
 
 
 @router.get("/agents")
 async def list_agents() -> dict:
     container = get_container()
-    return {
-        "agents": [d.model_dump(mode="json") for d in container.registry.list_agents()]
-    }
+    return {"agents": [d.model_dump(mode="json") for d in container.registry.list_agents()]}
 
 
 @router.get("/steps")

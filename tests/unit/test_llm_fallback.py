@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Tests for LLM fallback chain (Phase F)."""
 
 from __future__ import annotations

@@ -101,16 +101,12 @@ class CloudflareAIProvider:
                 if resp.status_code in _RETRYABLE_STATUSES:
                     last_detail = f"transient HTTP {resp.status_code}"
                 elif resp.status_code >= 400:
-                    raise provider_error(
-                        self.name, f"HTTP {resp.status_code}: {resp.text[:200]}"
-                    )
+                    raise provider_error(self.name, f"HTTP {resp.status_code}: {resp.text[:200]}")
                 else:
                     body = resp.json()
                     if not body.get("success"):
                         errors = "; ".join(str(e) for e in body.get("errors", []))
-                        raise provider_error(
-                            self.name, f"API reported failure: {errors or body!r}"
-                        )
+                        raise provider_error(self.name, f"API reported failure: {errors or body!r}")
                     return body.get("result") or {}
             if attempt < retries:
                 await asyncio.sleep(backoff * (2**attempt))
@@ -150,11 +146,7 @@ class CloudflareAIProvider:
         text = result.get("response")
         if not isinstance(text, str):
             choices = result.get("choices")
-            if (
-                isinstance(choices, list)
-                and choices
-                and isinstance(choices[0], dict)
-            ):
+            if isinstance(choices, list) and choices and isinstance(choices[0], dict):
                 message = choices[0].get("message")
                 if isinstance(message, dict) and isinstance(message.get("content"), str):
                     text = message["content"]
@@ -188,9 +180,7 @@ class CloudflareAIProvider:
         )
         data = result.get("data")
         if not isinstance(data, list) or not data:
-            raise provider_error(
-                self.name, f"unexpected embedding result shape: {result!r}"
-            )
+            raise provider_error(self.name, f"unexpected embedding result shape: {result!r}")
         vectors: list[list[float]] = []
         for vec in data:
             if not isinstance(vec, list):
@@ -220,19 +210,18 @@ class CloudflareAIProvider:
         try:
             data = json.loads(raw)
         except json.JSONDecodeError as exc:
-            raise provider_error(
-                self.name, f"response is not valid JSON: {raw[:200]!r}"
-            ) from exc
+            raise provider_error(self.name, f"response is not valid JSON: {raw[:200]!r}") from exc
         # Coerce loose scalar types the model guessed (int where str expected, etc.)
         try:
             return schema.model_validate(data)
         except Exception:
             pass
         try:
-            coerced = {
-                k: (str(v) if isinstance(v, (int, float, bool)) else v)
-                for k, v in data.items()
-            } if isinstance(data, dict) else data
+            coerced = (
+                {k: (str(v) if isinstance(v, (int, float, bool)) else v) for k, v in data.items()}
+                if isinstance(data, dict)
+                else data
+            )
             return schema.model_validate(coerced)
         except Exception as exc:  # pydantic validation failure
             raise provider_error(
@@ -297,9 +286,7 @@ class CloudflareAIProvider:
                         self.name,
                         f"tool_call {name!r} arguments are not valid JSON",
                     ) from exc
-            tool_calls.append(
-                {"id": call.get("id"), "name": name, "arguments": arguments}
-            )
+            tool_calls.append({"id": call.get("id"), "name": name, "arguments": arguments})
         content = response.get("content") or response.get("text")
         return {"content": content, "tool_calls": tool_calls or None}
 

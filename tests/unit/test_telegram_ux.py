@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Unit tests for Telegram UX improvements (Feature 5) — stub bot, no network.
 
 Covers:
@@ -24,10 +23,10 @@ sys.path.insert(0, ".")
 import agents.monitoring.telegram_bot as tb
 from agents.monitoring.telegram_bot import MonitoringBot, TelegramConfig
 
-
 # ---------------------------------------------------------------------------
 # Mock Telegram surface (superset of the one in test_telegram_bot.py)
 # ---------------------------------------------------------------------------
+
 
 @dataclass
 class MockMessage:
@@ -38,7 +37,7 @@ class MockMessage:
 
     async def reply_text(
         self, text: str, parse_mode: str = "Markdown", reply_markup: Any = None
-    ) -> "MockMessage":
+    ) -> MockMessage:
         self.text = text
         self.replies.append(text)
         self.markups.append(reply_markup)
@@ -63,9 +62,7 @@ class MockUpdate:
     effective_user: MockUser | None = None
 
     @classmethod
-    def from_message(
-        cls, text: str, chat_id: int = 123456, user_id: int = 777
-    ) -> "MockUpdate":
+    def from_message(cls, text: str, chat_id: int = 123456, user_id: int = 777) -> MockUpdate:
         return cls(
             message=MockMessage(text=text, chat_id=chat_id),
             effective_chat=MockChat(id=chat_id),
@@ -112,7 +109,7 @@ class MockCallbackQuery:
 
     async def edit_message_text(
         self, text: str, parse_mode: str | None = None, reply_markup: Any = None
-    ) -> "MockCallbackQuery":
+    ) -> MockCallbackQuery:
         self.edited.append(text)
         self.markups.append(reply_markup)
         return self
@@ -145,6 +142,7 @@ class _NoopMemory:
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
+
 
 @pytest.fixture
 def bot() -> MonitoringBot:
@@ -183,11 +181,7 @@ def _keyboard_labels(markup: Any) -> list[str]:
 def _inline_buttons(markup: Any) -> list[tuple[str, str]]:
     """Flatten an InlineKeyboardMarkup into [(label, callback_data)]."""
     rows = getattr(markup, "inline_keyboard", None) or []
-    return [
-        (getattr(b, "text", ""), getattr(b, "callback_data", ""))
-        for row in rows
-        for b in row
-    ]
+    return [(getattr(b, "text", ""), getattr(b, "callback_data", "")) for row in rows for b in row]
 
 
 def _fake_search(events: list, results: list[dict]):
@@ -214,6 +208,7 @@ def _results(n: int) -> list[dict]:
 # ---------------------------------------------------------------------------
 # 1. Typing indicator before every LLM/web call
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_typing_indicator_sent_before_web_lookup(bot, ctx, monkeypatch):
@@ -264,6 +259,7 @@ async def test_typing_helper_supports_positional_only_mock(bot):
 # 2. Session context across messages
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_session_context_retained_across_two_messages(bot, ctx, monkeypatch):
     """Bấm "🔍 Tìm món ăn" rồi gõ món ở lượt sau -> bot vẫn hiểu ngữ cảnh."""
@@ -308,6 +304,7 @@ async def test_session_history_accumulates_per_user(bot, ctx):
 # ---------------------------------------------------------------------------
 # 3. Pagination
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_long_result_list_sends_first_page_with_next_button(bot, ctx, monkeypatch):
@@ -542,6 +539,7 @@ async def test_quick_reply_support_button_gives_guidance(bot, ctx):
 # ---------------------------------------------------------------------------
 # 5. Free-text intent routing (Vietnamese)
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_free_text_report_intent_routes_to_report_command(bot, ctx, monkeypatch):

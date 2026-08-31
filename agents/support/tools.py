@@ -14,6 +14,7 @@ import asyncio
 import json
 import smtplib
 import ssl
+from datetime import UTC
 from email.message import EmailMessage
 from typing import Any
 from uuid import UUID
@@ -21,7 +22,7 @@ from uuid import UUID
 from packages.config.settings import get_settings
 from packages.core.errors import ToolExecutionError
 from packages.core.tools import Tool
-from packages.database.models import Conversation, Customer, Ticket, TicketStatus
+from packages.database.models import Customer, Ticket, TicketStatus
 from packages.database.session import AsyncSession, async_sessionmaker, get_session_factory
 
 
@@ -47,17 +48,17 @@ class _OrgBoundTool(Tool):
     def _resolve_org(self, arguments: dict[str, Any]) -> UUID:
         """Resolve the caller's org strictly from the server-side binding."""
         supplied = arguments.pop("organization_id", None)
-        if supplied is not None and self._bound_org is not None and str(supplied) != str(
-            self._bound_org
+        if (
+            supplied is not None
+            and self._bound_org is not None
+            and str(supplied) != str(self._bound_org)
         ):
             raise ToolExecutionError(
                 "organization mismatch: tool arguments may not specify an "
                 "organization other than the authenticated caller"
             )
         if self._bound_org is None:
-            raise ToolExecutionError(
-                "no server-side organization context bound for this tool run"
-            )
+            raise ToolExecutionError("no server-side organization context bound for this tool run")
         return self._bound_org
 
 
@@ -94,9 +95,7 @@ class SendEmailReplyTool(_OrgBoundTool):
         "required": ["to_email", "subject", "body_text"],
     }
 
-    def __init__(
-        self, session_factory: async_sessionmaker[AsyncSession] | None = None
-    ) -> None:
+    def __init__(self, session_factory: async_sessionmaker[AsyncSession] | None = None) -> None:
         super().__init__()
         self._session_factory = session_factory or _default_session_factory()
 
@@ -149,14 +148,11 @@ class SendEmailReplyTool(_OrgBoundTool):
 
         # Real send (only when explicitly enabled)
         if not settings.email_smtp_host:
-            raise RuntimeError(
-                "email_send_enabled=True but email_smtp_host not configured"
-            )
+            raise RuntimeError("email_send_enabled=True but email_smtp_host not configured")
 
         if not await self._recipient_allowed(org_id, to_email, conversation_id):
             raise ToolExecutionError(
-                f"recipient {to_email!r} is not allowlisted for this "
-                "organization's conversations"
+                f"recipient {to_email!r} is not allowlisted for this organization's conversations"
             )
 
         # Blocking SMTP I/O must not stall the event loop.
@@ -173,12 +169,8 @@ class SendEmailReplyTool(_OrgBoundTool):
         }
         return json.dumps(result, ensure_ascii=False)
 
-    async def _recipient_allowed(
-        self, org_id: UUID, to_email: str, conversation_id: Any
-    ) -> bool:
-        if to_email.lower() in {
-            e.lower() for e in get_settings().email_recipient_allowlist
-        }:
+    async def _recipient_allowed(self, org_id: UUID, to_email: str, conversation_id: Any) -> bool:
+        if to_email.lower() in {e.lower() for e in get_settings().email_recipient_allowlist}:
             return True
         # Recipient must be a customer record in this org (optionally tied to
         # the conversation's organization).
@@ -241,9 +233,9 @@ class SendGmailReplyTool(_OrgBoundTool):
         action: str,
     ) -> list[str]:
         """Build a row for the Google Sheet log."""
-        from datetime import datetime, timezone
+        from datetime import datetime
 
-        timestamp = datetime.now(timezone.utc).isoformat()
+        timestamp = datetime.now(UTC).isoformat()
         return [
             timestamp,
             conversation_id or "",
@@ -275,9 +267,7 @@ class SendGmailReplyTool(_OrgBoundTool):
         org_id = self._resolve_org(arguments)
 
         # Determine dry-run mode: per-tool flag overrides settings
-        dry_run = (
-            self._dry_run if self._dry_run is not None else not settings.gmail_send_enabled
-        )
+        dry_run = self._dry_run if self._dry_run is not None else not settings.gmail_send_enabled
 
         # DRY-RUN mode: return draft, still log to sheet
         if dry_run:
@@ -290,34 +280,25 @@ class SendGmailReplyTool(_OrgBoundTool):
                 "conversation_id": conversation_id,
             }
             # Log to sheet as draft
-            row = self._build_sheet_row(
-                conversation_id, to_email, body, "draft"
-            )
+            row = self._build_sheet_row(conversation_id, to_email, body, "draft")
             await self._log_to_sheet(row)
             return json.dumps(draft, ensure_ascii=False)
 
         # Real send path: check allowlist
         if not settings.google_refresh_token:
-            raise RuntimeError(
-                "gmail_send_enabled=True but google_refresh_token not configured"
-            )
+            raise RuntimeError("gmail_send_enabled=True but google_refresh_token not configured")
         if not settings.google_oauth_client_id:
-            raise RuntimeError(
-                "gmail_send_enabled=True but google_oauth_client_id not configured"
-            )
+            raise RuntimeError("gmail_send_enabled=True but google_oauth_client_id not configured")
         if not settings.google_oauth_client_secret:
             raise RuntimeError(
                 "gmail_send_enabled=True but google_oauth_client_secret not configured"
             )
         if not settings.google_sheet_id:
-            raise RuntimeError(
-                "gmail_send_enabled=True but google_sheet_id not configured"
-            )
+            raise RuntimeError("gmail_send_enabled=True but google_sheet_id not configured")
 
         if not await self._recipient_allowed(org_id, to_email):
             raise ToolExecutionError(
-                f"recipient {to_email!r} is not allowlisted for this "
-                "organization's conversations"
+                f"recipient {to_email!r} is not allowlisted for this organization's conversations"
             )
 
         # Send via Gmail API (blocking I/O offloaded to thread)
@@ -326,9 +307,7 @@ class SendGmailReplyTool(_OrgBoundTool):
         await asyncio.to_thread(gmail_send, to_email, subject, body)
 
         # Log to sheet as sent
-        row = self._build_sheet_row(
-            conversation_id, to_email, body, "gmail_send"
-        )
+        row = self._build_sheet_row(conversation_id, to_email, body, "gmail_send")
         await self._log_to_sheet(row)
 
         result = {
@@ -342,9 +321,7 @@ class SendGmailReplyTool(_OrgBoundTool):
     async def _recipient_allowed(self, org_id: UUID, to_email: str) -> bool:
         """Check if recipient is allowed for this organization."""
         settings = get_settings()
-        if to_email.lower() in {
-            e.lower() for e in settings.gmail_allowed_recipients
-        }:
+        if to_email.lower() in {e.lower() for e in settings.gmail_allowed_recipients}:
             return True
         # Recipient must be a customer record in this org
         from sqlalchemy import select
@@ -391,9 +368,7 @@ class CreateTicketTool(_OrgBoundTool):
             if customer is None or customer.organization_id != org_id:
                 from packages.core.errors import NotFoundError
 
-                raise NotFoundError(
-                    f"Customer {customer_id} not found in organization {org_id}"
-                )
+                raise NotFoundError(f"Customer {customer_id} not found in organization {org_id}")
 
             ticket = Ticket(
                 organization_id=org_id,
@@ -469,9 +444,7 @@ class LookupCustomerTool(_OrgBoundTool):
 
                 raise ValidationError(f"Unknown operation: {operation}")
 
-    async def _create(
-        self, session: Any, org_id: UUID, args: dict[str, Any]
-    ) -> str:
+    async def _create(self, session: Any, org_id: UUID, args: dict[str, Any]) -> str:
         email = args["email"]
         name = args["name"]
         notes = args.get("notes")
@@ -479,9 +452,7 @@ class LookupCustomerTool(_OrgBoundTool):
         # Check for duplicate email in org
         from sqlalchemy import select
 
-        stmt = select(Customer).where(
-            Customer.organization_id == org_id, Customer.email == email
-        )
+        stmt = select(Customer).where(Customer.organization_id == org_id, Customer.email == email)
         existing = (await session.execute(stmt)).scalar_one_or_none()
         if existing:
             from packages.core.errors import ValidationError
@@ -511,9 +482,7 @@ class LookupCustomerTool(_OrgBoundTool):
             ensure_ascii=False,
         )
 
-    async def _get(
-        self, session: Any, org_id: UUID, args: dict[str, Any]
-    ) -> str:
+    async def _get(self, session: Any, org_id: UUID, args: dict[str, Any]) -> str:
         customer_id = args.get("customer_id")
         email = args.get("email")
 
@@ -549,17 +518,13 @@ class LookupCustomerTool(_OrgBoundTool):
             ensure_ascii=False,
         )
 
-    async def _update(
-        self, session: Any, org_id: UUID, args: dict[str, Any]
-    ) -> str:
+    async def _update(self, session: Any, org_id: UUID, args: dict[str, Any]) -> str:
         customer_id = UUID(args["customer_id"])
         customer = await session.get(Customer, customer_id)
         if customer is None or customer.organization_id != org_id:
             from packages.core.errors import NotFoundError
 
-            raise NotFoundError(
-                f"Customer {customer_id} not found in organization {org_id}"
-            )
+            raise NotFoundError(f"Customer {customer_id} not found in organization {org_id}")
 
         if "name" in args:
             customer.name = args["name"]
@@ -597,9 +562,7 @@ class LookupCustomerTool(_OrgBoundTool):
             ensure_ascii=False,
         )
 
-    async def _list(
-        self, session: Any, org_id: UUID, args: dict[str, Any]
-    ) -> str:
+    async def _list(self, session: Any, org_id: UUID, args: dict[str, Any]) -> str:
         from sqlalchemy import select
 
         limit = args.get("limit", 20)
@@ -632,9 +595,7 @@ class LookupCustomerTool(_OrgBoundTool):
             ensure_ascii=False,
         )
 
-    async def _delete(
-        self, session: Any, org_id: UUID, args: dict[str, Any]
-    ) -> str:
+    async def _delete(self, session: Any, org_id: UUID, args: dict[str, Any]) -> str:
         customer_id = UUID(args["customer_id"])
         customer = await session.get(Customer, customer_id)
         if customer is None or customer.organization_id != org_id:
@@ -645,13 +606,11 @@ class LookupCustomerTool(_OrgBoundTool):
         await session.delete(customer)
         await session.commit()
 
-        return json.dumps(
-            {"deleted": True, "customer_id": str(customer_id)}, ensure_ascii=False
-        )
+        return json.dumps({"deleted": True, "customer_id": str(customer_id)}, ensure_ascii=False)
 
 
 def create_support_tools(
-    session_factory: async_sessionmaker[AsyncSession] | None = None
+    session_factory: async_sessionmaker[AsyncSession] | None = None,
 ) -> list[Tool]:
     """Factory function to create all support agent tools.
 

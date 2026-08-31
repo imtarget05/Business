@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Unit tests for supply_chain reporting agent (Phase SC).
 
 Validates the SupplyChainReporter's ability to generate PO processing
@@ -10,14 +9,13 @@ from __future__ import annotations
 import pytest
 
 from agents.supply_chain.reporting import (
-    ReportType,
     SupplyChainReporter,
 )
-
 
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
+
 
 @pytest.fixture
 def reporter() -> SupplyChainReporter:
@@ -30,8 +28,12 @@ def reporter_with_mock_data(reporter: SupplyChainReporter) -> SupplyChainReporte
     """Reporter pre-loaded with mock PO, approval, and inventory data."""
     # Add mock POs
     reporter.add_mock_po("PO-2024-001", "Acme Corp", 1000.0, "auto_approved", "new")
-    reporter.add_mock_po("PO-2024-002", "Big Vendor", 5000.0, "approval_required_manager_a", "reorder")
-    reporter.add_mock_po("PO-2024-003", "Huge Vendor", 15000.0, "approval_required_manager_b", "new")
+    reporter.add_mock_po(
+        "PO-2024-002", "Big Vendor", 5000.0, "approval_required_manager_a", "reorder"
+    )
+    reporter.add_mock_po(
+        "PO-2024-003", "Huge Vendor", 15000.0, "approval_required_manager_b", "new"
+    )
     reporter.add_mock_po("PO-2024-004", "Acme Corp", 200.0, "auto_approved", "exchange")
     reporter.add_mock_po("PO-2024-005", "Small Vendor", 50.0, "auto_approved", "new")
 
@@ -55,6 +57,7 @@ def reporter_with_mock_data(reporter: SupplyChainReporter) -> SupplyChainReporte
 # ---------------------------------------------------------------------------
 # Basic initialization tests
 # ---------------------------------------------------------------------------
+
 
 def test_reporter_initialized_empty(reporter):
     """Reporter starts with empty data."""
@@ -89,9 +92,7 @@ def test_reporter_add_mock_approval(reporter):
 
 def test_reporter_add_mock_inventory_item(reporter):
     """Adding a mock inventory item stores it correctly."""
-    reporter.add_mock_inventory_item(
-        "SKU-123", "Test Item", 50, 20, 100, 10.0, "normal"
-    )
+    reporter.add_mock_inventory_item("SKU-123", "Test Item", 50, 20, 100, 10.0, "normal")
 
     assert len(reporter._mock_inventory_data) == 1
     item = reporter._mock_inventory_data[0]
@@ -113,6 +114,7 @@ def test_reporter_clear_data(reporter_with_mock_data):
 # ---------------------------------------------------------------------------
 # PO Processing Report tests
 # ---------------------------------------------------------------------------
+
 
 def test_generate_po_processing_report_empty(reporter):
     """Empty reporter returns zero metrics."""
@@ -153,6 +155,7 @@ def test_generate_po_processing_report_with_data(reporter_with_mock_data):
 # ---------------------------------------------------------------------------
 # Approval Stats Report tests
 # ---------------------------------------------------------------------------
+
 
 def test_generate_approval_stats_report_empty(reporter):
     """Empty reporter returns zero approval metrics."""
@@ -212,6 +215,7 @@ def test_generate_approval_stats_report_critical(reporter: SupplyChainReporter):
 # Inventory Alerts Report tests
 # ---------------------------------------------------------------------------
 
+
 def test_generate_inventory_alerts_report_empty(reporter):
     """Empty reporter returns zero inventory metrics."""
     report = reporter.generate_inventory_alerts_report()
@@ -255,6 +259,7 @@ def test_generate_inventory_alerts_report_with_data(reporter_with_mock_data):
 # Daily Summary tests
 # ---------------------------------------------------------------------------
 
+
 def test_generate_daily_summary_with_data(reporter_with_mock_data):
     """Daily summary consolidates all report types."""
     summary = reporter_with_mock_data.generate_daily_summary()
@@ -296,6 +301,7 @@ def test_generate_daily_summary_empty(reporter):
 # Full Dashboard tests
 # ---------------------------------------------------------------------------
 
+
 def test_generate_full_dashboard_with_data(reporter_with_mock_data):
     """Full dashboard contains all sections."""
     dashboard = reporter_with_mock_data.generate_full_dashboard()
@@ -319,12 +325,14 @@ def test_generate_full_dashboard_with_data(reporter_with_mock_data):
 # Agent handle() tests
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_handle_get_dashboard(reporter_with_mock_data):
     """get_dashboard action returns full dashboard."""
     from uuid import uuid4
-    from packages.contracts.models import TaskRequest, TaskContext
+
     from packages.contracts.enums import Domain
+    from packages.contracts.models import TaskContext, TaskRequest
 
     request = TaskRequest(
         task_id=uuid4(),
@@ -347,8 +355,9 @@ async def test_handle_get_dashboard(reporter_with_mock_data):
 async def test_handle_get_po_report(reporter_with_mock_data):
     """get_po_report action returns PO processing report."""
     from uuid import uuid4
-    from packages.contracts.models import TaskRequest, TaskContext
+
     from packages.contracts.enums import Domain
+    from packages.contracts.models import TaskContext, TaskRequest
 
     request = TaskRequest(
         task_id=uuid4(),
@@ -369,8 +378,9 @@ async def test_handle_get_po_report(reporter_with_mock_data):
 async def test_handle_get_approval_report(reporter_with_mock_data):
     """get_approval_report action returns approval stats report."""
     from uuid import uuid4
-    from packages.contracts.models import TaskRequest, TaskContext
+
     from packages.contracts.enums import Domain
+    from packages.contracts.models import TaskContext, TaskRequest
 
     request = TaskRequest(
         task_id=uuid4(),
@@ -391,8 +401,9 @@ async def test_handle_get_approval_report(reporter_with_mock_data):
 async def test_handle_get_inventory_report(reporter_with_mock_data):
     """get_inventory_report action returns inventory alerts report."""
     from uuid import uuid4
-    from packages.contracts.models import TaskRequest, TaskContext
+
     from packages.contracts.enums import Domain
+    from packages.contracts.models import TaskContext, TaskRequest
 
     request = TaskRequest(
         task_id=uuid4(),
@@ -413,8 +424,9 @@ async def test_handle_get_inventory_report(reporter_with_mock_data):
 async def test_handle_generate_daily_summary_report(reporter_with_mock_data):
     """generate_report with daily_summary returns daily summary."""
     from uuid import uuid4
-    from packages.contracts.models import TaskRequest, TaskContext
+
     from packages.contracts.enums import Domain
+    from packages.contracts.models import TaskContext, TaskRequest
 
     request = TaskRequest(
         task_id=uuid4(),
@@ -436,8 +448,9 @@ async def test_handle_generate_daily_summary_report(reporter_with_mock_data):
 async def test_handle_generate_po_processing_report(reporter_with_mock_data):
     """generate_report with po_processing returns PO report."""
     from uuid import uuid4
-    from packages.contracts.models import TaskRequest, TaskContext
+
     from packages.contracts.enums import Domain
+    from packages.contracts.models import TaskContext, TaskRequest
 
     request = TaskRequest(
         task_id=uuid4(),
@@ -458,8 +471,9 @@ async def test_handle_generate_po_processing_report(reporter_with_mock_data):
 async def test_handle_generate_approval_stats_report(reporter_with_mock_data):
     """generate_report with approval_stats returns approval report."""
     from uuid import uuid4
-    from packages.contracts.models import TaskRequest, TaskContext
+
     from packages.contracts.enums import Domain
+    from packages.contracts.models import TaskContext, TaskRequest
 
     request = TaskRequest(
         task_id=uuid4(),
@@ -480,8 +494,9 @@ async def test_handle_generate_approval_stats_report(reporter_with_mock_data):
 async def test_handle_generate_inventory_alerts_report(reporter_with_mock_data):
     """generate_report with inventory_alerts returns inventory report."""
     from uuid import uuid4
-    from packages.contracts.models import TaskRequest, TaskContext
+
     from packages.contracts.enums import Domain
+    from packages.contracts.models import TaskContext, TaskRequest
 
     request = TaskRequest(
         task_id=uuid4(),
@@ -502,8 +517,9 @@ async def test_handle_generate_inventory_alerts_report(reporter_with_mock_data):
 async def test_handle_unsupported_action(reporter):
     """Unsupported actions are rejected."""
     from uuid import uuid4
-    from packages.contracts.models import TaskRequest, TaskContext
+
     from packages.contracts.enums import Domain
+    from packages.contracts.models import TaskContext, TaskRequest
 
     request = TaskRequest(
         task_id=uuid4(),
@@ -524,8 +540,9 @@ async def test_handle_unsupported_action(reporter):
 async def test_handle_unknown_report_type(reporter):
     """Unknown report types are rejected."""
     from uuid import uuid4
-    from packages.contracts.models import TaskRequest, TaskContext
+
     from packages.contracts.enums import Domain
+    from packages.contracts.models import TaskContext, TaskRequest
 
     request = TaskRequest(
         task_id=uuid4(),
@@ -545,6 +562,7 @@ async def test_handle_unknown_report_type(reporter):
 # ---------------------------------------------------------------------------
 # Factory function test
 # ---------------------------------------------------------------------------
+
 
 def test_create_supply_chain_reporter():
     """create_supply_chain_reporter returns SupplyChainReporter instance."""

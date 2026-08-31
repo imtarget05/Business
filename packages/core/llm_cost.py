@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """LLM cost + prompt-cache tracking (point 3 of the AI-Engineer skill stack:
 
 Prompt Compression + Caching to optimize AI cost).
@@ -13,6 +12,7 @@ Estimates are intentionally simple and conservative: ~4 chars per token for
 mixed Vietnamese/English text. Real billing comes from the provider; this is
 for trend/regression spotting, not invoicing.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -29,11 +29,11 @@ except Exception:  # pragma: no cover - only on partial installs
 # Reference prices (USD per 1K tokens) — conservative public list prices.
 # Update as providers change; values are for observability only.
 _PRICE_PER_1K = {
-    "qwen3:1.7b": {"in": 0.0, "out": 0.0},          # self-hosted Ollama -> free
-    "qwen2.5": {"in": 0.0, "out": 0.0},              # self-hosted -> free
-    "hy3-free": {"in": 0.0, "out": 0.0},             # free tier
-    "minimax": {"in": 0.0, "out": 0.0},              # free tier
-    "default": {"in": 0.001, "out": 0.002},          # cloud fallback estimate
+    "qwen3:1.7b": {"in": 0.0, "out": 0.0},  # self-hosted Ollama -> free
+    "qwen2.5": {"in": 0.0, "out": 0.0},  # self-hosted -> free
+    "hy3-free": {"in": 0.0, "out": 0.0},  # free tier
+    "minimax": {"in": 0.0, "out": 0.0},  # free tier
+    "default": {"in": 0.001, "out": 0.002},  # cloud fallback estimate
 }
 
 _CACHE_DIR = Path(os.environ.get("LLM_CACHE_DIR", "data/llm_cache"))
@@ -79,8 +79,7 @@ def log_llm_usage(
     }
     price = _price_for(model)
     rec["est_cost_usd"] = round(
-        (rec["in_tokens"] / 1000) * price["in"]
-        + (rec["out_tokens"] / 1000) * price["out"],
+        (rec["in_tokens"] / 1000) * price["in"] + (rec["out_tokens"] / 1000) * price["out"],
         6,
     )
     try:
@@ -115,7 +114,7 @@ def _record_cost_metric(rec: dict, cache_hit: bool) -> None:
 
 
 def prompt_cache_key(prompt: str, system: str = "") -> str:
-    return hashlib.sha256(f"{system}|||{prompt}".encode("utf-8")).hexdigest()
+    return hashlib.sha256(f"{system}|||{prompt}".encode()).hexdigest()
 
 
 def prompt_cache_get(key: str) -> str | None:

@@ -1,4 +1,4 @@
-﻿# Shared fixtures for the tests/e2e suite (Feature 4 - true end-to-end tests).
+# Shared fixtures for the tests/e2e suite (Feature 4 - true end-to-end tests).
 #
 # These fixtures wire a fully-offline container (Mock LLM + mock embedding + an
 # on-disk SQLite database so the Knowledge Base and RAG cache work without
@@ -122,9 +122,7 @@ def e2e_container(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     # instead of raising. This keeps the E2E path green offline.
     from packages.llm.mock import MockLLMProvider as _MockLLM
 
-    monkeypatch.setattr(
-        _MockLLM, "generate_structured", LenientMockLLM.generate_structured
-    )
+    monkeypatch.setattr(_MockLLM, "generate_structured", LenientMockLLM.generate_structured)
 
     container = build_container(settings)
     return container

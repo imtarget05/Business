@@ -148,21 +148,19 @@ async def _get_fts_results(
     if not tokens:
         return []
     async with session_factory() as session:
-        rows = (
-            await session.execute(
-                text("SELECT id, title, content FROM kb_chunks")
-            )
-        ).all()
+        rows = (await session.execute(text("SELECT id, title, content FROM kb_chunks"))).all()
     results = []
     for row in rows:
         score = _fts_score(tokens, row[2])
         if score > 0:
-            results.append({
-                "id": row[0],
-                "title": row[1],
-                "content": row[2],
-                "score": score,
-            })
+            results.append(
+                {
+                    "id": row[0],
+                    "title": row[1],
+                    "content": row[2],
+                    "score": score,
+                }
+            )
     results.sort(key=lambda x: x["score"], reverse=True)
     return results[:k]
 
@@ -176,9 +174,7 @@ async def _get_vector_results(
     """Get vector search results with title, content, and cosine similarity."""
     async with session_factory() as session:
         rows = (
-            await session.execute(
-                text("SELECT id, title, content, embedding FROM kb_chunks")
-            )
+            await session.execute(text("SELECT id, title, content, embedding FROM kb_chunks"))
         ).all()
     qvec = (await embedding_provider.embed([query]))[0]
     results = []
@@ -190,12 +186,14 @@ async def _get_vector_results(
         if vec is None:
             continue
         score = _cosine_similarity(qvec, vec)
-        results.append({
-            "id": row[0],
-            "title": row[1],
-            "content": row[2],
-            "score": score,
-        })
+        results.append(
+            {
+                "id": row[0],
+                "title": row[1],
+                "content": row[2],
+                "score": score,
+            }
+        )
     results.sort(key=lambda x: x["score"], reverse=True)
     return results[:k]
 

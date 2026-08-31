@@ -51,8 +51,7 @@ class POAgentGuardrails:
         # Rule 3: email_content size limit
         if len(email_content) > self.MAX_EMAIL_SIZE:
             raise ValueError(
-                f"email_content too large: {len(email_content)} chars "
-                f"(max {self.MAX_EMAIL_SIZE})"
+                f"email_content too large: {len(email_content)} chars (max {self.MAX_EMAIL_SIZE})"
             )
 
         # Rule 4: action phải là supported action
@@ -78,9 +77,7 @@ class POAgentGuardrails:
         allowed_actions = self._agent.SUPPORTED_ACTIONS
 
         if action not in allowed_actions:
-            raise PermissionError(
-                f"action {action!r} not in allowed scope {allowed_actions}"
-            )
+            raise PermissionError(f"action {action!r} not in allowed scope {allowed_actions}")
 
         # Kiểm tra thêm: payload có chứa các field không thuộc scope không
         # (ví dụ: có request để gửi email, modify DB → reject)
@@ -89,9 +86,7 @@ class POAgentGuardrails:
 
         for field in disallowed_fields:
             if field in payload and payload[field]:
-                raise PermissionError(
-                    f"PO Agent không được phép thực hiện: {field}"
-                )
+                raise PermissionError(f"PO Agent không được phép thực hiện: {field}")
 
         logger.debug(f"POAgentGuardrails: permission check passed for task {request.task_id}")
 
@@ -127,13 +122,11 @@ class POAgentGuardrails:
             }
             if result.get("route") not in valid_routes:
                 raise ValueError(
-                    f"invalid route value: {result.get('route')!r} "
-                    f"(valid: {valid_routes})"
+                    f"invalid route value: {result.get('route')!r} (valid: {valid_routes})"
                 )
 
             logger.debug(
-                f"POAgentGuardrails: output verification passed "
-                f"po_number={result.get('po_number')}"
+                f"POAgentGuardrails: output verification passed po_number={result.get('po_number')}"
             )
 
         # Nếu là dict ( directly from agent), cũng check

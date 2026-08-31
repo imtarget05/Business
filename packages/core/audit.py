@@ -64,9 +64,7 @@ def classify_risk(capability: str) -> RiskLevel:
     return RiskLevel.READ
 
 
-_SECRET_PATTERN = re.compile(
-    r"(?i)(api[_-]?key|token|secret|password|authorization)\s*[=:]\s*\S+"
-)
+_SECRET_PATTERN = re.compile(r"(?i)(api[_-]?key|token|secret|password|authorization)\s*[=:]\s*\S+")
 
 
 def redact(payload: dict[str, Any] | None) -> dict[str, Any] | None:
@@ -166,4 +164,3 @@ __all__ = [
     "classify_risk",
     "redact",
 ]
-

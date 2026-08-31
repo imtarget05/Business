@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """UTF-8 / emoji safety tests — guards against "lỗi phông chữ" (mojibake).
 
 These tests lock in the windows-utf8-encoding-safety fix:
@@ -9,14 +8,13 @@ These tests lock in the windows-utf8-encoding-safety fix:
 
 Run: pytest tests/unit/test_utf8_emoji.py -q
 """
+
 from __future__ import annotations
 
 import importlib.util
 import subprocess
 import sys
 from pathlib import Path
-
-import pytest
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 SCRIPT = ROOT / "scripts" / "check_utf8.py"
@@ -54,13 +52,15 @@ def test_check_utf8_script_fails_on_mojibake(tmp_path: Path):
     good.write_text("# -*- coding: utf-8 -*-\nx = '📚 Knowledge'\n", encoding="utf-8")
 
     # Re-point the gate at the temp tree by monkeypatching Path.parent chain.
-    mod = _load_script_module()
+    _load_script_module()
     original_rglob = Path.rglob
     try:
+
         def _fake_rglob(self, pattern):
             if self == tmp_path:
                 return iter([bad, good])
             return original_rglob(self, pattern)
+
         Path.rglob = _fake_rglob
         # Point root at tmp_path via a patched resolve chain is overkill;
         # instead call main()-equivalent logic through the script on the temp dir.
@@ -91,10 +91,11 @@ def test_emoji_roundtrip_under_pythonutf8():
     encoding is UTF-8, so the round-trip is clean.
     """
     import tempfile
+
     with tempfile.NamedTemporaryFile("w", suffix=".txt", delete=False, encoding="utf-8") as f:
         f.write(EMOJI_SAMPLE)
         name = f.name
-    with open(name, "r", encoding="utf-8") as f:
+    with open(name, encoding="utf-8") as f:
         content = f.read()
     assert content == EMOJI_SAMPLE
     # Explicitly refute the historical corruption pattern.
@@ -107,8 +108,15 @@ def test_michelin_fixture_is_valid_utf8_and_intact():
     # No mojibake markers.
     assert "ð" not in raw
     # Diacritics preserved.
-    for token in ("L'Usine", "Hà Nội", "Hồ Chí Minh", "Gaggan", "Eggspot", "Sud 40",
-                  "L'Atelier de Joël Robuchon"):
+    for token in (
+        "L'Usine",
+        "Hà Nội",
+        "Hồ Chí Minh",
+        "Gaggan",
+        "Eggspot",
+        "Sud 40",
+        "L'Atelier de Joël Robuchon",
+    ):
         assert token in raw, f"missing/garbled token: {token}"
     # Emoji preserved.
     assert "🍽️" in raw and "🥚" in raw and "🇫🇷" in raw
@@ -120,6 +128,7 @@ def test_michelin_fixture_is_valid_utf8_and_intact():
 def test_response_presentation_keeps_vietnamese_and_emoji():
     """present() must pass Vietnamese text + emoji through without mangling."""
     from uuid import uuid4
+
     from packages.contracts.enums import AgentResponseStatus
     from packages.contracts.models import AgentResponse
     from packages.core.response_presentation import present
@@ -149,6 +158,7 @@ def test_sanitize_text_normalizes_nfd_vietnamese():
     """A phone that decomposes Vietnamese (NFD) when copy-pasting must be
     restored to composed NFC so diacritics survive into the pipeline."""
     import sys
+
     sys.path.insert(0, str(ROOT))
     from agents.monitoring.telegram_bot import _sanitize_text
 
@@ -164,6 +174,7 @@ def test_sanitize_text_keeps_emoji_drops_variation_selector():
     """Emoji must survive sanitization, but the trailing variation selector
     (which renders as a tofu box on some Telegram clients) is stripped."""
     import sys
+
     sys.path.insert(0, str(ROOT))
     from agents.monitoring.telegram_bot import _sanitize_text
 
@@ -178,10 +189,11 @@ def test_sanitize_text_drops_replacement_and_control():
     """The Unicode replacement char and stray control chars are dropped so the
     Telegram client never shows 'broken icon' boxes."""
     import sys
+
     sys.path.insert(0, str(ROOT))
     from agents.monitoring.telegram_bot import _sanitize_text
 
-    text = "L'Usine\uFFFD Michelin \u0007next"  # replacement char + bell control
+    text = "L'Usine\ufffd Michelin \u0007next"  # replacement char + bell control
     out = _sanitize_text(text)
     assert "\ufffd" not in out
     assert "\u0007" not in out
@@ -192,6 +204,7 @@ def test_sanitizing_bot_wraps_send_message():
     """The _SanitizingBot wrapper forces _sanitize_text onto every send_message,
     so a handler that forgets to sanitize still ships clean text."""
     import sys
+
     sys.path.insert(0, str(ROOT))
     from agents.monitoring.telegram_bot import _SanitizingBot
 
@@ -201,13 +214,15 @@ def test_sanitizing_bot_wraps_send_message():
         async def send_message(self, chat_id, text, **kw):
             captured["text"] = text
             return {"text": text}
+
         async def edit_message_text(self, text, **kw):
             captured["edit"] = text
             return {"text": text}
 
     bot = _SanitizingBot(_FakeBot())
     import asyncio
-    asyncio.run(bot.send_message(1, "Hà Nội 📚\ufe0f corrupt\uFFFD\u0007", parse_mode="HTML"))
+
+    asyncio.run(bot.send_message(1, "Hà Nội 📚\ufe0f corrupt\ufffd\u0007", parse_mode="HTML"))
     assert captured["text"] == "Hà Nội 📚 corrupt"
     asyncio.run(bot.edit_message_text("Gaggan 🍛\ufffd"))
     assert captured["edit"] == "Gaggan 🍛"

@@ -1,5 +1,5 @@
-﻿# -*- coding: utf-8 -*-
 """Tests: Michelin RAG cache (DB-backed) + cost report parser."""
+
 from __future__ import annotations
 
 import json
@@ -17,7 +17,6 @@ def test_rag_store_then_get(tmp_path, monkeypatch):
     # Point the module at an in-memory-style sqlite? We use postgres engine via
     # settings; to keep the unit test offline we monkeypatch the engine factory
     # with a tiny dict-backed fake.
-    store = {}
 
     def fake_engine():
         return "fake"
@@ -35,15 +34,30 @@ def test_cost_report_parses_ledger(tmp_path):
 
     ledger = tmp_path / "u.jsonl"
     rows = [
-        {"model": "qwen3:1.7b", "cache_hit": False, "in_tokens": 400,
-         "out_tokens": 100, "est_cost_usd": 0.001, "latency_s": 5.0, "tag": "food"},
-        {"model": "qwen3:1.7b", "cache_hit": True, "in_tokens": 400,
-         "out_tokens": 100, "est_cost_usd": 0.001, "latency_s": 0.0, "tag": "food"},
+        {
+            "model": "qwen3:1.7b",
+            "cache_hit": False,
+            "in_tokens": 400,
+            "out_tokens": 100,
+            "est_cost_usd": 0.001,
+            "latency_s": 5.0,
+            "tag": "food",
+        },
+        {
+            "model": "qwen3:1.7b",
+            "cache_hit": True,
+            "in_tokens": 400,
+            "out_tokens": 100,
+            "est_cost_usd": 0.001,
+            "latency_s": 0.0,
+            "tag": "food",
+        },
     ]
     ledger.write_text("\n".join(json.dumps(r) for r in rows), encoding="utf-8")
     r = subprocess.run(
         [sys.executable, str(ROOT / "scripts" / "report_llm_cost.py"), str(ledger)],
-        capture_output=True, text=True,
+        capture_output=True,
+        text=True,
     )
     assert r.returncode == 0
     out = r.stdout
@@ -77,7 +91,8 @@ class _ConstEmbeddingProvider:
 
 
 def test_rag_vector_fallback_retrieves_unmatched_question(tmp_path, monkeypatch):
-    from sqlalchemy import create_engine, text as _text
+    from sqlalchemy import create_engine
+    from sqlalchemy import text as _text
 
     from packages.config.settings import Settings
 
@@ -118,7 +133,8 @@ def test_rag_vector_fallback_retrieves_unmatched_question(tmp_path, monkeypatch)
 
 
 def test_rag_store_persists_embedding(tmp_path, monkeypatch):
-    from sqlalchemy import create_engine, text as _text
+    from sqlalchemy import create_engine
+    from sqlalchemy import text as _text
 
     from packages.config.settings import Settings
 

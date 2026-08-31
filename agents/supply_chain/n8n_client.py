@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """n8n webhook client (Phase D — Task 3.5).
 
 Exports approved Purchase Orders to an n8n workflow via HTTP POST. The n8n
@@ -44,7 +43,7 @@ class N8nClient:
         self._webhook_url = webhook_url or os.environ.get("N8N_WEBHOOK_URL")
         self._timeout = timeout_seconds
         # Explicit flag overrides; otherwise enabled iff a URL is configured.
-        self._enabled = (enabled if enabled is not None else bool(self._webhook_url))
+        self._enabled = enabled if enabled is not None else bool(self._webhook_url)
 
     @property
     def enabled(self) -> bool:
@@ -68,9 +67,7 @@ class N8nClient:
             async with httpx.AsyncClient(timeout=self._timeout) as client:
                 resp = await client.post(self._webhook_url, json=po_payload)
             if resp.status_code >= 400:
-                logger.warning(
-                    f"n8n webhook returned {resp.status_code}: {resp.text[:200]}"
-                )
+                logger.warning(f"n8n webhook returned {resp.status_code}: {resp.text[:200]}")
                 return N8nResult(
                     exported=False,
                     webhook_url=self._webhook_url,

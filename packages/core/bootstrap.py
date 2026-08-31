@@ -106,7 +106,7 @@ def build_container(
     support_agent = create_support_agent(llm=llm)
     registry.register(support_agent.descriptor, support_agent)
 
-        # Supply Chain agents (Phase SC): PO inbound parsing, classification, routing
+    # Supply Chain agents (Phase SC): PO inbound parsing, classification, routing
     supply_chain_agents = create_supply_chain_agents(llm=llm, settings=s)
     for agent in supply_chain_agents.values():
         registry.register(agent.descriptor, agent)
@@ -117,7 +117,7 @@ def build_container(
         name="inventory_monitor",
         domain=Domain.SUPPLY_CHAIN,
         version="1",
-                description=(
+        description=(
             "Monitor inventory levels, generate alerts for low stock, "
             "out-of-stock, and overstock conditions."
         ),
@@ -139,7 +139,7 @@ def build_container(
         name="supply_chain_reporter",
         domain=Domain.SUPPLY_CHAIN,
         version="1",
-                description=(
+        description=(
             "Generate supply chain reports and dashboards from PO "
             "processing, approval, and inventory data."
         ),

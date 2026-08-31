@@ -39,9 +39,7 @@ async def agent_env(tmp_path):
 
     llm = MockLLMProvider(
         scripted=[
-            json.dumps(
-                {"answer": "Refunds are processed within 14 days.", "confidence": 0.9}
-            )
+            json.dumps({"answer": "Refunds are processed within 14 days.", "confidence": 0.9})
         ]
     )
     yield {"kb": kb, "llm": llm}

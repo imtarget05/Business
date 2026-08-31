@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Unit tests for Supply Chain LangGraph workflow (graph.py).
 
 Tests cover:
@@ -12,25 +11,19 @@ from __future__ import annotations
 
 import os
 import tempfile
-import pytest
 from uuid import uuid4
+
+import pytest
 
 from agents.supply_chain.graph import (
     SupplyChainGraphOrchestrator,
-    SupplyChainGraphState,
     _build_supply_chain_graph,
-    _build_checkpointer,
 )
-from agents.supply_chain.po_guardrails import POAgentGuardrails
-from agents.supply_chain.approval_guardrails import ApprovalGuardrails
-from agents.supply_chain.inventory_guardrails import InventoryGuardrails
-from agents.supply_chain.reporting_guardrails import ReportingGuardrails
-from packages.contracts.models import TaskRequest
-
 
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
+
 
 @pytest.fixture
 def orchestrator():
@@ -38,6 +31,7 @@ def orchestrator():
     db_fd, db_path = tempfile.mkstemp(suffix=".sqlite")
     os.close(db_fd)
     from packages.config.settings import Settings
+
     s = Settings()
     s.langgraph_checkpointer_db = db_path
     orch = SupplyChainGraphOrchestrator(settings=s)
@@ -79,6 +73,7 @@ def invalid_email():
 # Test 1: Happy path — auto-approved PO
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_happy_path_auto_approved(orchestrator, small_po_email):
     """Small PO → auto-approved → inventory → reporting → success."""
@@ -103,6 +98,7 @@ async def test_happy_path_auto_approved(orchestrator, small_po_email):
 # Test 2: Approval path — PO requiring manager B approval
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_approval_path_manager_b(orchestrator, large_po_email):
     """Large PO → approval_required_manager_b → approval node (stub auto-approve)
@@ -126,6 +122,7 @@ async def test_approval_path_manager_b(orchestrator, large_po_email):
 # Test 3: Error path — invalid email content
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_error_path_invalid_email(orchestrator, invalid_email):
     """Email without PO data → po_agent fails → error node → failed result."""
@@ -145,6 +142,7 @@ async def test_error_path_invalid_email(orchestrator, invalid_email):
 # Test 4: Error path — missing email_content
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_error_path_missing_email(orchestrator):
     """Missing email_content → po_agent fails → error node."""
@@ -162,6 +160,7 @@ async def test_error_path_missing_email(orchestrator):
 # ---------------------------------------------------------------------------
 # Test 5: Graph state transitions recorded in step_history
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_step_history_recorded(orchestrator, small_po_email):
@@ -183,12 +182,14 @@ async def test_step_history_recorded(orchestrator, small_po_email):
 # Test 6: Graph compilation with checkpoint
 # ---------------------------------------------------------------------------
 
+
 def test_graph_compiles_with_checkpoint():
     """Verify _build_supply_chain_graph compiles successfully with SqliteSaver."""
     db_fd, db_path = tempfile.mkstemp(suffix=".sqlite")
     os.close(db_fd)
     try:
         from packages.config.settings import Settings
+
         s = Settings()
         s.langgraph_checkpointer_db = db_path
         graph = _build_supply_chain_graph(s)
@@ -202,6 +203,7 @@ def test_graph_compiles_with_checkpoint():
 # ---------------------------------------------------------------------------
 # Test 7: Checkpoint DB is written
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_checkpoint_written(orchestrator, small_po_email):
@@ -220,6 +222,7 @@ async def test_checkpoint_written(orchestrator, small_po_email):
 # ---------------------------------------------------------------------------
 # Test 8: Multiple executions with same task_id resume from checkpoint
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_resume_from_checkpoint(orchestrator, small_po_email):
@@ -251,6 +254,7 @@ async def test_resume_from_checkpoint(orchestrator, small_po_email):
 # Test 9: PO data structure validation
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_po_data_structure(orchestrator, small_po_email):
     """Verify po_data has required fields after successful parsing."""
@@ -271,6 +275,7 @@ async def test_po_data_structure(orchestrator, small_po_email):
 # ---------------------------------------------------------------------------
 # Test 10: Dashboard structure validation
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_dashboard_structure(orchestrator, small_po_email):

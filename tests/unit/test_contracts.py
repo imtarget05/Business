@@ -58,9 +58,9 @@ def test_agent_response_all_statuses_validatable() -> None:
             task_id=uuid4(),
             agent="support-v1",
             status=status,
-            error=None if status == AgentResponseStatus.SUCCESS else ErrorDetail(
-                code="E", message="m"
-            ),
+            error=None
+            if status == AgentResponseStatus.SUCCESS
+            else ErrorDetail(code="E", message="m"),
             confidence=0.9 if status == AgentResponseStatus.SUCCESS else 0.0,
         )
         assert resp.status == status
@@ -106,8 +106,16 @@ def test_qualified_name() -> None:
 
 def test_task_status_enum_complete() -> None:
     expected = {
-        "pending", "classifying", "routing", "running", "validating",
-        "completed", "failed", "escalated", "cancelled", "dead_lettered",
+        "pending",
+        "classifying",
+        "routing",
+        "running",
+        "validating",
+        "completed",
+        "failed",
+        "escalated",
+        "cancelled",
+        "dead_lettered",
     }
     assert {s.value for s in TaskStatus} == expected
 

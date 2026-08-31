@@ -12,7 +12,13 @@ from uuid import UUID
 from sqlalchemy import select
 
 from packages.config.settings import get_settings
-from packages.database.models import Conversation, ConversationStatus, Customer, Message, Organization
+from packages.database.models import (
+    Conversation,
+    ConversationStatus,
+    Customer,
+    Message,
+    Organization,
+)
 from packages.database.session import get_session_factory
 
 logger = logging.getLogger(__name__)
@@ -40,6 +46,7 @@ class ChatMemory:
                 await self._ensure_customer(session, org.id, tg_user)
                 conv = await self._get_or_create_conversation(session, org.id, chat_id)
                 from packages.database.repositories.conversations import ConversationRepository
+
                 await ConversationRepository(session).append_message(org.id, conv.id, role, text)
                 await session.commit()
         except Exception:
@@ -62,9 +69,7 @@ class ChatMemory:
         email = f"telegram:{tg_user.id}@local"
         cust = (
             await session.scalars(
-                select(Customer).where(
-                    Customer.organization_id == org_id, Customer.email == email
-                )
+                select(Customer).where(Customer.organization_id == org_id, Customer.email == email)
             )
         ).first()
         name = (tg_user.full_name or f"TG-{tg_user.id}")[:255]
@@ -76,7 +81,9 @@ class ChatMemory:
             cust.name = name
         return cust
 
-    async def _get_or_create_conversation(self, session, org_id: UUID, chat_id: int) -> Conversation:
+    async def _get_or_create_conversation(
+        self, session, org_id: UUID, chat_id: int
+    ) -> Conversation:
         subject = f"telegram-chat-{chat_id}"
         conv = (
             await session.scalars(
@@ -95,7 +102,6 @@ class ChatMemory:
             session.add(conv)
             await session.flush()
         return conv
-
 
     async def recent_history(self, chat_id: int, limit: int = 8) -> list[tuple[str, str]]:
         """Return the last `limit` (role, content) messages for this chat."""

@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Adversarial tests for supply-chain node guardrails.
 
 Key invariant (project convention): TaskRequest.action MUST be snake_case
@@ -19,9 +18,8 @@ import pytest
 from pydantic import ValidationError
 
 from agents.supply_chain.inventory_guardrails import InventoryGuardrails
-from packages.contracts.models import TaskRequest, TaskContext
 from packages.contracts.enums import Domain
-
+from packages.contracts.models import TaskContext, TaskRequest
 
 ORG = "00000000-0000-0000-0000-000000000001"
 
@@ -42,6 +40,7 @@ def g() -> InventoryGuardrails:
 
 
 # --- action format enforcement (snake_case, never dotted) ---------------------
+
 
 def test_valid_snake_case_action_passes(g):
     g.validate_input(_req("supply_chain_check_inventory"))
@@ -67,18 +66,28 @@ def test_write_action_rejected(g):
 
 # --- SKU format validation ----------------------------------------------------
 
+
 def test_valid_sku_passes(g):
-    g.validate_input(_req("supply_chain_check_inventory", {"items": [{"sku": "ABC-123", "quantity": 10}]}))
+    g.validate_input(
+        _req("supply_chain_check_inventory", {"items": [{"sku": "ABC-123", "quantity": 10}]})
+    )
 
 
 def test_invalid_sku_rejected(g):
     with pytest.raises(ValueError):
-        g.validate_input(_req("supply_chain_check_inventory", {"items": [{"sku": "ab", "quantity": 10}]}))
+        g.validate_input(
+            _req("supply_chain_check_inventory", {"items": [{"sku": "ab", "quantity": 10}]})
+        )
 
 
 def test_negative_quantity_rejected(g):
     with pytest.raises(ValueError):
-        g.validate_input(_req("supply_chain_check_inventory", {"items": [{"sku": "ABC-123", "quantity_on_hand": -5}]}))
+        g.validate_input(
+            _req(
+                "supply_chain_check_inventory",
+                {"items": [{"sku": "ABC-123", "quantity_on_hand": -5}]},
+            )
+        )
 
 
 def test_non_list_items_rejected(g):
@@ -87,6 +96,7 @@ def test_non_list_items_rejected(g):
 
 
 # --- valid actions are all snake_case (regression guard) ----------------------
+
 
 def test_all_valid_actions_snake_case(g):
     import re

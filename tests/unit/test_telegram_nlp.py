@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Unit tests for the dependency-free Vietnamese NLP helpers (Feature 5 — UX).
 
 Covers query normalization (lowercase / diacritics / whitespace) and intent
@@ -25,10 +24,10 @@ from packages.telegram.nlp import (
     strip_diacritics,
 )
 
-
 # ---------------------------------------------------------------------------
 # normalize_vietnamese_query / strip_diacritics
 # ---------------------------------------------------------------------------
+
 
 def test_normalize_lowercases_and_collapses_whitespace():
     assert normalize_vietnamese_query("  Tìm   QUÁN  ăn \n\t ngon  ") == "tìm quán ăn ngon"
@@ -41,8 +40,7 @@ def test_normalize_keeps_diacritics_by_default():
 def test_normalize_can_strip_diacritics():
     assert normalize_vietnamese_query("Tìm quán ăn", strip_accents=True) == "tim quan an"
     assert (
-        normalize_vietnamese_query("ĐÁNH GIÁ NHÀ HÀNG", strip_accents=True)
-        == "danh gia nha hang"
+        normalize_vietnamese_query("ĐÁNH GIÁ NHÀ HÀNG", strip_accents=True) == "danh gia nha hang"
     )
 
 
@@ -65,6 +63,7 @@ def test_normalize_is_idempotent():
 # ---------------------------------------------------------------------------
 # classify_vietnamese_intent — happy paths
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.parametrize(
     "text",
@@ -136,6 +135,7 @@ def test_health_intent(text: str):
 # ---------------------------------------------------------------------------
 # classify_vietnamese_intent — robustness
 # ---------------------------------------------------------------------------
+
 
 def test_classification_is_accent_insensitive():
     assert classify_vietnamese_intent("tim quan an gan day") == CAP_KNOWLEDGE

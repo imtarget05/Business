@@ -7,11 +7,9 @@ tests/integration/test_api.py fixture pattern (create_all on Base.metadata).
 from __future__ import annotations
 
 import asyncio
-import os
 import tempfile
 import uuid as _uuid
 
-import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.ext.asyncio import create_async_engine
 

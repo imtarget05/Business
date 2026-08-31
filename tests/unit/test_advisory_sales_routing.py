@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Adversarial tests for Advisory Council persona routing + Sales intent detection.
 
 Covers both the pure persona selector and the free-text routing inside the
@@ -9,7 +8,6 @@ from __future__ import annotations
 
 import sys
 from dataclasses import dataclass, field
-from typing import Any
 
 import pytest
 
@@ -18,8 +16,8 @@ sys.path.insert(0, ".")
 from agents.monitoring.telegram_bot import MonitoringBot, TelegramConfig
 from packages.core.personas import select_persona
 
-
 # --- pure persona selector ----------------------------------------------------
+
 
 def test_buffett_detected():
     # avoid hormozi keywords (e.g. 'giá' in 'giá trị') so buffett wins on order
@@ -58,12 +56,15 @@ def test_vietnamese_invest_keyword():
 
 # --- Telegram free-text routing (advisory/sales must not steal other intents) --
 
+
 @dataclass
 class MockMessage:
     text: str = ""
     chat_id: int = 123456
 
-    async def reply_text(self, text: str, parse_mode: str = "Markdown", reply_markup=None) -> "MockMessage":
+    async def reply_text(
+        self, text: str, parse_mode: str = "Markdown", reply_markup=None
+    ) -> MockMessage:
         self.text = text
         return self
 
@@ -79,15 +80,19 @@ class MockUpdate:
     effective_chat: MockChat | None = None
 
     @classmethod
-    def from_message(cls, text: str, chat_id: int = 123456) -> "MockUpdate":
-        return cls(message=MockMessage(text=text, chat_id=chat_id), effective_chat=MockChat(id=chat_id))
+    def from_message(cls, text: str, chat_id: int = 123456) -> MockUpdate:
+        return cls(
+            message=MockMessage(text=text, chat_id=chat_id), effective_chat=MockChat(id=chat_id)
+        )
 
 
 @dataclass
 class MockBot:
     sent: list = field(default_factory=list)
 
-    async def send_message(self, chat_id: int, text: str, parse_mode: str = "Markdown", reply_markup=None) -> None:
+    async def send_message(
+        self, chat_id: int, text: str, parse_mode: str = "Markdown", reply_markup=None
+    ) -> None:
         self.sent.append(text)
 
     async def send_chat_action(self, chat_id: int, action: str) -> None:
@@ -113,7 +118,6 @@ def ctx() -> MockContext:
 @pytest.fixture(autouse=True)
 def _isolate(monkeypatch):
     import packages.core.bootstrap as bootstrap
-    import agents.monitoring.telegram_bot as tb
 
     async def _noop_advisory(self, update, context):
         await update.message.reply_text("[advisory-routed]")
@@ -123,6 +127,7 @@ def _isolate(monkeypatch):
 
     monkeypatch.setattr(MonitoringBot, "_advisory_command", _noop_advisory)
     monkeypatch.setattr(MonitoringBot, "_sales_command", _noop_sales)
+
     # Keep get_container raising so the generic fallback does not hit a real LLM.
     async def _boom(*a, **k):
         raise RuntimeError("isolated")

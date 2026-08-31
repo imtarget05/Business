@@ -56,13 +56,39 @@ COMPETITORS_CONFIG_PATH = DATA_DIR / "competitor" / "competitors.json"
 # Pricing language cues (VN + EN) used by the heuristic analyzer.
 _PRICE_UP_KEYWORDS = ("tăng giá", "tang gia", "increase", "premium", "đắt hơn", "dat hon")
 _PRICE_DOWN_KEYWORDS = (
-    "giảm giá", "giam gia", "discount", "sale", "khuyến mãi", "khuyen mai",
-    "giảm", "giam", "reduce", "rẻ hơn", "re hon", "flash sale", "ưu đãi", "uu dai",
+    "giảm giá",
+    "giam gia",
+    "discount",
+    "sale",
+    "khuyến mãi",
+    "khuyen mai",
+    "giảm",
+    "giam",
+    "reduce",
+    "rẻ hơn",
+    "re hon",
+    "flash sale",
+    "ưu đãi",
+    "uu dai",
 )
 _PATTERN_KEYWORDS = (
-    "ra mắt", "ra mat", "launch", "sản phẩm mới", "san pham moi", "tính năng",
-    "tinh nang", "feature", "mở rộng", "mo rong", "expand", "đối tác", "doi tac",
-    "partner", "campaign", "chiến dịch", "chien dich",
+    "ra mắt",
+    "ra mat",
+    "launch",
+    "sản phẩm mới",
+    "san pham moi",
+    "tính năng",
+    "tinh nang",
+    "feature",
+    "mở rộng",
+    "mo rong",
+    "expand",
+    "đối tác",
+    "doi tac",
+    "partner",
+    "campaign",
+    "chiến dịch",
+    "chien dich",
 )
 
 # Price regex: 2 triệu / 1.200.000 / 1,200,000 / 1200000 / 250k / 19$ / 1.2tr

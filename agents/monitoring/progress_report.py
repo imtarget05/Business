@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Progress report module — generates daily/weekly reports from system data.
 
 Collects data from:
@@ -14,7 +13,7 @@ from __future__ import annotations
 import json
 import logging
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -32,14 +31,17 @@ logger = logging.getLogger(__name__)
 async def get_rag_stats() -> dict[str, Any]:
     """Count verified Michelin facts cached in the local RAG store (pgvector/FTS)."""
     try:
-        from packages.database.session import get_session_factory
-        from packages.config.settings import get_settings
         from sqlalchemy import text
+
+        from packages.config.settings import get_settings
+        from packages.database.session import get_session_factory
 
         s = get_settings()
         factory = get_session_factory(s)
         async with factory() as session:
-            total = (await session.execute(text("SELECT count(*) FROM michelin_facts"))).scalar() or 0
+            total = (
+                await session.execute(text("SELECT count(*) FROM michelin_facts"))
+            ).scalar() or 0
             recent_rows = (
                 await session.execute(
                     text(
@@ -111,6 +113,7 @@ async def get_health_snapshot() -> dict[str, Any]:
 @dataclass
 class DailyReport:
     """Aggregated daily report data."""
+
     date: str
     generated_at: str
     period_hours: int = 24
@@ -155,8 +158,8 @@ class DailyReport:
             "",
             "## 📈 Task Statistics",
             "",
-            f"| Metric | Count |",
-            f"|--------|-------|",
+            "| Metric | Count |",
+            "|--------|-------|",
             f"| Tasks Created (24h) | {self.total_tasks_created} |",
             f"| Tasks Completed | {self.total_tasks_completed} |",
             f"| Success Rate | {self.success_rate:.1%} |",
@@ -171,8 +174,10 @@ class DailyReport:
             lines.append("")
             for agent_name, stats in self.agent_stats.items():
                 if isinstance(stats, dict):
-                    lines.append(f"- **{agent_name}**: {stats.get('executions', 0)} executions, "
-                               f"{stats.get('success_rate', 0):.1%} success")
+                    lines.append(
+                        f"- **{agent_name}**: {stats.get('executions', 0)} executions, "
+                        f"{stats.get('success_rate', 0):.1%} success"
+                    )
                 else:
                     lines.append(f"- **{agent_name}**: {stats}")
             lines.append("")
@@ -270,15 +275,17 @@ async def get_task_statistics(
     # Build recent tasks list (limited)
     recent = []
     for task in tasks[:20]:
-        task_dict = _task_to_dict(task)
-        recent.append({
-            "id": str(task.id),
-            "action": task.action,
-            "domain": task.domain,
-            "status": task.status.value if hasattr(task.status, "value") else str(task.status),
-            "created_at": task.created_at.isoformat() if task.created_at else "",
-            "updated_at": task.updated_at.isoformat() if task.updated_at else "",
-        })
+        _task_to_dict(task)
+        recent.append(
+            {
+                "id": str(task.id),
+                "action": task.action,
+                "domain": task.domain,
+                "status": task.status.value if hasattr(task.status, "value") else str(task.status),
+                "created_at": task.created_at.isoformat() if task.created_at else "",
+                "updated_at": task.updated_at.isoformat() if task.updated_at else "",
+            }
+        )
 
     return {
         "total_created": total_created,
@@ -313,7 +320,7 @@ async def generate_daily_report(
     Returns:
         DailyReport with aggregated data.
     """
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     since = now - timedelta(hours=hours)
     date_str = since.strftime("%Y-%m-%d")
     generated_at = now.isoformat()
@@ -381,6 +388,7 @@ async def generate_daily_report(
 # CLI helper
 # ---------------------------------------------------------------------------
 
+
 async def main() -> None:
     """Generate daily report and print to stdout."""
     import json
@@ -393,4 +401,5 @@ async def main() -> None:
 
 if __name__ == "__main__":
     import asyncio
+
     asyncio.run(main())

@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Business Ops Hub Agent (Task 2).
 
 Aggregates three real operational sources into a single daily digest with
@@ -25,15 +24,21 @@ digest structure without any network or credentials.
 from __future__ import annotations
 
 import logging
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
-from typing import Any, Awaitable, Callable
+from datetime import UTC, datetime
+from typing import Any
 
+from agents.ops_hub.tasks_provider import (
+    InMemoryTaskProvider,
+    StaticTaskProvider,
+    Task,
+    TaskProvider,
+    build_task_provider,
+)
 from packages.contracts.enums import AgentResponseStatus, Domain
 from packages.contracts.models import AgentDescriptor, AgentResponse, ErrorDetail, TaskRequest
 from packages.llm.base import LLMProvider
-
-from agents.ops_hub.tasks_provider import Task, TaskProvider
 
 logger = logging.getLogger(__name__)
 
@@ -46,9 +51,10 @@ def _default_gmail_source() -> GmailSource:
     """Read Gmail unread via the gmail agent's ``list`` action."""
 
     async def _run() -> list[dict[str, Any]]:
-        from packages.core.bootstrap import get_container
-        from packages.contracts.models import TaskContext
         import uuid as _uuid
+
+        from packages.contracts.models import TaskContext
+        from packages.core.bootstrap import get_container
 
         ctn = get_container()
         desc, handler = ctn.registry.get_by_capability("gmail.list")
@@ -75,9 +81,10 @@ def _default_calendar_source() -> CalendarSource:
     """Read upcoming calendar events via the calendar agent's ``list_events``."""
 
     async def _run() -> list[dict[str, Any]]:
-        from packages.core.bootstrap import get_container
-        from packages.contracts.models import TaskContext
         import uuid as _uuid
+
+        from packages.contracts.models import TaskContext
+        from packages.core.bootstrap import get_container
 
         ctn = get_container()
         desc, handler = ctn.registry.get_by_capability("calendar.list_events")
@@ -101,7 +108,7 @@ def _default_calendar_source() -> CalendarSource:
 
 
 def _now() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 @dataclass
@@ -228,7 +235,10 @@ class OpsHubAgent:
                     metadata={"id": ev.get("id")},
                 )
             )
-            if start is not None and 0 <= (start - now).total_seconds() <= self._alert_window_hours * 3600:
+            if (
+                start is not None
+                and 0 <= (start - now).total_seconds() <= self._alert_window_hours * 3600
+            ):
                 alerts.append(
                     DigestItem(
                         kind="event",
@@ -252,7 +262,10 @@ class OpsHubAgent:
                     metadata={"id": t.id, "done": t.done},
                 )
             )
-            if t.due is not None and 0 <= (t.due - now).total_seconds() <= self._alert_window_hours * 3600:
+            if (
+                t.due is not None
+                and 0 <= (t.due - now).total_seconds() <= self._alert_window_hours * 3600
+            ):
                 alerts.append(
                     DigestItem(
                         kind="task",
@@ -292,7 +305,11 @@ class OpsHubAgent:
             items=items,
             alerts=alerts,
             counts=counts,
-            raw={"emails": gmail_msgs, "events": calendar_evts, "tasks": [t.to_dict() for t in tasks]},
+            raw={
+                "emails": gmail_msgs,
+                "events": calendar_evts,
+                "tasks": [t.to_dict() for t in tasks],
+            },
         )
 
     async def handle(self, request: TaskRequest) -> AgentResponse:
@@ -391,7 +408,7 @@ def _event_start(ev: dict[str, Any]) -> datetime | None:
         # Calendar records may be naive locals; normalize to aware UTC so they
         # compare cleanly against _now() (UTC-aware) without a TypeError.
         if dt.tzinfo is None:
-            dt = dt.replace(tzinfo=timezone.utc)
+            dt = dt.replace(tzinfo=UTC)
         return dt
     except ValueError:
         return None

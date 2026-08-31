@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Tracing / observability abstraction (Phase E).
 
 Provides a no-op-by-default tracer that can be swapped for Langfuse or
@@ -16,7 +15,6 @@ from __future__ import annotations
 
 import logging
 import os
-import time
 from abc import ABC, abstractmethod
 from contextlib import contextmanager
 from typing import Any
@@ -64,8 +62,9 @@ class NoOpTracer(Tracer):
 class LangfuseTracer(Tracer):
     """Langfuse-backed tracer. Imported lazily so missing SDK never breaks boot."""
 
-    def __init__(self, public_key: str | None = None, secret_key: str | None = None,
-                 host: str | None = None) -> None:
+    def __init__(
+        self, public_key: str | None = None, secret_key: str | None = None, host: str | None = None
+    ) -> None:
         try:
             from langfuse import Langfuse  # type: ignore
         except ImportError:

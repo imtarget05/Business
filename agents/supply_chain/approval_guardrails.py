@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Guardrails cho Approval Workflow node.
 
 Triển khai 3 tầng:
@@ -12,7 +11,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from agents.supply_chain.approval import ApprovalWorkflow, ApprovalState
+from agents.supply_chain.approval import ApprovalWorkflow
 from agents.supply_chain.circuit_breaker import CircuitBreaker
 from packages.contracts.models import TaskRequest
 
@@ -29,7 +28,7 @@ class ApprovalGuardrails:
         self._workflow = workflow
         # Circuit breaker protects the approval evaluation against repeated
         # downstream failures (LLM/approval-service flakiness).
-        self._breaker = CircuitBreaker(f"approval_guardrails")
+        self._breaker = CircuitBreaker("approval_guardrails")
 
     def validate_input(self, request: TaskRequest) -> None:
         """Validate TaskRequest input cho Approval node.
@@ -42,25 +41,19 @@ class ApprovalGuardrails:
 
         # Rule 1: po_data phải là dict
         if po_data is not None and not isinstance(po_data, dict):
-            raise ValueError(
-                f"invalid po_data type: expected dict, got {type(po_data).__name__}"
-            )
+            raise ValueError(f"invalid po_data type: expected dict, got {type(po_data).__name__}")
 
         # Rule 2: Nếu có po_data, route phải là string
         if isinstance(po_data, dict) and "route" in po_data:
             route = po_data.get("route")
             if not isinstance(route, str):
-                raise ValueError(
-                    f"invalid route type: expected str, got {type(route).__name__}"
-                )
+                raise ValueError(f"invalid route type: expected str, got {type(route).__name__}")
 
         # Rule 3: Nếu có total, phải là số >= 0
         if isinstance(po_data, dict) and "total" in po_data:
             total = po_data.get("total")
             if not isinstance(total, (int, float)):
-                raise ValueError(
-                    f"invalid total type: expected number, got {type(total).__name__}"
-                )
+                raise ValueError(f"invalid total type: expected number, got {type(total).__name__}")
             if total < 0:
                 raise ValueError(f"total must be >= 0, got {total}")
 
@@ -80,11 +73,13 @@ class ApprovalGuardrails:
         action = request.action
 
         # Danh sách action hợp lệ cho approval node
-        allowed_actions = frozenset({
-            "supply_chain_approve_po",
-            "supply_chain_check_approval_status",
-            "supply_chain_resolve_approval",
-        })
+        allowed_actions = frozenset(
+            {
+                "supply_chain_approve_po",
+                "supply_chain_check_approval_status",
+                "supply_chain_resolve_approval",
+            }
+        )
 
         if action not in allowed_actions:
             raise PermissionError(
@@ -102,9 +97,7 @@ class ApprovalGuardrails:
         """
         # Output phải có status và result
         if not hasattr(response, "status") or not hasattr(response, "result"):
-            raise ValueError(
-                "approval output must have 'status' and 'result' attributes"
-            )
+            raise ValueError("approval output must have 'status' and 'result' attributes")
 
         result = response.result
         if not isinstance(result, dict):
@@ -120,8 +113,7 @@ class ApprovalGuardrails:
         valid_statuses = {"auto_approved", "approved", "rejected", "expired", "pending"}
         if approval_status not in valid_statuses:
             raise ValueError(
-                f"invalid approval_status: {approval_status!r} "
-                f"(valid: {sorted(valid_statuses)})"
+                f"invalid approval_status: {approval_status!r} (valid: {sorted(valid_statuses)})"
             )
 
-        logger.debug(f"ApprovalGuardrails: output validation passed")
+        logger.debug("ApprovalGuardrails: output validation passed")

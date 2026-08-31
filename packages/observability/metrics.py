@@ -29,9 +29,7 @@ from packages.observability.logging import get_logger
 
 logger = get_logger("observability.metrics")
 
-_current_metrics: ContextVar[MetricsRegistry | None] = ContextVar(
-    "boas_metrics", default=None
-)
+_current_metrics: ContextVar[MetricsRegistry | None] = ContextVar("boas_metrics", default=None)
 
 try:  # optional dependency: the API must stay importable without extras
     from prometheus_client import REGISTRY as PROMETHEUS_REGISTRY
@@ -70,9 +68,7 @@ class MetricsRegistry:
             "timings": {
                 key: {
                     "count": len(values),
-                    "avg_ms": round(sum(values) / len(values) * 1000, 2)
-                    if values
-                    else 0.0,
+                    "avg_ms": round(sum(values) / len(values) * 1000, 2) if values else 0.0,
                     "max_ms": round(max(values) * 1000, 2) if values else 0.0,
                 }
                 for key, values in self.timings.items()

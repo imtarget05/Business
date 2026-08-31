@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """End-to-end pipeline tests for Supply Chain Automation (Phase SC).
 
 Validates the complete supply chain flow:
@@ -9,24 +8,23 @@ from __future__ import annotations
 
 import pytest
 
+from agents.supply_chain.approval import ApprovalState, ApprovalWorkflow, needs_approval
 from agents.supply_chain.inbound import process_inbound_email
-from agents.supply_chain.po_agent import PurchaseOrderAgent
-from agents.supply_chain.approval import ApprovalWorkflow, ApprovalState, needs_approval
 from agents.supply_chain.inventory import (
-    InventoryMonitor,
     InventoryItem,
-    InventoryStatus,
+    InventoryMonitor,
 )
+from agents.supply_chain.po_agent import PurchaseOrderAgent
 from agents.supply_chain.reporting import SupplyChainReporter
 from packages.config.settings import Settings
 from packages.contracts.enums import Domain
-from packages.contracts.models import AgentDescriptor, TaskRequest, TaskContext
+from packages.contracts.models import TaskContext, TaskRequest
 from packages.llm.mock import MockLLMProvider
-
 
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
+
 
 @pytest.fixture
 def po_agent() -> PurchaseOrderAgent:
@@ -62,6 +60,7 @@ def reporting_agent() -> SupplyChainReporter:
 # E2E Test 1: Inbound email → PO Agent → successful PO processing
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_e2e_inbound_to_po_agent(po_agent):
     """Inbound email is parsed by PO Agent into structured PO data."""
@@ -94,6 +93,7 @@ async def test_e2e_inbound_to_po_agent(po_agent):
 # E2E Test 2: PO with auto-approval (no human approval needed)
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_e2e_auto_approved_po():
     """Small PO bypasses approval workflow and is auto-approved."""
@@ -121,6 +121,7 @@ async def test_e2e_auto_approved_po():
 # E2E Test 3: PO requiring approval → workflow transitions correctly
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_e2e_po_requires_approval():
     """PO above threshold triggers approval workflow."""
@@ -128,16 +129,24 @@ async def test_e2e_po_requires_approval():
 
     # Script LLM for structured PO parsing
     llm = MockLLMProvider()
-    llm.script({
-        "po_number": "PO-2024-E2E-003",
-        "vendor": "Big Manufacturer",
-        "vendor_email": "orders@bigmanufacturer.com",
-        "date": "2024-09-16",
-        "items": [
-            {"sku": "SKU-BIG-001", "description": "Heavy Machinery Part", "quantity": 20, "unit_price": 300.0, "total_price": 6000.0},
-        ],
-        "total": 6000.0,
-    })
+    llm.script(
+        {
+            "po_number": "PO-2024-E2E-003",
+            "vendor": "Big Manufacturer",
+            "vendor_email": "orders@bigmanufacturer.com",
+            "date": "2024-09-16",
+            "items": [
+                {
+                    "sku": "SKU-BIG-001",
+                    "description": "Heavy Machinery Part",
+                    "quantity": 20,
+                    "unit_price": 300.0,
+                    "total_price": 6000.0,
+                },
+            ],
+            "total": 6000.0,
+        }
+    )
     llm.script("new")
 
     settings = Settings()
@@ -174,6 +183,7 @@ async def test_e2e_po_requires_approval():
 # E2E Test 4: Rejected PO → workflow handles rejection
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_e2e_po_rejected():
     """Human rejects a PO requiring approval."""
@@ -181,16 +191,24 @@ async def test_e2e_po_rejected():
 
     # Script LLM for structured PO parsing
     llm = MockLLMProvider()
-    llm.script({
-        "po_number": "PO-2024-E2E-004",
-        "vendor": "Questionable Supplier",
-        "vendor_email": "sales@quesupplier.com",
-        "date": "2024-09-16",
-        "items": [
-            {"sku": "SKU-QUES-001", "description": "Unverified Component", "quantity": 5, "unit_price": 2000.0, "total_price": 10000.0},
-        ],
-        "total": 10000.0,
-    })
+    llm.script(
+        {
+            "po_number": "PO-2024-E2E-004",
+            "vendor": "Questionable Supplier",
+            "vendor_email": "sales@quesupplier.com",
+            "date": "2024-09-16",
+            "items": [
+                {
+                    "sku": "SKU-QUES-001",
+                    "description": "Unverified Component",
+                    "quantity": 5,
+                    "unit_price": 2000.0,
+                    "total_price": 10000.0,
+                },
+            ],
+            "total": 10000.0,
+        }
+    )
     llm.script("new")
 
     settings = Settings()
@@ -220,13 +238,42 @@ async def test_e2e_po_rejected():
 # E2E Test 5: Inventory Monitor processes items and generates alerts
 # ---------------------------------------------------------------------------
 
+
 def test_e2e_inventory_monitoring(inventory_monitor):
     """Inventory Monitor processes items and generates appropriate alerts."""
     items = [
-        InventoryItem(sku="INV-E2E-001", description="Available Part", quantity_on_hand=200, reorder_point=50, max_stock_level=150, unit_cost=10.0),
-        InventoryItem(sku="INV-E2E-002", description="Low Stock Item", quantity_on_hand=15, reorder_point=20, max_stock_level=100, unit_cost=25.0),
-        InventoryItem(sku="INV-E2E-003", description="Out of Stock Item", quantity_on_hand=0, reorder_point=10, max_stock_level=50, unit_cost=50.0),
-        InventoryItem(sku="INV-E2E-004", description="Overstock Item", quantity_on_hand=500, reorder_point=30, max_stock_level=200, unit_cost=5.0),
+        InventoryItem(
+            sku="INV-E2E-001",
+            description="Available Part",
+            quantity_on_hand=200,
+            reorder_point=50,
+            max_stock_level=150,
+            unit_cost=10.0,
+        ),
+        InventoryItem(
+            sku="INV-E2E-002",
+            description="Low Stock Item",
+            quantity_on_hand=15,
+            reorder_point=20,
+            max_stock_level=100,
+            unit_cost=25.0,
+        ),
+        InventoryItem(
+            sku="INV-E2E-003",
+            description="Out of Stock Item",
+            quantity_on_hand=0,
+            reorder_point=10,
+            max_stock_level=50,
+            unit_cost=50.0,
+        ),
+        InventoryItem(
+            sku="INV-E2E-004",
+            description="Overstock Item",
+            quantity_on_hand=500,
+            reorder_point=30,
+            max_stock_level=200,
+            unit_cost=5.0,
+        ),
     ]
 
     for item in items:
@@ -262,7 +309,9 @@ def test_e2e_inventory_monitoring(inventory_monitor):
     assert summary["total_items"] == 4
     assert summary["out_of_stock_count"] == 1
     assert summary["low_stock_count"] == 1
-    assert summary["overstock_count"] == 2  # Both INV-E2E-001 (200 >= 150) and INV-E2E-004 (500 >= 200)
+    assert (
+        summary["overstock_count"] == 2
+    )  # Both INV-E2E-001 (200 >= 150) and INV-E2E-004 (500 >= 200)
     assert summary["normal_count"] == 0
 
 
@@ -270,12 +319,17 @@ def test_e2e_inventory_monitoring(inventory_monitor):
 # E2E Test 6: Reporting Agent generates complete dashboard
 # ---------------------------------------------------------------------------
 
+
 def test_e2e_reporting_dashboard(reporting_agent):
     """Reporting Agent consolidates PO, approval, and inventory data into dashboard."""
     # Add mock PO data
     reporting_agent.add_mock_po("PO-E2E-001", "Supplier A", 1000.0, "auto_approved", "new")
-    reporting_agent.add_mock_po("PO-E2E-002", "Supplier B", 5000.0, "approval_required_manager_a", "reorder")
-    reporting_agent.add_mock_po("PO-E2E-003", "Supplier C", 15000.0, "approval_required_manager_b", "new")
+    reporting_agent.add_mock_po(
+        "PO-E2E-002", "Supplier B", 5000.0, "approval_required_manager_a", "reorder"
+    )
+    reporting_agent.add_mock_po(
+        "PO-E2E-003", "Supplier C", 15000.0, "approval_required_manager_b", "new"
+    )
 
     # Add mock approval data
     reporting_agent.add_mock_approval("PO-E2E-002", "approved", "manager_alice")
@@ -284,10 +338,18 @@ def test_e2e_reporting_dashboard(reporting_agent):
     reporting_agent.add_mock_approval("PO-E2E-005", "pending")
 
     # Add mock inventory data
-    reporting_agent.add_mock_inventory_item("SKU-RPT-001", "Component X", 150, 50, 200, 20.0, "normal")
-    reporting_agent.add_mock_inventory_item("SKU-RPT-002", "Component Y", 10, 20, 100, 35.0, "low_stock")
-    reporting_agent.add_mock_inventory_item("SKU-RPT-003", "Component Z", 0, 10, 50, 75.0, "out_of_stock")
-    reporting_agent.add_mock_inventory_item("SKU-RPT-004", "Component W", 400, 30, 200, 8.0, "overstock")
+    reporting_agent.add_mock_inventory_item(
+        "SKU-RPT-001", "Component X", 150, 50, 200, 20.0, "normal"
+    )
+    reporting_agent.add_mock_inventory_item(
+        "SKU-RPT-002", "Component Y", 10, 20, 100, 35.0, "low_stock"
+    )
+    reporting_agent.add_mock_inventory_item(
+        "SKU-RPT-003", "Component Z", 0, 10, 50, 75.0, "out_of_stock"
+    )
+    reporting_agent.add_mock_inventory_item(
+        "SKU-RPT-004", "Component W", 400, 30, 200, 8.0, "overstock"
+    )
 
     # Generate dashboard
     dashboard = reporting_agent.generate_full_dashboard()
@@ -326,11 +388,11 @@ def test_e2e_reporting_dashboard(reporting_agent):
 # E2E Test 7: Reporting Agent handle() methods work
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_e2e_reporting_get_dashboard(reporting_agent):
     """get_dashboard action returns full dashboard."""
     from uuid import uuid4
-    from packages.contracts.models import TaskRequest, TaskContext
 
     reporting_agent.add_mock_po("PO-001", "Vendor A", 1000.0, "auto_approved", "new")
     reporting_agent.add_mock_inventory_item("SKU-001", "Part A", 100, 20, 150, 10.0, "normal")
@@ -354,7 +416,6 @@ async def test_e2e_reporting_get_dashboard(reporting_agent):
 async def test_e2e_reporting_get_po_report(reporting_agent):
     """get_po_report action returns PO processing report."""
     from uuid import uuid4
-    from packages.contracts.models import TaskRequest, TaskContext
 
     reporting_agent.add_mock_po("PO-100", "Vendor X", 500.0, "auto_approved", "new")
 
@@ -378,7 +439,6 @@ async def test_e2e_reporting_get_po_report(reporting_agent):
 async def test_e2e_reporting_get_inventory_report(reporting_agent):
     """get_inventory_report action returns inventory alerts report."""
     from uuid import uuid4
-    from packages.contracts.models import TaskRequest, TaskContext
 
     reporting_agent.add_mock_inventory_item("SKU-INV-001", "Item", 0, 10, 50, 50.0, "out_of_stock")
     reporting_agent.add_mock_inventory_item("SKU-INV-002", "Item 2", 25, 20, 100, 15.0, "low_stock")
@@ -404,13 +464,12 @@ async def test_e2e_reporting_get_inventory_report(reporting_agent):
 # E2E Test 8: Complete simulated supply chain pipeline
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_e2e_complete_pipeline():
     """Simulates a complete supply chain workflow from PO receipt to reporting."""
-    from uuid import uuid4
-    from packages.contracts.models import TaskRequest, TaskContext
-    from packages.llm.mock import MockLLMProvider
     from packages.config.settings import Settings
+    from packages.llm.mock import MockLLMProvider
 
     # Initialize all agents with SCRIPTED LLM
     settings = Settings()
@@ -418,17 +477,31 @@ async def test_e2e_complete_pipeline():
 
     llm = MockLLMProvider()
     # Script 1: structured PO parse output
-    llm.script({
-        "po_number": "PO-E2E-FLOW-001",
-        "vendor": "Global Parts Supplier",
-        "vendor_email": "orders@globalparts.com",
-        "date": "2024-09-16",
-        "items": [
-            {"sku": "SKU-FLOW-001", "description": "Hydraulic Pump", "quantity": 5, "unit_price": 2000.0, "total_price": 10000.0},
-            {"sku": "SKU-FLOW-002", "description": "Control Valve", "quantity": 10, "unit_price": 500.0, "total_price": 5000.0},
-        ],
-        "total": 15000.0,
-    })
+    llm.script(
+        {
+            "po_number": "PO-E2E-FLOW-001",
+            "vendor": "Global Parts Supplier",
+            "vendor_email": "orders@globalparts.com",
+            "date": "2024-09-16",
+            "items": [
+                {
+                    "sku": "SKU-FLOW-001",
+                    "description": "Hydraulic Pump",
+                    "quantity": 5,
+                    "unit_price": 2000.0,
+                    "total_price": 10000.0,
+                },
+                {
+                    "sku": "SKU-FLOW-002",
+                    "description": "Control Valve",
+                    "quantity": 10,
+                    "unit_price": 500.0,
+                    "total_price": 5000.0,
+                },
+            ],
+            "total": 15000.0,
+        }
+    )
     # Script 2: classification output
     llm.script("new")
 
@@ -466,12 +539,26 @@ async def test_e2e_complete_pipeline():
     assert workflow.state == ApprovalState.APPROVED
 
     # Step 4: Inventory monitoring (simulate receiving inventory data for related items)
-    inventory_monitor.add_item(InventoryItem(
-        sku="SKU-FLOW-001", description="Hydraulic Pump", quantity_on_hand=3, reorder_point=5, max_stock_level=10, unit_cost=2000.0
-    ))
-    inventory_monitor.add_item(InventoryItem(
-        sku="SKU-FLOW-002", description="Control Valve", quantity_on_hand=12, reorder_point=8, max_stock_level=20, unit_cost=500.0
-    ))
+    inventory_monitor.add_item(
+        InventoryItem(
+            sku="SKU-FLOW-001",
+            description="Hydraulic Pump",
+            quantity_on_hand=3,
+            reorder_point=5,
+            max_stock_level=10,
+            unit_cost=2000.0,
+        )
+    )
+    inventory_monitor.add_item(
+        InventoryItem(
+            sku="SKU-FLOW-002",
+            description="Control Valve",
+            quantity_on_hand=12,
+            reorder_point=8,
+            max_stock_level=20,
+            unit_cost=500.0,
+        )
+    )
 
     alerts = inventory_monitor.get_alerts()
     assert len(alerts) == 1  # Only SKU-FLOW-001 is low stock (3 <= 5)
@@ -480,10 +567,16 @@ async def test_e2e_complete_pipeline():
     assert low_alert.alert_type.value == "low_stock"
 
     # Step 5: Reporting consolidates data
-    reporting_agent.add_mock_po(po["po_number"], po["vendor"], po["total"], po["route"], po["po_type"])
+    reporting_agent.add_mock_po(
+        po["po_number"], po["vendor"], po["total"], po["route"], po["po_type"]
+    )
     reporting_agent.add_mock_approval(po["po_number"], "approved", "procurement_director")
-    reporting_agent.add_mock_inventory_item("SKU-FLOW-001", "Hydraulic Pump", 3, 5, 10, 2000.0, "low_stock")
-    reporting_agent.add_mock_inventory_item("SKU-FLOW-002", "Control Valve", 12, 8, 20, 500.0, "normal")
+    reporting_agent.add_mock_inventory_item(
+        "SKU-FLOW-001", "Hydraulic Pump", 3, 5, 10, 2000.0, "low_stock"
+    )
+    reporting_agent.add_mock_inventory_item(
+        "SKU-FLOW-002", "Control Valve", 12, 8, 20, 500.0, "normal"
+    )
 
     dashboard = reporting_agent.generate_full_dashboard()
 

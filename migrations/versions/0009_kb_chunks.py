@@ -40,11 +40,7 @@ def upgrade() -> None:
             """
         )
     )
-    op.execute(
-        sa.text(
-            "CREATE INDEX ix_kb_chunks_tsvector ON kb_chunks USING gin (search_vector)"
-        )
-    )
+    op.execute(sa.text("CREATE INDEX ix_kb_chunks_tsvector ON kb_chunks USING gin (search_vector)"))
 
 
 def downgrade() -> None:

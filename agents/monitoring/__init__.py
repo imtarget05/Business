@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Monitoring agents package.
 
 Packages:

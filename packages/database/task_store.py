@@ -43,6 +43,7 @@ def _task_to_dict(task: Task) -> dict:
         "updated_at": task.updated_at,
     }
 
+
 # Terminal DB statuses used to build the idempotency replay path.
 _TERMINAL_DB = frozenset(
     {
@@ -155,10 +156,7 @@ class SqlAlchemyTaskStore:
         task = await self._session.get(Task, task_id)
         if task is None:
             return None
-        if (
-            organization_id is not None
-            and task.organization_id != organization_id
-        ):
+        if organization_id is not None and task.organization_id != organization_id:
             return None  # cross-tenant access: behave as not-found
         return _task_to_dict(task)
 
@@ -190,7 +188,7 @@ class SqlAlchemyTaskStore:
                 )
         if correlation_id is not None:
             stmt = stmt.where(TaskStep.correlation_id == correlation_id)
-        rows = ((await self._session.execute(stmt.limit(limit))).scalars().all())
+        rows = (await self._session.execute(stmt.limit(limit))).scalars().all()
         return [
             {
                 "id": str(s.id),

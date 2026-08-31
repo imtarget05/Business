@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env python
+#!/usr/bin/env python
 """Seed demo data for local development and Docker environments.
 
 Creates (idempotent):
@@ -252,8 +252,8 @@ async def main() -> int:
         print("  1. Start API:     uvicorn apps.api.main:app --reload")
         print("  2. Query KB:      curl -X POST http://localhost:8000/v1/tasks \\")
         print("                       -H 'Content-Type: application/json' \\")
-        print("                       -d '{\"domain\":\"knowledge\",\"action\":\"query\",")
-        print("                            \"payload\":{\"question\":\"refund policy\"}}'")
+        print('                       -d \'{"domain":"knowledge","action":"query",')
+        print('                            "payload":{"question":"refund policy"}}\'')
         print("  3. View dashboard: http://localhost:3000")
         return 0
 

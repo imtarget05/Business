@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Guardrails cho Inventory Monitor node.
 
 Triển khai 3 tầng:
@@ -26,11 +25,13 @@ class InventoryGuardrails:
     SKU_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{2,29}$")
 
     # Valid actions for inventory node
-    VALID_ACTIONS = frozenset({
-        "supply_chain_check_inventory",
-        "supply_chain_get_alerts",
-        "supply_chain_get_summary",
-    })
+    VALID_ACTIONS = frozenset(
+        {
+            "supply_chain_check_inventory",
+            "supply_chain_get_alerts",
+            "supply_chain_get_summary",
+        }
+    )
 
     def __init__(self) -> None:
         # Circuit breaker guards the (potentially DB-backed) inventory read.
@@ -57,9 +58,7 @@ class InventoryGuardrails:
         items = payload.get("items")
         if items is not None:
             if not isinstance(items, list):
-                raise ValueError(
-                    f"invalid items type: expected list, got {type(items).__name__}"
-                )
+                raise ValueError(f"invalid items type: expected list, got {type(items).__name__}")
 
             # Rule 3: Mỗi item phải có SKU hợp lệ
             for i, item in enumerate(items):
@@ -70,9 +69,7 @@ class InventoryGuardrails:
 
                 sku = item.get("sku", "")
                 if not isinstance(sku, str) or not sku.strip():
-                    raise ValueError(
-                        f"item[{i}] missing or invalid sku: {sku!r}"
-                    )
+                    raise ValueError(f"item[{i}] missing or invalid sku: {sku!r}")
                 if not self.SKU_PATTERN.match(sku):
                     raise ValueError(
                         f"item[{i}] sku '{sku}' does not match pattern {self.SKU_PATTERN.pattern}"
@@ -85,9 +82,7 @@ class InventoryGuardrails:
                         f"item[{i}] invalid quantity_on_hand type: {type(qty).__name__}"
                     )
                 if qty < 0:
-                    raise ValueError(
-                        f"item[{i}] quantity_on_hand must be >= 0, got {qty}"
-                    )
+                    raise ValueError(f"item[{i}] quantity_on_hand must be >= 0, got {qty}")
 
                 # Rule 5: reorder_point, max_stock_level phải là số >= 0
                 for field_name in ("reorder_point", "max_stock_level"):
@@ -97,9 +92,7 @@ class InventoryGuardrails:
                             f"item[{i}] invalid {field_name} type: {type(val).__name__}"
                         )
                     if val < 0:
-                        raise ValueError(
-                            f"item[{i}] {field_name} must be >= 0, got {val}"
-                        )
+                        raise ValueError(f"item[{i}] {field_name} must be >= 0, got {val}")
 
         logger.debug(f"InventoryGuardrails: input validation passed for task {request.task_id}")
 
@@ -120,23 +113,21 @@ class InventoryGuardrails:
         action = request.action
 
         if action not in self.VALID_ACTIONS:
-            raise PermissionError(
-                f"unauthorized action for inventory node: {action!r}"
-            )
+            raise PermissionError(f"unauthorized action for inventory node: {action!r}")
 
         # Inventory node là read-only — không có write actions
-        write_actions = frozenset({
-            "supply_chain.update_inventory",
-            "supply_chain.adjust_stock",
-            "supply_chain.place_order",
-            "supply_chain.create_item",
-            "supply_chain.delete_item",
-        })
+        write_actions = frozenset(
+            {
+                "supply_chain.update_inventory",
+                "supply_chain.adjust_stock",
+                "supply_chain.place_order",
+                "supply_chain.create_item",
+                "supply_chain.delete_item",
+            }
+        )
 
         if action in write_actions:
-            raise PermissionError(
-                f"inventory node cannot perform write action: {action!r}"
-            )
+            raise PermissionError(f"inventory node cannot perform write action: {action!r}")
 
         logger.debug(f"InventoryGuardrails: permission check passed for task {request.task_id}")
 
@@ -148,9 +139,7 @@ class InventoryGuardrails:
         """
         # Response phải có status và result
         if not hasattr(response, "status") or not hasattr(response, "result"):
-            raise ValueError(
-                "inventory output must have 'status' and 'result' attributes"
-            )
+            raise ValueError("inventory output must have 'status' and 'result' attributes")
 
         result = response.result
         if not isinstance(result, dict):
@@ -165,9 +154,7 @@ class InventoryGuardrails:
         alerts = result.get("alerts")
         if alerts is not None:
             if not isinstance(alerts, list):
-                raise ValueError(
-                    f"invalid alerts type: expected list, got {type(alerts).__name__}"
-                )
+                raise ValueError(f"invalid alerts type: expected list, got {type(alerts).__name__}")
             for i, alert in enumerate(alerts):
                 if not isinstance(alert, dict):
                     raise ValueError(
@@ -185,4 +172,4 @@ class InventoryGuardrails:
                 f"invalid inventory_summary type: expected dict, got {type(summary).__name__}"
             )
 
-        logger.debug(f"InventoryGuardrails: output validation passed")
+        logger.debug("InventoryGuardrails: output validation passed")

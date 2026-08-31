@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Approval Workflow for Purchase Orders (Phase SC).
 
 Implements a human-in-the-loop approval process for POs that require
@@ -253,17 +252,27 @@ class ApprovalWorkflow:
                 ),
             )
 
-        self._context.state = ApprovalState.APPROVED if decision_lower == "approved" else ApprovalState.REJECTED
+        self._context.state = (
+            ApprovalState.APPROVED if decision_lower == "approved" else ApprovalState.REJECTED
+        )
         self._context.decision = decision_lower
         self._context.decided_by = decided_by
         self._context.resolved_at = _now_seconds()
 
-        status = AgentResponseStatus.SUCCESS if decision_lower == "approved" else AgentResponseStatus.FAILED
+        status = (
+            AgentResponseStatus.SUCCESS
+            if decision_lower == "approved"
+            else AgentResponseStatus.FAILED
+        )
 
-        error = ErrorDetail(
-            code="APPROVAL_REJECTED",
-            message=f"PO rejected by {decided_by or 'unknown'}",
-        ) if decision_lower == "rejected" else None
+        error = (
+            ErrorDetail(
+                code="APPROVAL_REJECTED",
+                message=f"PO rejected by {decided_by or 'unknown'}",
+            )
+            if decision_lower == "rejected"
+            else None
+        )
 
         return AgentResponse(
             task_id=UUID("00000000-0000-0000-0000-000000000000"),
@@ -300,6 +309,7 @@ class ApprovalWorkflow:
 # ---------------------------------------------------------------------------
 # Convenience functions
 # ---------------------------------------------------------------------------
+
 
 def needs_approval(po_data: dict[str, Any]) -> bool:
     """Check if a PO requires human approval based on its route.

@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Dependency-free Vietnamese intent normalization for the Telegram bot.
 
 Why pure Python (no underthesea / spaCy / LLM call):
@@ -98,9 +97,7 @@ def _compile_rules() -> tuple[tuple[str, re.Pattern[str], int], ...]:
             if not norm:
                 continue
             # Word-ish boundaries: "hỏng" must not match inside another token.
-            pattern = re.compile(
-                r"(?<![0-9a-z])" + re.escape(norm) + r"(?![0-9a-z])"
-            )
+            pattern = re.compile(r"(?<![0-9a-z])" + re.escape(norm) + r"(?![0-9a-z])")
             rules.append((capability, pattern, len(norm)))
     rules.sort(key=lambda item: item[2], reverse=True)
     return tuple(rules)

@@ -106,11 +106,7 @@ def gmail_send(to: str, subject: str, body: str) -> dict[str, Any]:
     raw_base64url = base64.urlsafe_b64encode(raw_bytes).decode("ascii")
 
     # Send via Gmail API
-    send_request = (
-        service.users()
-        .messages()
-        .send(userId="me", body={"raw": raw_base64url})
-    )
+    send_request = service.users().messages().send(userId="me", body={"raw": raw_base64url})
     response = send_request.execute()
 
     return response

@@ -1,4 +1,4 @@
-﻿"""Full-text + semantic Knowledge Base (Second Brain).
+"""Full-text + semantic Knowledge Base (Second Brain).
 
 Task 1 deliverable: a centralized knowledge store (SOPs, docs, personal
 files) answering natural-language questions. Feature 1 adds semantic (vector)
@@ -21,7 +21,6 @@ The table is created by migration ``0009_kb_chunks`` in production (extended by
 from __future__ import annotations
 
 import asyncio
-import json
 import re
 import uuid
 from pathlib import Path
@@ -43,7 +42,9 @@ DEFAULT_CHUNK_OVERLAP = 50  # words of overlap between consecutive chunks
 _TOKEN_RE = re.compile(r"[a-zA-Z0-9à-ỹÀ-Ỹ_]+")
 
 
-def chunk_text(text: str, chunk_size: int = DEFAULT_CHUNK_SIZE, overlap: int = DEFAULT_CHUNK_OVERLAP) -> list[str]:
+def chunk_text(
+    text: str, chunk_size: int = DEFAULT_CHUNK_SIZE, overlap: int = DEFAULT_CHUNK_OVERLAP
+) -> list[str]:
     """Split ``text`` into word-overlapping chunks (~``chunk_size`` words).
 
     Deterministic. Short inputs return a single chunk. Overlap lets a sentence
@@ -199,10 +200,7 @@ class KnowledgeBase:
                         )
                     else:
                         await session.execute(
-                            text(
-                                "ALTER TABLE kb_chunks ADD COLUMN IF NOT EXISTS "
-                                "embedding TEXT"
-                            )
+                            text("ALTER TABLE kb_chunks ADD COLUMN IF NOT EXISTS embedding TEXT")
                         )
                 except Exception:
                     pass
@@ -320,7 +318,9 @@ class KnowledgeBase:
                         return [r[0] for r in rows]
                 except Exception:
                     pass
-            contents = (await session.execute(text("SELECT content FROM kb_chunks"))).scalars().all()
+            contents = (
+                (await session.execute(text("SELECT content FROM kb_chunks"))).scalars().all()
+            )
 
         scored = [(_score_query(q_tokens, c), c) for c in contents]
         scored = [(s, c) for s, c in scored if s > 0]
@@ -367,11 +367,7 @@ class KnowledgeBase:
                 await session.rollback()
             except Exception:
                 pass
-            rows = (
-                await session.execute(
-                    text("SELECT content, embedding FROM kb_chunks")
-                )
-            ).all()
+            rows = (await session.execute(text("SELECT content, embedding FROM kb_chunks"))).all()
 
         scored = []
         for content, emb in rows:

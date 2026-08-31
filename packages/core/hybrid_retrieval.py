@@ -9,7 +9,7 @@ avoids brittle min-max normalization across heterogeneous score scales.
 
 from __future__ import annotations
 
-from typing import Any, Iterable
+from typing import Any
 
 _RRF_K = 60  # RRF constant: dampens the contribution of very deep ranks.
 

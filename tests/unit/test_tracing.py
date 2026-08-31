@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Phase E tests: tracing abstraction (no-op default, backend selection)."""
 
 from __future__ import annotations

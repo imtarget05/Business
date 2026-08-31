@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """E2E integration tests for Supply Chain LangGraph graph orchestrator.
 
 These tests exercise the full graph flow (po_agent → approval → inventory → reporting)
@@ -7,20 +6,22 @@ using the orchestrator's execute() method, verifying end-to-end correctness.
 
 from __future__ import annotations
 
-import pytest
 from uuid import uuid4
 
-from agents.supply_chain.graph import SupplyChainGraphOrchestrator
+import pytest
 
+from agents.supply_chain.graph import SupplyChainGraphOrchestrator
 
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
 
+
 @pytest.fixture
 def orchestrator():
     """SupplyChainGraphOrchestrator with temp checkpoint DB (InMemorySaver)."""
     from packages.config.settings import Settings
+
     s = Settings()
     return SupplyChainGraphOrchestrator(settings=s)
 
@@ -67,6 +68,7 @@ def multi_item_po_email():
 # E2E Test 1: Full pipeline — small PO (auto-approved)
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_e2e_small_po_full_pipeline(orchestrator, small_po_email):
     """E2E: Small PO → po_agent → auto-approved → inventory → reporting → success.
@@ -111,6 +113,7 @@ async def test_e2e_small_po_full_pipeline(orchestrator, small_po_email):
 # E2E Test 2: Full pipeline — large PO (requires approval)
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_e2e_large_po_approval_pipeline(orchestrator, large_po_email):
     """E2E: Large PO → po_agent → approval_required → approval_node → inventory → reporting.
@@ -148,6 +151,7 @@ async def test_e2e_large_po_approval_pipeline(orchestrator, large_po_email):
 # E2E Test 3: Multi-item PO — inventory alert generation
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_e2e_multi_item_inventory_alerts(orchestrator, multi_item_po_email):
     """E2E: Multi-item PO → verify inventory alerts generated for items that trigger alerts.
@@ -178,6 +182,7 @@ async def test_e2e_multi_item_inventory_alerts(orchestrator, multi_item_po_email
 # E2E Test 4: E2E error path — invalid email triggers error_node
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_e2e_error_path(orchestrator):
     """E2E: Invalid email → po_agent fails → error_node → failed result."""
@@ -191,12 +196,15 @@ async def test_e2e_error_path(orchestrator):
     assert result["status"] == "failed"
     assert "error" in result
     # Should be caught at po_agent_node (PO parsing fails)
-    assert "PO" in result["error"] or "PO Agent" in result["error"] or "PO parsing" in result["error"]
+    assert (
+        "PO" in result["error"] or "PO Agent" in result["error"] or "PO parsing" in result["error"]
+    )
 
 
 # ---------------------------------------------------------------------------
 # E2E Test 5: E2E with organization context scoping
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_e2e_with_org_context(orchestrator):
@@ -224,6 +232,7 @@ async def test_e2e_with_org_context(orchestrator):
 # ---------------------------------------------------------------------------
 # E2E Test 6: Performance — graph execution under 5 seconds
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_e2e_performance(orchestrator, small_po_email):

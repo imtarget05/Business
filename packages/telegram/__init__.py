@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Telegram UX layer (Feature 5): per-user sessions + Vietnamese intent rules.
 
 Dependency-free on purpose — importing this package must never require
