@@ -19,7 +19,7 @@ import re
 import time
 import unicodedata
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 # Telegram MarkdownV1 requires these characters to be backslash-escaped or the
@@ -2349,7 +2349,7 @@ class MonitoringBot:
                     else:
                         _res = gmail_send(
                             to=target_mail,
-                            subject=f"[Business Ops] TOP {len(_final)} JobSearch CHUA XAC NHAN (user yêu cầu gửi) — {datetime.now(_dtY.UTC).isoformat()[:10]}",
+                            subject=f"[Business Ops] TOP {len(_final)} JobSearch CHUA XAC NHAN (user yêu cầu gửi) — {datetime.now(timezone.utc).isoformat()[:10]}",
                             body=_body,
                         )
                         if _res.get("mode") == "DRY_RUN":
@@ -3059,7 +3059,7 @@ class MonitoringBot:
                 _m_any = _re_num_clar.findall(r"\b(\d+)\b", text)
                 from agents.monitoring.jobsearch_filters import parse_job_count as _parse_n2
 
-                _n_job = _parse_n2(text) or 8
+                _n_job = _parse_n2(text) or (_m_any and int(_m_any[0])) or 8
                 from agents.monitoring.jobsearch_filters import extract_job_keywords
 
                 _kw_disp = extract_job_keywords(text)

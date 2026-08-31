@@ -172,6 +172,10 @@ class TestSendGmailReplyTool:
     ):
         """Real send rejects recipient not in allowlist or customer records."""
         monkeypatch.setenv("GMAIL_SEND_ENABLED", "true")
+        monkeypatch.setenv("GOOGLE_REFRESH_TOKEN", "fake-token-for-test")
+        monkeypatch.setenv("GOOGLE_OAUTH_CLIENT_ID", "fake-client-id")
+        monkeypatch.setenv("GOOGLE_OAUTH_CLIENT_SECRET", "fake-client-secret")
+        monkeypatch.setenv("GOOGLE_SHEET_ID", "fake-sheet-id")
         get_settings.cache_clear()
         tool.bind_organization(org_id)
 
@@ -197,6 +201,10 @@ class TestSendGmailReplyTool:
     ):
         """Real send allows recipient that is a customer in the org."""
         monkeypatch.setenv("GMAIL_SEND_ENABLED", "true")
+        monkeypatch.setenv("GOOGLE_REFRESH_TOKEN", "fake-token-for-test")
+        monkeypatch.setenv("GOOGLE_OAUTH_CLIENT_ID", "fake-client-id")
+        monkeypatch.setenv("GOOGLE_OAUTH_CLIENT_SECRET", "fake-client-secret")
+        monkeypatch.setenv("GOOGLE_SHEET_ID", "fake-sheet-id")
         get_settings.cache_clear()
         tool.bind_organization(org_id)
 
@@ -231,6 +239,10 @@ class TestSendGmailReplyTool:
         from packages.config.settings import get_settings
 
         monkeypatch.setenv("GMAIL_SEND_ENABLED", "true")
+        monkeypatch.setenv("GOOGLE_REFRESH_TOKEN", "fake-token-for-test")
+        monkeypatch.setenv("GOOGLE_OAUTH_CLIENT_ID", "fake-client-id")
+        monkeypatch.setenv("GOOGLE_OAUTH_CLIENT_SECRET", "fake-client-secret")
+        monkeypatch.setenv("GOOGLE_SHEET_ID", "fake-sheet-id")
         get_settings.cache_clear()
         settings = get_settings()
         settings.gmail_allowed_recipients = ["allowed@example.com"]
