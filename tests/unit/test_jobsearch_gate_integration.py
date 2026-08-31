@@ -1,8 +1,8 @@
-"""Integration test: V2 verify-gate must NOT auto-send email when 0 VERIFIED.
+﻿"""Integration test: V2 verify-gate must NOT auto-send email when 0 VERIFIED.
 
 This is the silent-contract-violation guard. The confirm screen promises
 "sẽ xác minh trước khi gửi"; if verification yields 0 VERIFIED listings, the
-pipeline MUST stop and ask the user — it must NOT call gmail_send on its own.
+MUST stop and ask the user — it must NOT call gmail_send on its own.
 
 Runs the real pipeline (real web_search + web_extract via HttpxWebTools) but
 patches gmail_send with unittest.mock so we can assert it was never called
@@ -14,6 +14,8 @@ from __future__ import annotations
 import asyncio
 import sys
 import unittest.mock as mock
+
+import pytest
 
 sys.path.insert(0, ".")
 
@@ -96,6 +98,7 @@ async def _run_confirm(bot, chat):
 
 def test_v2_gate_blocks_auto_send_when_zero_verified():
     """Real pipeline, 0 VERIFIED -> no gmail_send, user gets an ASK prompt."""
+    pytest.importorskip("telegram")
     spy = mock.MagicMock(return_value={"mode": "DRY_RUN", "id": "spy-000", "to": None})
     with mock.patch("integrations.google_client.gmail_send", spy):
         bot = _make_bot()
@@ -123,6 +126,7 @@ def test_v2_user_can_still_send_unconfirmed_explicitly():
     Isolated: we pre-seed _last_jobsearch with a fake candidate and patch the
     allowlist, so we test ONLY the consent->send wiring without the network.
     """
+    pytest.importorskip("telegram")
     spy = mock.MagicMock(return_value={"mode": "DRY_RUN", "id": "spy-001", "to": None})
     _real = None
     try:

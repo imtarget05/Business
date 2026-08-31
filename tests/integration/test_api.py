@@ -1,4 +1,4 @@
-"""API tests: health, readiness, tasks, agents, error envelope.
+﻿"""API tests: health, readiness, tasks, agents, error envelope.
 
 No live DB required: /ready failure path is exercised via monkeypatch.
 """
@@ -12,6 +12,7 @@ import uuid as _uuid
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine
 
 import packages.config.settings as settings_mod
@@ -72,6 +73,23 @@ def client(tmp_path, monkeypatch):
         eng = create_async_engine(url)
         async with eng.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
+            # Create kb_chunks table (used by KnowledgeBase) to avoid "database is locked" errors
+            await conn.execute(
+                text(
+                    """
+                    CREATE TABLE IF NOT EXISTS kb_chunks (
+                        id VARCHAR(36) PRIMARY KEY,
+                        doc_id VARCHAR(36) NOT NULL,
+                        source_path TEXT NOT NULL,
+                        title TEXT NOT NULL,
+                        chunk_index INTEGER NOT NULL,
+                        content TEXT NOT NULL,
+                        embedding TEXT,
+                        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+                    )
+                    """
+                )
+            )
             await conn.execute(
                 models.Organization.__table__.insert().values(
                     id=_uuid.UUID("00000000-0000-0000-0000-000000000001"),

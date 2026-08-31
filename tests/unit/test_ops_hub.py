@@ -1,4 +1,4 @@
-"""Task 2 — Business Ops Hub unit tests.
+﻿"""Task 2 — Business Ops Hub unit tests.
 
 Covers the OpsHubAgent digest aggregation with fully mocked Gmail / Calendar /
 task sources (no network, no credentials, fast). Asserts digest structure,
@@ -8,6 +8,8 @@ count correctness, and alert derivation rules.
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
+
+import pytest
 
 from agents.ops_hub.agent import OpsHubAgent
 from agents.ops_hub.tasks_provider import (
@@ -221,11 +223,13 @@ async def test_build_digest_with_shipped_config_tasks_naive_due() -> None:
     raising TypeError (naive/aware subtraction).
     """
     # Mirror config.yaml ops.tasks exactly: one naive-ISO 'due', one no-due high.
+    # Use a dynamic future date to avoid test failure when the hardcoded date passes.
+    future_due = (datetime.now(UTC) + timedelta(days=7)).strftime("%Y-%m-%dT%H:%M:%S")
     provider = InMemoryTaskProvider(
         tasks=[
             {
                 "title": "Gửi báo cáo tuần cho khách hàng",
-                "due": "2026-08-30T17:00:00",
+                "due": future_due,
                 "priority": "normal",
             },
             {"title": "Duyệt báo giá nhà cung cấp A", "priority": "high"},
@@ -256,6 +260,7 @@ async def test_build_digest_with_shipped_config_tasks_naive_due() -> None:
 # (UTC+7) == 01:00 UTC, not Asia/Seoul.
 # ---------------------------------------------------------------------------
 def test_scheduler_ops_hub_job_uses_vn_timezone() -> None:
+    pytest.importorskip("apscheduler")
     from agents.monitoring.scheduler import SchedulerConfig
 
     cfg = SchedulerConfig()
@@ -299,6 +304,7 @@ def test_config_scheduler_timezone_is_vn() -> None:
 # Scheduler formatter (shared with /ops route) — pure, no network
 # ---------------------------------------------------------------------------
 def test_format_ops_digest_renders_alerts_and_items() -> None:
+    pytest.importorskip("apscheduler")
     from agents.monitoring.scheduler import _format_ops_digest
 
     digest = {

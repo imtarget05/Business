@@ -1,4 +1,4 @@
-"""Audit fix wave — tenant isolation, tool org injection, email allowlist,
+﻿"""Audit fix wave — tenant isolation, tool org injection, email allowlist,
 dispatch persistence.
 
 Covers:
@@ -292,6 +292,7 @@ async def test_dry_run_unaffected_by_allowlist(monkeypatch):
     live = settings_mod.get_settings()
     monkeypatch.setattr(live, "email_send_enabled", False)
     tool = SendEmailReplyTool()
+    tool.bind_organization(_uuid.UUID(ORG_A))
     result = await tool.run(
         {"to_email": "anyone@anywhere.example", "subject": "s", "body_text": "b"}
     )

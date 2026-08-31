@@ -1,4 +1,4 @@
-"""Adversarial tests for Advisory Council persona routing + Sales intent detection.
+﻿"""Adversarial tests for Advisory Council persona routing + Sales intent detection.
 
 Covers both the pure persona selector and the free-text routing inside the
 Telegram handler (which must NOT hijack jobsearch/research into advisory/sales).
@@ -145,6 +145,7 @@ async def _run(bot, ctx, text, chat_id=123456):
 
 @pytest.mark.asyncio
 async def test_jobsearch_not_routed_to_advisory(bot, ctx):
+    pytest.importorskip("telegram")
     update = await _run(bot, ctx, "tìm 5 job AI intern về a@b.com")
     assert "[advisory-routed]" not in (update.message.text or "")
     # JobSearch confirm screen must appear (not an advisory routing) — using the

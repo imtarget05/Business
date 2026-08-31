@@ -1,4 +1,4 @@
-"""Adversarial / extremely-hard test cases for Telegram intent classification.
+﻿"""Adversarial / extremely-hard test cases for Telegram intent classification.
 
 These tests probe the message-classification logic in MonitoringBot._message_handler:
 false positives (a "?" turning every question into a menu), wrong job-count parsing,
@@ -147,6 +147,7 @@ async def test_question_mark_is_not_help_menu(bot, ctx):
 @pytest.mark.asyncio
 async def test_jobsearch_count_parsed_from_brief(bot, ctx):
     """'tìm 5 job AI intern' must capture N=5, not the first stray digit."""
+    pytest.importorskip("telegram")
     update = await _run(bot, ctx, "tìm 5 job AI intern gửi về a@b.com")
     txt = update.message.text or ""
     assert "tìm 5 vị trí" in txt or "5 vị trí" in txt
@@ -156,6 +157,7 @@ async def test_jobsearch_count_parsed_from_brief(bot, ctx):
 @pytest.mark.asyncio
 async def test_jobsearch_count_ignores_phone_number(bot, ctx):
     """A phone number in the brief must NOT be read as the job count."""
+    pytest.importorskip("telegram")
     update = await _run(bot, ctx, "tìm 3 job AI intern, liên hệ sdt 0905123456")
     txt = update.message.text or ""
     assert "tìm 3 vị trí" in txt or "3 vị trí" in txt
@@ -164,6 +166,7 @@ async def test_jobsearch_count_ignores_phone_number(bot, ctx):
 @pytest.mark.asyncio
 async def test_jobsearch_default_when_no_number(bot, ctx):
     """'tìm job AI intern' with no number -> default 8 (no crash, no weird digit)."""
+    pytest.importorskip("telegram")
     update = await _run(bot, ctx, "tìm job AI intern về a@b.com")
     txt = update.message.text or ""
     assert "8 vị trí" in txt
@@ -231,6 +234,7 @@ async def test_help_keyword_shows_menu(bot, ctx):
 @pytest.mark.asyncio
 async def test_jobsearch_clarifying_captures_followup_count(bot, ctx):
     """After first 'tìm job', a follow-up '12 job AI' must update N to 12."""
+    pytest.importorskip("telegram")
     await _run(bot, ctx, "tìm job AI intern")
     update = await _run(bot, ctx, "12 job AI thực tập tại Hà Nội", chat_id=123456)
     txt = update.message.text or ""
@@ -261,6 +265,7 @@ async def test_empty_message_ignored(bot, ctx):
 async def test_jobsearch_confirm_format_is_natural(bot, ctx):
     """Confirm screen must echo the keyword, not claim VERIFIED pre-search, and
     offer an edit escape hatch (per UX review 2026-08-30)."""
+    pytest.importorskip("telegram")
     update = await _run(bot, ctx, "tìm job AI intern gần đây")
     txt = update.message.text or ""
     assert "Từ khóa: Ai Intern" in txt

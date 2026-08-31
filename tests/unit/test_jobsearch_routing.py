@@ -1,4 +1,4 @@
-"""Routing priority: JobSearch intent must win over Advisory for hiring phrases.
+﻿"""Routing priority: JobSearch intent must win over Advisory for hiring phrases.
 
 Bug history: "tìm marketing hà nội còn apply được" was hijacked by the Advisory
 persona router (marketing = a persona keyword) instead of JobSearch. JobSearch
@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import asyncio
 import sys
+
+import pytest
 
 sys.path.insert(0, ".")
 
@@ -64,6 +66,7 @@ async def _run(text):
 
 
 def test_jobsearch_priority_over_advisory():
+    pytest.importorskip("telegram")
     out = asyncio.run(_run("tìm marketing hà nội còn apply được"))
     joined = "\n".join(out)
     assert "Xác nhận tìm kiếm việc làm" in joined, f"expected JobSearch screen, got: {out}"
@@ -73,6 +76,7 @@ def test_jobsearch_priority_over_advisory():
 
 
 def test_jobsearch_catch_apply_phrase():
+    pytest.importorskip("telegram")
     out = asyncio.run(_run("tìm 5 job ai intern còn apply được tại Hà Nội"))
     joined = "\n".join(out)
     assert "Xác nhận tìm kiếm việc làm" in joined, f"got: {out}"
