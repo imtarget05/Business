@@ -2349,7 +2349,7 @@ class MonitoringBot:
                     else:
                         _res = gmail_send(
                             to=target_mail,
-                            subject=f"[Business Ops] TOP {len(_final)} JobSearch CHUA XAC NHAN (user yêu cầu gửi) — {datetime.now(datetime.UTC).isoformat()[:10]}",
+                            subject=f"[Business Ops] TOP {len(_final)} JobSearch CHUA XAC NHAN (user yêu cầu gửi) — {datetime.now().isoformat()[:10]}",
                             body=_body,
                         )
                         if _res.get("mode") == "DRY_RUN":
