@@ -89,7 +89,7 @@ export default function TasksPage() {
                     <StatusBadge status={t.status} />
                   </td>
                   <td className="px-3 md:px-4 py-2 md:py-3 text-slate-500">
-                    {t.created_at ? new Date(t.created_at).toLocaleString() : "—"}
+                    {t.created_at ? new Date(t.created_at).toLocaleString() : "â€”"}
                   </td>
                 </tr>
               ))}
