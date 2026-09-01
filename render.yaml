@@ -1,0 +1,15 @@
+services:
+  - type: web
+    name: business-ops-api
+    runtime: docker
+    dockerfilePath: ./infrastructure/docker/api.Dockerfile
+    healthCheckPath: /health
+    envVars:
+      - key: ENVIRONMENT
+        value: production
+      - key: LLM_PROVIDER
+        value: mock
+      - key: DATABASE_URL
+        sync: false
+      - key: API_KEY
+        generateValue: true

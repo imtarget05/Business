@@ -16,7 +16,7 @@ const NAV_ITEMS = [
 export default function Sidebar() {
   const pathname = usePathname();
   return (
-    <aside className="w-56 shrink-0 border-r border-slate-200 bg-white p-4">
+    <aside className="hidden md:block w-56 shrink-0 border-r border-slate-200 bg-white p-4">
       <Link href="/" className="mb-6 block">
         <span className="text-lg font-bold tracking-tight">Business Ops</span>
         <span className="block text-xs text-slate-500">Agent Swarm</span>

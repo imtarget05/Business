@@ -1,4 +1,4 @@
-# Business Ops Agent Swarm â€” PRODUCTION stack (24/7)
+# Business Ops Agent Swarm — PRODUCTION stack (24/7)
 #
 #   docker compose -f docker-compose.prod.yml up -d
 #
@@ -6,6 +6,7 @@
 # - External managed Postgres (Neon, ADR-002) via DATABASE_URL
 # - restart: always + healthchecks + log rotation
 # - Secrets come from .env (never committed)
+# - Cloud-ready: no local volume mounts, PORT env var support
 
 x-api-env: &api-env
   ENVIRONMENT: production
@@ -29,23 +30,24 @@ x-api-env: &api-env
   GMAIL_ALLOWED_RECIPIENTS: ${GMAIL_ALLOWED_RECIPIENTS:-}
   TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
   TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:-}
+  PORT: ${PORT:-8000}
 
 services:
   api:
     build:
       context: .
       dockerfile: infrastructure/docker/api.Dockerfile
-    command: ["sh", "-c", "alembic upgrade head && uvicorn apps.api.main:app --host 0.0.0.0 --port 8000 --workers 2"]
+    command: ["sh", "-c", "alembic upgrade head && uvicorn apps.api.main:app --host 0.0.0.0 --port ${PORT:-8000} --workers 2"]
     environment: *api-env
     ports:
-      - "8000:8000"
+      - "${PORT:-8000}:${PORT:-8000}"
     restart: always
     deploy:
       resources:
         limits:
           memory: 1g
     healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:8000/health || exit 1"]
+      test: ["CMD-SHELL", "curl -f http://localhost:${PORT:-8000}/health || exit 1"]
       interval: 30s
       timeout: 5s
       retries: 3
@@ -75,7 +77,7 @@ services:
     environment:
       NEXT_PUBLIC_API_BASE_URL: ${WEB_API_BASE_URL:-http://localhost:8000}
     ports:
-      - "3000:3000"
+      - "${WEB_PORT:-3000}:3000"
     restart: always
     depends_on:
       api:

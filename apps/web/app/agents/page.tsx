@@ -28,35 +28,35 @@ export default function AgentsPage() {
   return (
     <section>
       <div className="mb-6">
-        <h1 className="text-xl font-semibold">Agents</h1>
-        <p className="mt-1 max-w-2xl text-sm text-slate-600">
+        <h1 className="text-lg md:text-xl font-semibold">Agents</h1>
+        <p className="mt-1 max-w-2xl text-xs md:text-sm text-slate-600">
           Registered agents, versions, capabilities and status from the Agent Registry.
         </p>
       </div>
 
       {error ? (
-        <div className="rounded-md bg-red-50 p-4 text-sm text-red-700">
+        <div className="rounded-md bg-red-50 p-3 md:p-4 text-xs md:text-sm text-red-700">
           Failed to load agents: {error}
         </div>
       ) : loading ? (
-        <div className="text-sm text-slate-500">Loading agents...</div>
+        <div className="text-xs md:text-sm text-slate-500">Loading agents...</div>
       ) : agents.length === 0 ? (
-        <div className="mt-6 rounded-lg border border-dashed border-slate-300 bg-slate-50 p-10 text-center text-sm text-slate-500">
+        <div className="mt-6 rounded-lg border border-dashed border-slate-300 bg-slate-50 p-6 md:p-10 text-center text-xs md:text-sm text-slate-500">
           No agents registered in the registry.
         </div>
       ) : (
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+        <div className="grid gap-3 md:gap-4 grid-cols-1 md:grid-cols-2 xl:grid-cols-3">
           {agents.map((a) => (
-            <div key={a.id} className="rounded-lg border border-slate-200 bg-white p-5">
+            <div key={a.id} className="rounded-lg border border-slate-200 bg-white p-4 md:p-5">
               <div className="flex items-start justify-between">
                 <div>
-                  <h3 className="font-semibold">{a.name}</h3>
+                  <h3 className="font-semibold text-sm md:text-base">{a.name}</h3>
                   <p className="font-mono text-xs text-slate-500">{a.id}</p>
                 </div>
                 <StatusBadge status={a.status ?? "active"} />
               </div>
 
-              <div className="mt-4 text-sm">
+              <div className="mt-3 md:mt-4 text-xs md:text-sm">
                 <div className="grid grid-cols-[100px_1fr] gap-2">
                   <span className="text-slate-500">Domain:</span>
                   <span className="font-medium">{a.domain}</span>
@@ -66,7 +66,7 @@ export default function AgentsPage() {
                 </div>
               </div>
 
-              <div className="mt-4">
+              <div className="mt-3 md:mt-4">
                 <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">Capabilities</span>
                 <div className="mt-2 flex flex-wrap gap-1.5">
                   {a.capabilities.map((cap) => (

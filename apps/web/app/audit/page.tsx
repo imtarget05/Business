@@ -39,10 +39,10 @@ export default function AuditPage() {
 
   return (
     <section>
-      <div className="mb-6 flex items-center justify-between">
+      <div className="mb-4 md:mb-6 flex flex-col md:flex-row md:items-center md:justify-between">
         <div>
-          <h1 className="text-xl font-semibold">Audit Logs</h1>
-          <p className="mt-1 max-w-2xl text-sm text-slate-600">
+          <h1 className="text-lg md:text-xl font-semibold">Audit Logs</h1>
+          <p className="mt-1 max-w-2xl text-xs md:text-sm text-slate-600">
             Append-only audit trail of every orchestrator step, filterable by correlation ID.
           </p>
         </div>
@@ -50,11 +50,11 @@ export default function AuditPage() {
 
       <form
         onSubmit={handleSubmit}
-        className="mb-6 flex gap-2"
+        className="mb-4 md:mb-6 flex gap-2"
       >
         <input
           type="text"
-          placeholder="Filter by correlation_idâ€¦"
+          placeholder="Filter by correlation_id…"
           value={correlationFilter}
           onChange={(e) => setCorrelationFilter(e.target.value)}
           className="w-full max-w-sm rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm"
@@ -62,51 +62,51 @@ export default function AuditPage() {
       </form>
 
       {error ? (
-        <div className="rounded-md bg-red-50 p-4 text-sm text-red-700">{error}</div>
+        <div className="rounded-md bg-red-50 p-3 md:p-4 text-xs md:text-sm text-red-700">{error}</div>
       ) : loading ? (
-        <div className="text-sm text-slate-500">Loading audit trailâ€¦</div>
+        <div className="text-xs md:text-sm text-slate-500">Loading audit trail…</div>
       ) : steps.length === 0 ? (
-        <div className="mt-6 rounded-lg border border-dashed border-slate-300 bg-slate-50 p-10 text-center text-sm text-slate-500">
+        <div className="mt-6 rounded-lg border border-dashed border-slate-300 bg-slate-50 p-6 md:p-10 text-center text-xs md:text-sm text-slate-500">
           {correlationFilter
             ? `No steps found for correlation_id "${correlationFilter}".`
             : "No audit records yet. Run a task to see its steps here."}
         </div>
       ) : (
-        <div className="overflow-hidden rounded-lg border border-slate-200 bg-white">
-          <table className="min-w-full divide-y divide-slate-200 text-left text-sm">
+        <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
+          <table className="min-w-full divide-y divide-slate-200 text-left text-xs md:text-sm">
             <thead className="bg-slate-50 text-slate-600">
               <tr>
-                <th className="px-4 py-3 font-medium">Step</th>
-                <th className="px-4 py-3 font-medium">Task ID</th>
-                <th className="px-4 py-3 font-medium">Name</th>
-                <th className="px-4 py-3 font-medium">Status</th>
-                <th className="px-4 py-3 font-medium">Correlation ID</th>
-                <th className="px-4 py-3 font-medium">Started</th>
+                <th className="px-3 md:px-4 py-2 md:py-3 font-medium">Step</th>
+                <th className="px-3 md:px-4 py-2 md:py-3 font-medium">Task ID</th>
+                <th className="px-3 md:px-4 py-2 md:py-3 font-medium">Name</th>
+                <th className="px-3 md:px-4 py-2 md:py-3 font-medium">Status</th>
+                <th className="px-3 md:px-4 py-2 md:py-3 font-medium">Correlation ID</th>
+                <th className="px-3 md:px-4 py-2 md:py-3 font-medium">Started</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-200">
               {steps.map((s) => (
                 <tr key={s.id} className="hover:bg-slate-50">
-                  <td className="px-4 py-3 font-mono text-xs text-slate-500">
+                  <td className="px-3 md:px-4 py-2 md:py-3 font-mono text-xs text-slate-500">
                     #{s.sequence}
                   </td>
-                  <td className="px-4 py-3 font-mono text-xs text-slate-500">
+                  <td className="px-3 md:px-4 py-2 md:py-3 font-mono text-xs text-slate-500">
                     <a
                       href={`/runs?taskId=${s.task_id}`}
                       className="text-blue-600 hover:underline"
                     >
-                      {s.task_id.slice(0, 8)}â€¦
+                      {s.task_id.slice(0, 8)}…
                     </a>
                   </td>
-                  <td className="px-4 py-3 text-sm font-medium">{s.name}</td>
-                  <td className="px-4 py-3">
+                  <td className="px-3 md:px-4 py-2 md:py-3 text-sm font-medium">{s.name}</td>
+                  <td className="px-3 md:px-4 py-2 md:py-3">
                     <StatusBadge status={s.status} />
                   </td>
-                  <td className="px-4 py-3 font-mono text-xs text-slate-500">
-                    {s.correlation_id ?? "â€”"}
+                  <td className="px-3 md:px-4 py-2 md:py-3 font-mono text-xs text-slate-500">
+                    {s.correlation_id ?? "—"}
                   </td>
-                  <td className="px-4 py-3 text-slate-500">
-                    {s.started_at ? new Date(s.started_at).toLocaleString() : "â€”"}
+                  <td className="px-3 md:px-4 py-2 md:py-3 text-slate-500">
+                    {s.started_at ? new Date(s.started_at).toLocaleString() : "—"}
                   </td>
                 </tr>
               ))}

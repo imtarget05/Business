@@ -112,11 +112,11 @@ export default function InboxPage() {
   }, []);
 
   const formatDate = (dateString?: string | null) => {
-    if (!dateString) return "â€”";
+    if (!dateString) return "—";
     try {
       return new Date(dateString).toLocaleString();
     } catch {
-      return "â€”";
+      return "—";
     }
   };
 
@@ -144,48 +144,48 @@ export default function InboxPage() {
 
   return (
     <section>
-      <div className="mb-6 flex items-center justify-between">
+      <div className="mb-4 md:mb-6 flex items-center justify-between">
         <div>
-          <h1 className="text-xl font-semibold">Inbox</h1>
-          <p className="mt-1 max-w-2xl text-sm text-slate-600">
+          <h1 className="text-lg md:text-xl font-semibold">Inbox</h1>
+          <p className="mt-1 max-w-2xl text-xs md:text-sm text-slate-600">
             Support conversation threads. Select a thread to view messages and reply.
           </p>
         </div>
         <button
           onClick={handleRefresh}
           disabled={loading}
-          className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm hover:bg-slate-50 disabled:opacity-50"
+          className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs md:text-sm hover:bg-slate-50 disabled:opacity-50"
         >
           Refresh
         </button>
       </div>
 
       {error && (
-        <div className="mb-4 rounded-md bg-red-50 p-4 text-sm text-red-700">
+        <div className="mb-4 rounded-md bg-red-50 p-3 md:p-4 text-xs md:text-sm text-red-700">
           Failed to load conversations: {error}
         </div>
       )}
 
-      <div className="grid gap-6 lg:grid-cols-[280px_1fr]">
+      <div className="grid gap-4 md:gap-6 grid-cols-1 lg:grid-cols-[280px_1fr]">
         {/* Left: Conversation List */}
         <div className="rounded-lg border border-slate-200 bg-white">
-          <div className="border-b border-slate-200 px-4 py-3">
-            <h2 className="text-sm font-semibold">Conversations</h2>
+          <div className="border-b border-slate-200 px-3 md:px-4 py-2 md:py-3">
+            <h2 className="text-xs md:text-sm font-semibold">Conversations</h2>
           </div>
 
           {loading ? (
-            <div className="p-6 text-center text-sm text-slate-500">Loading conversations...</div>
+            <div className="p-4 md:p-6 text-center text-xs md:text-sm text-slate-500">Loading conversations...</div>
           ) : conversations.length === 0 ? (
-            <div className="p-6 text-center text-sm text-slate-500">
+            <div className="p-4 md:p-6 text-center text-xs md:text-sm text-slate-500">
               No conversations yet. Create one via the API to get started.
             </div>
           ) : (
-            <div className="divide-y divide-slate-200">
+            <div className="divide-y divide-slate-200 max-h-[300px] md:max-h-none overflow-y-auto">
               {conversations.map((conv) => (
                 <button
                   key={conv.conversation_id}
                   onClick={() => handleConversationSelect(conv.conversation_id)}
-                  className={`w-full px-4 py-3 text-left transition-colors ${
+                  className={`w-full px-3 md:px-4 py-2 md:py-3 text-left transition-colors ${
                     selectedConversationId === conv.conversation_id
                       ? "bg-blue-50 border-l-4 border-blue-600"
                       : "hover:bg-slate-50"
@@ -200,7 +200,7 @@ export default function InboxPage() {
                         <StatusBadge status={conv.status} />
                       </div>
                       {conv.subject && (
-                        <p className="mt-1 text-sm font-medium truncate">{conv.subject}</p>
+                        <p className="mt-1 text-xs md:text-sm font-medium truncate">{conv.subject}</p>
                       )}
                       <p className="mt-1 text-xs text-slate-500">
                         Updated: {formatDate(conv.updated_at)}
@@ -214,45 +214,45 @@ export default function InboxPage() {
         </div>
 
         {/* Right: Chat View */}
-        <div className="rounded-lg border border-slate-200 bg-white flex flex-col h-[600px]">
+        <div className="rounded-lg border border-slate-200 bg-white flex flex-col h-[400px] md:h-[600px]">
           {threadError && (
-            <div className="m-4 rounded-md bg-red-50 p-4 text-sm text-red-700">
+            <div className="m-3 md:m-4 rounded-md bg-red-50 p-3 md:p-4 text-xs md:text-sm text-red-700">
               Failed to load thread: {threadError}
             </div>
           )}
 
           {selectedConversationId === null ? (
             <div className="flex-1 flex items-center justify-center">
-              <div className="text-center text-sm text-slate-500">
+              <div className="text-center text-xs md:text-sm text-slate-500">
                 Select a conversation from the list to view messages.
               </div>
             </div>
           ) : threadLoading ? (
-            <div className="flex-1 flex items-center justify-center text-sm text-slate-500">
+            <div className="flex-1 flex items-center justify-center text-xs md:text-sm text-slate-500">
               Loading messages...
             </div>
           ) : thread ? (
             <>
               {/* Thread Header */}
-              <div className="border-b border-slate-200 px-4 py-3 flex items-center justify-between">
+              <div className="border-b border-slate-200 px-3 md:px-4 py-2 md:py-3 flex items-center justify-between">
                 <div>
-                  <h2 className="font-semibold">{thread.subject || "Untitled conversation"}</h2>
+                  <h2 className="font-semibold text-sm md:text-base">{thread.subject || "Untitled conversation"}</h2>
                   <div className="mt-1 flex items-center gap-2 text-xs text-slate-500">
                     <span className="rounded bg-blue-100 px-2 py-0.5 font-medium text-blue-800">
                       {thread.channel}
                     </span>
                     <StatusBadge status={thread.status} />
                     <span className="font-mono">
-                      {thread.conversation_id.slice(0, 8)}â€¦
+                      {thread.conversation_id.slice(0, 8)}…
                     </span>
                   </div>
                 </div>
               </div>
 
               {/* Messages */}
-              <div className="flex-1 overflow-y-auto p-4 space-y-4">
+              <div className="flex-1 overflow-y-auto p-3 md:p-4 space-y-3 md:space-y-4">
                 {thread.messages.length === 0 ? (
-                  <div className="text-center text-sm text-slate-500 py-8">
+                  <div className="text-center text-xs md:text-sm text-slate-500 py-6 md:py-8">
                     No messages in this conversation yet.
                   </div>
                 ) : (
@@ -262,13 +262,13 @@ export default function InboxPage() {
                       className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
                     >
                       <div
-                        className={`max-w-[70%] rounded-2xl px-4 py-2 ${
+                        className={`max-w-[85%] md:max-w-[70%] rounded-2xl px-3 md:px-4 py-2 ${
                           msg.role === "user"
                             ? "bg-blue-600 text-white rounded-br-none"
                             : "bg-slate-100 text-slate-900 rounded-bl-none"
                         }`}
                       >
-                        <p className="text-sm whitespace-pre-wrap">{msg.content}</p>
+                        <p className="text-xs md:text-sm whitespace-pre-wrap">{msg.content}</p>
                         {msg.role === "assistant" && msg.tool_metadata?.actions && (
                           <div className="mt-2">
                             {renderActions(msg.tool_metadata.actions)}
@@ -281,28 +281,28 @@ export default function InboxPage() {
               </div>
 
               {/* Composer */}
-              <div className="border-t border-slate-200 p-4">
+              <div className="border-t border-slate-200 p-3 md:p-4">
                 <form onSubmit={handleSendMessage} className="flex gap-2">
                   <input
                     type="text"
                     value={composerInput}
                     onChange={(e) => setComposerInput(e.target.value)}
-                    placeholder="Type a messageâ€¦"
+                    placeholder="Type a message…"
                     disabled={sending}
                     className="flex-1 rounded-md border border-slate-300 bg-white px-3 py-2 text-sm disabled:opacity-50"
                   />
                   <button
                     type="submit"
                     disabled={sending || !composerInput.trim()}
-                    className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+                    className="rounded-md bg-blue-600 px-3 md:px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
                   >
-                    {sending ? "Sendingâ€¦" : "Send"}
+                    {sending ? "Sending…" : "Send"}
                   </button>
                 </form>
               </div>
             </>
           ) : (
-            <div className="flex-1 flex items-center justify-center text-sm text-slate-500">
+            <div className="flex-1 flex items-center justify-center text-xs md:text-sm text-slate-500">
               Conversation not found.
             </div>
           )}
