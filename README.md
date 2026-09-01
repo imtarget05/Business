@@ -158,6 +158,9 @@ Hybrid retrieval evaluated against a golden dataset of 12 queries over 17 indexe
 | VECTOR   | **0.667** | 0.250 | 0.167 | 0.833 | **0.757** |
 | HYBRID   | 0.583 | **0.278** | **0.200** | **1.000** | 0.746 |
 
+> **Note:** This benchmark uses a small golden dataset (12 queries, 17 documents) for development validation. Production evaluation with a larger corpus would provide more discriminative metrics.
+
+
 **Key findings:** The hybrid approach achieves perfect recall@5 while balancing precision
 across both keyword and semantic signals. FTS alone matches hybrid recall; vector alone
 leads on P@1. RRF fusion combines the best of both.
