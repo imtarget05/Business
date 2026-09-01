@@ -112,11 +112,11 @@ export default function InboxPage() {
   }, []);
 
   const formatDate = (dateString?: string | null) => {
-    if (!dateString) return "—";
+    if (!dateString) return "â€”";
     try {
       return new Date(dateString).toLocaleString();
     } catch {
-      return "—";
+      return "â€”";
     }
   };
 
@@ -243,7 +243,7 @@ export default function InboxPage() {
                     </span>
                     <StatusBadge status={thread.status} />
                     <span className="font-mono">
-                      {thread.conversation_id.slice(0, 8)}…
+                      {thread.conversation_id.slice(0, 8)}â€¦
                     </span>
                   </div>
                 </div>
@@ -287,7 +287,7 @@ export default function InboxPage() {
                     type="text"
                     value={composerInput}
                     onChange={(e) => setComposerInput(e.target.value)}
-                    placeholder="Type a message…"
+                    placeholder="Type a messageâ€¦"
                     disabled={sending}
                     className="flex-1 rounded-md border border-slate-300 bg-white px-3 py-2 text-sm disabled:opacity-50"
                   />
@@ -296,7 +296,7 @@ export default function InboxPage() {
                     disabled={sending || !composerInput.trim()}
                     className="rounded-md bg-blue-600 px-3 md:px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
                   >
-                    {sending ? "Sending…" : "Send"}
+                    {sending ? "Sendingâ€¦" : "Send"}
                   </button>
                 </form>
               </div>

@@ -5,7 +5,7 @@ export default function Home() {
     <div>
       <h1 className="text-xl md:text-2xl font-bold">Business Ops Agent Swarm</h1>
       <p className="mt-2 max-w-2xl text-xs md:text-sm text-slate-600">
-        Multi-agent platform for business operations. Phase 0 shell — the
+        Multi-agent platform for business operations. Phase 0 shell â€” the
         orchestrator, agent registry and contracts live in the backend API.
       </p>
       <Link

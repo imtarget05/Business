@@ -54,7 +54,7 @@ export default function AuditPage() {
       >
         <input
           type="text"
-          placeholder="Filter by correlation_id…"
+          placeholder="Filter by correlation_idâ€¦"
           value={correlationFilter}
           onChange={(e) => setCorrelationFilter(e.target.value)}
           className="w-full max-w-sm rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm"
@@ -64,7 +64,7 @@ export default function AuditPage() {
       {error ? (
         <div className="rounded-md bg-red-50 p-3 md:p-4 text-xs md:text-sm text-red-700">{error}</div>
       ) : loading ? (
-        <div className="text-xs md:text-sm text-slate-500">Loading audit trail…</div>
+        <div className="text-xs md:text-sm text-slate-500">Loading audit trailâ€¦</div>
       ) : steps.length === 0 ? (
         <div className="mt-6 rounded-lg border border-dashed border-slate-300 bg-slate-50 p-6 md:p-10 text-center text-xs md:text-sm text-slate-500">
           {correlationFilter
@@ -95,7 +95,7 @@ export default function AuditPage() {
                       href={`/runs?taskId=${s.task_id}`}
                       className="text-blue-600 hover:underline"
                     >
-                      {s.task_id.slice(0, 8)}…
+                      {s.task_id.slice(0, 8)}â€¦
                     </a>
                   </td>
                   <td className="px-3 md:px-4 py-2 md:py-3 text-sm font-medium">{s.name}</td>
@@ -103,10 +103,10 @@ export default function AuditPage() {
                     <StatusBadge status={s.status} />
                   </td>
                   <td className="px-3 md:px-4 py-2 md:py-3 font-mono text-xs text-slate-500">
-                    {s.correlation_id ?? "—"}
+                    {s.correlation_id ?? "â€”"}
                   </td>
                   <td className="px-3 md:px-4 py-2 md:py-3 text-slate-500">
-                    {s.started_at ? new Date(s.started_at).toLocaleString() : "—"}
+                    {s.started_at ? new Date(s.started_at).toLocaleString() : "â€”"}
                   </td>
                 </tr>
               ))}

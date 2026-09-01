@@ -138,7 +138,7 @@ export default function KnowledgePage() {
           <textarea
             value={content}
             onChange={(e) => setContent(e.target.value)}
-            placeholder="Paste document content…"
+            placeholder="Paste document contentâ€¦"
             rows={5}
             className="mt-2 w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
           />
@@ -147,7 +147,7 @@ export default function KnowledgePage() {
             disabled={ingesting || !title.trim() || !content.trim()}
             className="mt-2 rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
           >
-            {ingesting ? "Ingesting…" : "Ingest"}
+            {ingesting ? "Ingestingâ€¦" : "Ingest"}
           </button>
         </form>
 
@@ -169,7 +169,7 @@ export default function KnowledgePage() {
             disabled={asking || !question.trim()}
             className="mt-2 rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
           >
-            {asking ? "Thinking…" : "Ask"}
+            {asking ? "Thinkingâ€¦" : "Ask"}
           </button>
 
           {queryError && (
@@ -192,7 +192,7 @@ export default function KnowledgePage() {
                   {answer.citations.map((c) => (
                     <li key={c.source_id}>
                       <span className="font-medium">{c.title}</span>
-                      {c.snippet ? ` — ${c.snippet}` : ""}
+                      {c.snippet ? ` â€” ${c.snippet}` : ""}
                     </li>
                   ))}
                 </ul>
@@ -234,7 +234,7 @@ export default function KnowledgePage() {
                   <td className="px-3 md:px-4 py-2 md:py-3">{d.status}</td>
                   <td className="px-3 md:px-4 py-2 md:py-3 text-slate-500">{d.chunk_count}</td>
                   <td className="px-3 md:px-4 py-2 md:py-3 text-slate-500">
-                    {d.created_at ? new Date(d.created_at).toLocaleString() : "—"}
+                    {d.created_at ? new Date(d.created_at).toLocaleString() : "â€”"}
                   </td>
                   <td className="px-3 md:px-4 py-2 md:py-3 text-right">
                     <button

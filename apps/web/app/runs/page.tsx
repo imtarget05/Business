@@ -93,7 +93,7 @@ function RunsContent() {
       <form onSubmit={handleSubmit} className="mt-4 md:mt-6 flex flex-col md:flex-row gap-2">
         <input
           type="text"
-          placeholder="Task UUID…"
+          placeholder="Task UUIDâ€¦"
           value={taskIdInput}
           onChange={(e) => setTaskIdInput(e.target.value)}
           className="w-full max-w-md rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm"
@@ -103,7 +103,7 @@ function RunsContent() {
           disabled={loading}
           className="rounded-md bg-blue-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-blue-700 disabled:bg-slate-400"
         >
-          {loading ? "Loading…" : "Trace"}
+          {loading ? "Loadingâ€¦" : "Trace"}
         </button>
       </form>
 
@@ -149,7 +149,7 @@ function RunsContent() {
                 <span className="text-xs md:text-sm font-medium">{s.name}</span>
                 <StatusBadge status={s.status} />
                 <span className="ml-auto font-mono text-xs text-slate-400">
-                  {s.correlation_id ?? "—"}
+                  {s.correlation_id ?? "â€”"}
                 </span>
                 <span className="text-slate-400 text-xs">
                   {expandedStepId === s.id ? "?" : "?"} Timeline
@@ -169,7 +169,7 @@ function RunsContent() {
         <div className="mt-4 rounded-lg border border-blue-200 bg-blue-50 p-3 md:p-4">
           <div className="flex items-center gap-2 mb-3">
             <h3 className="text-xs md:text-sm font-semibold text-blue-900">Full Task Timeline</h3>
-            {timelineLoading && <span className="text-xs text-blue-700 animate-pulse">Loading…</span>}
+            {timelineLoading && <span className="text-xs text-blue-700 animate-pulse">Loadingâ€¦</span>}
             {timelineError && (
               <span className="text-xs text-red-600">Error: {timelineError}</span>
             )}
@@ -229,7 +229,7 @@ function RunsContent() {
 
 export default function RunsPage() {
   return (
-    <Suspense fallback={<div className="text-xs md:text-sm text-slate-500">Loading…</div>}>
+    <Suspense fallback={<div className="text-xs md:text-sm text-slate-500">Loadingâ€¦</div>}>
       <RunsContent />
     </Suspense>
   );
